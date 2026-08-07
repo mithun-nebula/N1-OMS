@@ -1,0 +1,537 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Operation Flow (branching) — Organization A</title>
+<style>
+:root{--paper:#FBFAF8;--ink:#14171B;--ink2:#454B52;--ink3:#787F87;--rule:#E4E3DF;
+--tea:#14615A;--amb:#8C5A16;--red:#8E3423;
+--sans:-apple-system,BlinkMacSystemFont,'Segoe UI',Inter,system-ui,sans-serif;
+--mono:ui-monospace,'Cascadia Mono',Consolas,monospace}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:#EDEDEA;font-family:var(--sans);color:var(--ink);
+-webkit-font-smoothing:antialiased;padding:30px 0 60px}
+.sheet{max-width:1500px;margin:0 auto;background:var(--paper);border:1px solid var(--rule);
+border-radius:4px;box-shadow:0 1px 2px rgba(0,0,0,.04),0 16px 46px -16px rgba(0,0,0,.14)}
+header{padding:30px 40px 22px;border-bottom:1px solid var(--rule)}
+.eye{font-size:9.5px;letter-spacing:.28em;text-transform:uppercase;color:var(--ink3);
+font-weight:700;margin-bottom:10px}
+h1{font-size:25px;font-weight:600;letter-spacing:-.022em}
+.sub{font-size:12.5px;color:var(--ink2);margin-top:8px;max-width:820px;line-height:1.6}
+.sub b{color:var(--ink);font-weight:640}
+.read{padding:14px 40px;background:#E7F0EE;border-bottom:1px solid #BFD5D0;font-size:12.5px;
+color:var(--tea);line-height:1.6}
+.read b{font-weight:700}
+.scroll{overflow-x:auto;padding:24px 0 30px}
+.stage{width:1360px;margin:0 auto}
+.stage svg{display:block}
+.grid{display:grid;grid-template-columns:repeat(4,340px);width:1360px;align-items:stretch}
+.lane{padding:0 9px;display:flex;flex-direction:column}
+.foot{margin-top:auto;padding-top:14px;position:relative;height:34px}
+.foot i{position:absolute;left:0;right:0;top:14px;height:3px;background:var(--lc);
+border-radius:2px;opacity:.55}
+.foot::after{content:'';position:absolute;left:50%;top:17px;width:1.4px;height:17px;
+background:#8F969D;transform:translateX(-50%)}
+.lh{border-top:3px solid var(--lc);padding:9px 4px 10px;font-size:11.5px;font-weight:700;
+letter-spacing:.13em;color:var(--lc)}
+.lh span{display:block;font-size:10.5px;font-weight:500;letter-spacing:0;color:var(--ink3);
+margin-top:3px;text-transform:none}
+details{border:1px solid var(--rule);border-radius:6px;background:#fff;margin-bottom:7px}
+summary{cursor:pointer;padding:8px 10px;font-size:12px;font-weight:600;list-style:none;
+display:flex;gap:8px;align-items:baseline;line-height:1.35}
+summary::-webkit-details-marker{display:none}
+summary:hover{background:#F7F9F8}
+.sn{font-family:var(--mono);font-size:10px;color:#A9AFB6;font-weight:700;flex-shrink:0}
+details[open] summary{border-bottom:1px solid var(--rule);background:#F7F9F8}
+.fl{padding:10px 10px 12px}
+.fl>div{font-size:10.8px;line-height:1.42}
+.st,.pr,.en{border-radius:5px;padding:6px 8px;border:1px solid}
+.st{background:#F1F2F4;border-color:#DBDEE2;color:#454B52}
+.pr{background:#E7F0EE;border-color:#BFD5D0;color:var(--tea)}
+.en{background:#E3EFE6;border-color:#B4D2BC;color:#1E5B32;font-weight:640}
+.q{border:1.3px solid #9AA2AA;border-radius:5px;padding:6px 8px;background:#fff;font-weight:650}
+.ex{margin:4px 0 0 10px;padding:5px 8px;border-left:2px solid #E2BDB6;background:#FBEDEB;
+color:var(--red);border-radius:0 4px 4px 0}
+.ex b{font-family:var(--mono);font-size:9.5px;text-transform:uppercase;letter-spacing:.06em}
+.ar{text-align:center;color:#B6BCC2;font-size:11px;padding:2px 0}
+.cont{color:var(--tea);font-family:var(--mono);font-size:9.5px;font-weight:700;padding:3px 0 0 10px}
+.note{padding:22px 40px 30px;border-top:1px solid var(--rule);display:grid;
+grid-template-columns:repeat(3,1fr);gap:24px}
+.nt h4{font-size:10px;letter-spacing:.15em;text-transform:uppercase;color:var(--tea);
+font-weight:700;margin-bottom:6px}
+.nt p{font-size:11.5px;color:var(--ink2);line-height:1.62}
+.nt p b{color:var(--ink);font-weight:640}
+footer{padding:15px 40px 22px;border-top:1px solid var(--rule);background:#F6F5F2;
+font-size:10.5px;color:var(--ink3);line-height:1.6}
+footer b{color:var(--tea)}
+@media(max-width:1080px){.note{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<div class="sheet">
+<header>
+  <div class="eye">System flow — branching</div>
+  <h1>Organization A — the whole application, one chart</h1>
+  <div class="sub">Seven ways an operation can start, spread across the top. They all squeeze
+    through <b>one gate</b>. Below it the chart opens out into the four kinds of work the
+    organization actually does. Then it squeezes again — everything is recorded and published — and
+    opens out a final time into what the change sets off and how it reaches you.</div>
+</header>
+
+<div class="read">
+  <b>How to read it:</b> across = different kinds of thing · down = the order they happen in ·
+  a diamond = a question with two answers · the two narrow points are where <b>nothing</b> can get
+  past. Click any capability in the middle band to see its own decisions.
+</div>
+
+<div class="scroll">
+  <div class="stage">
+    <svg viewBox="0 0 1360 1002" width="1360" height="1002" xmlns="http://www.w3.org/2000/svg" font-family="-apple-system,Segoe UI,Inter,system-ui,sans-serif"><defs><marker id="m" markerWidth="9" markerHeight="9" refX="7.6" refY="3.2" orient="auto"><path d="M0,0 L7.6,3.2 L0,6.4 z" fill="#8F969D"/></marker><marker id="a" markerWidth="9" markerHeight="9" refX="7.6" refY="3.2" orient="auto"><path d="M0,0 L7.6,3.2 L0,6.4 z" fill="#8C5A16"/></marker></defs>
+<rect x="40" y="30" width="620" height="110" rx="9" fill="#FDFDFC" stroke="#D8D6D1" stroke-dasharray="5 4"/>
+<rect x="700" y="30" width="620" height="110" rx="9" fill="#FDFDFC" stroke="#D8D6D1" stroke-dasharray="5 4"/>
+<text x="58" y="58" font-size="10.5" font-weight="700" letter-spacing="2.4" fill="#14615A">A PERSON ASKS</text>
+<text x="718" y="58" font-size="10.5" font-weight="700" letter-spacing="2.4" fill="#8C5A16">THE APPLICATION ACTS BY ITSELF</text>
+<rect x="59.5" y="82.0" width="185" height="36" rx="5" fill="#E7F0EE" stroke="#BFD5D0" stroke-width="1.3"/>
+<text x="152" y="104.5" text-anchor="middle" font-size="12" font-weight="550" fill="#14615A">Fills in a form</text>
+<rect x="257.5" y="82.0" width="185" height="36" rx="5" fill="#E7F0EE" stroke="#BFD5D0" stroke-width="1.3"/>
+<text x="350" y="104.5" text-anchor="middle" font-size="12" font-weight="550" fill="#14615A">Types it</text>
+<rect x="455.5" y="82.0" width="185" height="36" rx="5" fill="#E7F0EE" stroke="#BFD5D0" stroke-width="1.3"/>
+<text x="548" y="104.5" text-anchor="middle" font-size="12" font-weight="550" fill="#14615A">Says it out loud</text>
+<rect x="715.0" y="82.0" width="140" height="36" rx="5" fill="#FAF2E4" stroke="#DFC594" stroke-width="1.3"/>
+<text x="785" y="104.5" text-anchor="middle" font-size="11.5" font-weight="550" fill="#8C5A16">A schedule fires</text>
+<rect x="865.0" y="82.0" width="140" height="36" rx="5" fill="#FAF2E4" stroke="#DFC594" stroke-width="1.3"/>
+<text x="935" y="104.5" text-anchor="middle" font-size="11.5" font-weight="550" fill="#8C5A16">A record changed</text>
+<rect x="1015.0" y="82.0" width="140" height="36" rx="5" fill="#FAF2E4" stroke="#DFC594" stroke-width="1.3"/>
+<text x="1085" y="104.5" text-anchor="middle" font-size="11.5" font-weight="550" fill="#8C5A16">A standing rule</text>
+<rect x="1165.0" y="82.0" width="140" height="36" rx="5" fill="#FAF2E4" stroke="#DFC594" stroke-width="1.3"/>
+<text x="1235" y="104.5" text-anchor="middle" font-size="11.5" font-weight="550" fill="#8C5A16">A noticed routine</text>
+<path d="M 152 118 L 152 158 L 350 158" fill="none" stroke="#8F969D" stroke-width="1.4" stroke-linejoin="round"/>
+<path d="M 350 118 L 350 158 L 350 158" fill="none" stroke="#8F969D" stroke-width="1.4" stroke-linejoin="round"/>
+<path d="M 548 118 L 548 158 L 350 158" fill="none" stroke="#8F969D" stroke-width="1.4" stroke-linejoin="round"/>
+<path d="M 785 118 L 785 158 L 1010 158" fill="none" stroke="#8F969D" stroke-width="1.4" stroke-linejoin="round"/>
+<path d="M 935 118 L 935 158 L 1010 158" fill="none" stroke="#8F969D" stroke-width="1.4" stroke-linejoin="round"/>
+<path d="M 1085 118 L 1085 158 L 1010 158" fill="none" stroke="#8F969D" stroke-width="1.4" stroke-linejoin="round"/>
+<path d="M 1235 118 L 1235 158 L 1010 158" fill="none" stroke="#8F969D" stroke-width="1.4" stroke-linejoin="round"/>
+<path d="M 350 158 L 350 175" fill="none" stroke="#8F969D" stroke-width="1.4" stroke-linejoin="round" marker-end="url(#m)"/>
+<path d="M 1010 158 L 1010 171" fill="none" stroke="#8F969D" stroke-width="1.4" stroke-linejoin="round" marker-end="url(#m)"/>
+<polygon points="350,175.0 490.0,215 350,255.0 210.0,215" fill="#fff" stroke="#9AA2AA" stroke-width="1.4"/>
+<text x="350" y="219.5" text-anchor="middle" font-size="12.5" font-weight="600" fill="#14171B">Was it spoken?</text>
+<rect x="20.0" y="193.0" width="170" height="44" rx="6" fill="#E7F0EE" stroke="#BFD5D0" stroke-width="1.3"/>
+<text x="105" y="219.5" text-anchor="middle" font-size="12.5" font-weight="550" fill="#14615A">Turn it into words</text>
+<path d="M 210 215 L 192 215" fill="none" stroke="#8F969D" stroke-width="1.4" stroke-linejoin="round" marker-end="url(#m)"/>
+<text x="200" y="203" text-anchor="end" font-size="10.5" font-weight="700" fill="#14615A" font-family="ui-monospace,Consolas,monospace">yes</text>
+<path d="M 105 237 L 105 276 L 350 276" fill="none" stroke="#8F969D" stroke-width="1.4" stroke-linejoin="round"/>
+<path d="M 350 255 L 350 290" fill="none" stroke="#8F969D" stroke-width="1.4" stroke-linejoin="round" marker-end="url(#m)"/>
+<text x="360" y="272" text-anchor="start" font-size="10.5" font-weight="700" fill="#5D646B" font-family="ui-monospace,Consolas,monospace">no</text>
+<polygon points="350,290.0 500.0,330 350,370.0 200.0,330" fill="#fff" stroke="#9AA2AA" stroke-width="1.4"/>
+<text x="350" y="327.0" text-anchor="middle" font-size="12.5" font-weight="600" fill="#14171B">Read it back —</text>
+<text x="350" y="342.0" text-anchor="middle" font-size="12.5" font-weight="600" fill="#14171B">is that what you meant?</text>
+<rect x="20.0" y="308.0" width="170" height="44" rx="6" fill="#FBEDEB" stroke="#E2BDB6" stroke-width="1.3"/>
+<text x="105" y="334.5" text-anchor="middle" font-size="12.5" font-weight="550" fill="#8E3423">Nothing is saved</text>
+<path d="M 200 330 L 192 330" fill="none" stroke="#8F969D" stroke-width="1.4" stroke-linejoin="round" marker-end="url(#m)"/>
+<text x="196" y="318" text-anchor="end" font-size="10.5" font-weight="700" fill="#8E3423" font-family="ui-monospace,Consolas,monospace">no</text>
+<polygon points="1010,171.0 1175.0,215 1010,259.0 845.0,215" fill="#fff" stroke="#9AA2AA" stroke-width="1.4"/>
+<text x="1010" y="212.0" text-anchor="middle" font-size="12.5" font-weight="600" fill="#14171B">Does the rule author’s</text>
+<text x="1010" y="227.0" text-anchor="middle" font-size="12.5" font-weight="600" fill="#14171B">authority still cover it?</text>
+<rect x="1145.0" y="191.0" width="190" height="48" rx="6" fill="#FBEDEB" stroke="#E2BDB6" stroke-width="1.3"/>
+<text x="1240" y="212.0" text-anchor="middle" font-size="12.5" font-weight="550" fill="#8E3423">Suspended.</text>
+<text x="1240" y="227.0" text-anchor="middle" font-size="12.5" font-weight="550" fill="#8E3423">The author is told</text>
+<path d="M 1175 215 L 1147 215" fill="none" stroke="#8F969D" stroke-width="1.4" stroke-linejoin="round" marker-end="url(#m)"/>
+<text x="1180" y="203" text-anchor="start" font-size="10.5" font-weight="700" fill="#8E3423" font-family="ui-monospace,Consolas,monospace">no</text>
+<rect x="835.0" y="304.0" width="350" height="52" rx="6" fill="#FAF2E4" stroke="#DFC594" stroke-width="1.3"/>
+<text x="1010" y="327.0" text-anchor="middle" font-size="12.5" font-weight="550" fill="#8C5A16">It runs under that person’s authority,</text>
+<text x="1010" y="342.0" text-anchor="middle" font-size="12.5" font-weight="550" fill="#8C5A16">capped at their permissions right now</text>
+<path d="M 1010 259 L 1010 302" fill="none" stroke="#8F969D" stroke-width="1.4" stroke-linejoin="round" marker-end="url(#m)"/>
+<text x="1020" y="285" text-anchor="start" font-size="10.5" font-weight="700" fill="#8C5A16" font-family="ui-monospace,Consolas,monospace">yes</text>
+<path d="M 350 370 L 350 400 L 680 400" fill="none" stroke="#8F969D" stroke-width="1.4" stroke-linejoin="round"/>
+<path d="M 1010 356 L 1010 400 L 680 400" fill="none" stroke="#8F969D" stroke-width="1.4" stroke-linejoin="round"/>
+<text x="360" y="390" text-anchor="start" font-size="10.5" font-weight="700" fill="#14615A" font-family="ui-monospace,Consolas,monospace">yes</text>
+<path d="M 680 400 L 680 412" fill="none" stroke="#8F969D" stroke-width="1.4" stroke-linejoin="round" marker-end="url(#m)"/>
+<rect x="430.0" y="412.0" width="500" height="56" rx="6" fill="#F1F2F4" stroke="#DBDEE2" stroke-width="1.3"/>
+<text x="680" y="437.0" text-anchor="middle" font-size="12.5" font-weight="550" fill="#454B52">One named operation, its arguments,</text>
+<text x="680" y="452.0" text-anchor="middle" font-size="12.5" font-weight="550" fill="#454B52">and whose authority it runs under</text>
+<path d="M 680 468 L 680 500" fill="none" stroke="#8F969D" stroke-width="1.4" stroke-linejoin="round" marker-end="url(#m)"/>
+<rect x="460" y="502" width="440" height="404" rx="10" fill="none" stroke="#14615A" stroke-width="1.2" stroke-dasharray="6 5" opacity=".8"/>
+<rect x="476" y="493" width="90.4" height="18" rx="4" fill="#FBFAF8"/>
+<text x="484" y="506" font-size="10" font-weight="700" letter-spacing="2.2" fill="#14615A">THE GATE</text>
+<rect x="460" y="502" width="440" height="404" rx="10" fill="#F4F8F7" opacity=".55"/>
+<rect x="480.0" y="510.0" width="400" height="44" rx="5" fill="#FFFFFF" stroke="#BFD5D0" stroke-width="1.3"/>
+<text x="680" y="536.5" text-anchor="middle" font-size="12" font-weight="600" fill="#14615A">Arguments complete and valid?</text>
+<rect x="480.0" y="570.0" width="400" height="44" rx="5" fill="#FFFFFF" stroke="#BFD5D0" stroke-width="1.3"/>
+<text x="680" y="596.5" text-anchor="middle" font-size="12" font-weight="600" fill="#14615A">Role, records and fields allow it?</text>
+<rect x="480.0" y="630.0" width="400" height="44" rx="5" fill="#FFFFFF" stroke="#BFD5D0" stroke-width="1.3"/>
+<text x="680" y="656.5" text-anchor="middle" font-size="12" font-weight="600" fill="#14615A">Did a person ask for this just now?</text>
+<rect x="480.0" y="690.0" width="400" height="44" rx="5" fill="#FFFFFF" stroke="#BFD5D0" stroke-width="1.3"/>
+<text x="680" y="716.5" text-anchor="middle" font-size="12" font-weight="600" fill="#14615A">Does it involve money or people?</text>
+<rect x="480.0" y="750.0" width="400" height="44" rx="5" fill="#FFFFFF" stroke="#BFD5D0" stroke-width="1.3"/>
+<text x="680" y="776.5" text-anchor="middle" font-size="12" font-weight="600" fill="#14615A">Has this rule earned the right?</text>
+<path d="M 680 554 L 680 570" fill="none" stroke="#8F969D" stroke-width="1.4" stroke-linejoin="round" marker-end="url(#m)"/>
+<path d="M 680 614 L 680 630" fill="none" stroke="#8F969D" stroke-width="1.4" stroke-linejoin="round" marker-end="url(#m)"/>
+<path d="M 680 674 L 680 690" fill="none" stroke="#8F969D" stroke-width="1.4" stroke-linejoin="round" marker-end="url(#m)"/>
+<path d="M 680 734 L 680 750" fill="none" stroke="#8F969D" stroke-width="1.4" stroke-linejoin="round" marker-end="url(#m)"/>
+<rect x="480.0" y="826.0" width="400" height="44" rx="5" fill="#E7F0EE" stroke="#BFD5D0" stroke-width="1.3"/>
+<text x="680" y="852.5" text-anchor="middle" font-size="13" font-weight="700" fill="#14615A">It runs</text>
+<path d="M 680 794 L 680 826" fill="none" stroke="#8F969D" stroke-width="1.4" stroke-linejoin="round" marker-end="url(#m)"/>
+<rect x="171.0" y="510.0" width="210" height="44" rx="6" fill="#FBEDEB" stroke="#E2BDB6" stroke-width="1.3"/>
+<text x="276" y="529.0" text-anchor="middle" font-size="11.5" font-weight="550" fill="#8E3423">Say exactly</text>
+<text x="276" y="544.0" text-anchor="middle" font-size="11.5" font-weight="550" fill="#8E3423">what is missing</text>
+<path d="M 480 532 L 383 532" fill="none" stroke="#8F969D" stroke-width="1.4" stroke-linejoin="round" marker-end="url(#m)"/>
+<text x="470" y="520" text-anchor="end" font-size="10.5" font-weight="700" fill="#8E3423" font-family="ui-monospace,Consolas,monospace">no</text>
+<rect x="968.0" y="564.0" width="240" height="56" rx="6" fill="#FBEDEB" stroke="#E2BDB6" stroke-width="1.3"/>
+<text x="1088" y="589.0" text-anchor="middle" font-size="11.5" font-weight="550" fill="#8E3423">Refuse — without revealing</text>
+<text x="1088" y="604.0" text-anchor="middle" font-size="11.5" font-weight="550" fill="#8E3423">that the record exists</text>
+<path d="M 880 592 L 966 592" fill="none" stroke="#8F969D" stroke-width="1.4" stroke-linejoin="round" marker-end="url(#m)"/>
+<text x="890" y="580" text-anchor="start" font-size="10.5" font-weight="700" fill="#8E3423" font-family="ui-monospace,Consolas,monospace">no</text>
+<rect x="171.0" y="630.0" width="210" height="44" rx="6" fill="#E7F0EE" stroke="#BFD5D0" stroke-width="1.3"/>
+<text x="276" y="649.0" text-anchor="middle" font-size="11.5" font-weight="550" fill="#14615A">It runs under</text>
+<text x="276" y="664.0" text-anchor="middle" font-size="11.5" font-weight="550" fill="#14615A">their own hand</text>
+<path d="M 480 652 L 383 652" fill="none" stroke="#8F969D" stroke-width="1.4" stroke-linejoin="round" marker-end="url(#m)"/>
+<text x="470" y="640" text-anchor="end" font-size="10.5" font-weight="700" fill="#14615A" font-family="ui-monospace,Consolas,monospace">yes</text>
+<path d="M 276 674 L 276 848" fill="none" stroke="#8F969D" stroke-width="1.4" stroke-linejoin="round"/>
+<path d="M 276 848 L 478 848" fill="none" stroke="#8F969D" stroke-width="1.4" stroke-linejoin="round" marker-end="url(#m)"/>
+<rect x="968.0" y="690.0" width="240" height="44" rx="6" fill="#FAF2E4" stroke="#DFC594" stroke-width="1.3"/>
+<text x="1088" y="709.0" text-anchor="middle" font-size="11.5" font-weight="550" fill="#8C5A16">It always asks.</text>
+<text x="1088" y="724.0" text-anchor="middle" font-size="11.5" font-weight="550" fill="#8C5A16">Never automatic</text>
+<path d="M 880 712 L 966 712" fill="none" stroke="#8F969D" stroke-width="1.4" stroke-linejoin="round" marker-end="url(#m)"/>
+<text x="890" y="700" text-anchor="start" font-size="10.5" font-weight="700" fill="#8C5A16" font-family="ui-monospace,Consolas,monospace">yes</text>
+<rect x="968.0" y="750.0" width="240" height="44" rx="6" fill="#FAF2E4" stroke="#DFC594" stroke-width="1.3"/>
+<text x="1088" y="776.5" text-anchor="middle" font-size="11.5" font-weight="550" fill="#8C5A16">Prepare it, then ask</text>
+<path d="M 880 772 L 966 772" fill="none" stroke="#8F969D" stroke-width="1.4" stroke-linejoin="round" marker-end="url(#m)"/>
+<text x="890" y="760" text-anchor="start" font-size="10.5" font-weight="700" fill="#8C5A16" font-family="ui-monospace,Consolas,monospace">no</text>
+<path d="M 680 906 L 680 952" fill="none" stroke="#8F969D" stroke-width="1.4" stroke-linejoin="round"/>
+<path d="M 680 952 L 170 952" fill="none" stroke="#8F969D" stroke-width="1.4" stroke-linejoin="round"/>
+<path d="M 170 952 L 170 998" fill="none" stroke="#8F969D" stroke-width="1.4" stroke-linejoin="round" marker-end="url(#m)"/>
+<path d="M 680 952 L 510 952" fill="none" stroke="#8F969D" stroke-width="1.4" stroke-linejoin="round"/>
+<path d="M 510 952 L 510 998" fill="none" stroke="#8F969D" stroke-width="1.4" stroke-linejoin="round" marker-end="url(#m)"/>
+<path d="M 680 952 L 850 952" fill="none" stroke="#8F969D" stroke-width="1.4" stroke-linejoin="round"/>
+<path d="M 850 952 L 850 998" fill="none" stroke="#8F969D" stroke-width="1.4" stroke-linejoin="round" marker-end="url(#m)"/>
+<path d="M 680 952 L 1190 952" fill="none" stroke="#8F969D" stroke-width="1.4" stroke-linejoin="round"/>
+<path d="M 1190 952 L 1190 998" fill="none" stroke="#8F969D" stroke-width="1.4" stroke-linejoin="round" marker-end="url(#m)"/>
+<text x="680" y="938" text-anchor="middle" font-size="11" font-weight="700" fill="#14615A" font-family="ui-monospace,Consolas,monospace">now the work itself — four kinds of it</text>
+</svg>
+    <div class="grid">
+<div class="lane" style="--lc:#14615A"><div class="lh">PEOPLE<span>The employee side</span></div><details><summary><span class="sn">15</span>Employee records and directory</summary><div class="fl"><div class="st">Someone opens an employee record</div>
+<div class="ar">↓</div>
+<div class="q">Is the field a restricted one, such as pay?</div>
+<div class="ex"><b>yes</b> Not shown — and the assistant will not reveal it either</div>
+<div class="cont">↓ no</div>
+<div class="ar">↓</div>
+<div class="pr">Show role, contact details and reporting line</div>
+<div class="ar">↓</div>
+<div class="q">Are required documents missing?</div>
+<div class="ex"><b>yes</b> &quot;Three people have no signed contract on file. Shall I chase them?&quot;</div>
+<div class="cont">↓ no</div>
+<div class="ar">↓</div>
+<div class="en">Directory search obeys exactly the same limits</div></div></details><details><summary><span class="sn">16</span>Leave and attendance</summary><div class="fl"><div class="st">&quot;Taking Friday off&quot; — by form, message or voice</div>
+<div class="ar">↓</div>
+<div class="pr">Check the entitlement balance</div>
+<div class="ar">↓</div>
+<div class="q">Does it clash with anything?</div>
+<div class="ex"><b>yes</b> Say what it clashes with before sending it on</div>
+<div class="cont">↓ no</div>
+<div class="ar">↓</div>
+<div class="pr">Send it to the right person for approval</div>
+<div class="ar">↓</div>
+<div class="q">Approved?</div>
+<div class="ex"><b>no</b> Recorded as declined, and the person is told why</div>
+<div class="cont">↓ yes</div>
+<div class="ar">↓</div>
+<div class="en">Balance updated and attendance reflects it</div></div></details><details><summary><span class="sn">17</span>Joining and leaving</summary><div class="fl"><div class="st">A person joins, or gives notice</div>
+<div class="ar">↓</div>
+<div class="pr">Open the guided process — every step has a named owner, not a checklist</div>
+<div class="ar">↓</div>
+<div class="q">Is a step overdue?</div>
+<div class="ex"><b>yes</b> Chase the owner of that step by name</div>
+<div class="cont">↓ no</div>
+<div class="ar">↓</div>
+<div class="q">On leaving, is anything still held in their name?</div>
+<div class="ex"><b>yes</b> &quot;Two laptops are still assigned to her, and one course still lists her as owner&quot;</div>
+<div class="cont">↓ no</div>
+<div class="ar">↓</div>
+<div class="en">Closed only when nothing is outstanding</div></div></details><details><summary><span class="sn">18</span>Course team progress</summary><div class="fl"><div class="st">Work happens on a course</div>
+<div class="ar">↓</div>
+<div class="pr">Progress is read from the work itself — not from status forms or status meetings</div>
+<div class="ar">↓</div>
+<div class="q">Did someone say something in passing?</div>
+<div class="ex"><b>yes</b> &quot;Almost done, just the tasks left&quot; — that one line updates the whole team picture</div>
+<div class="cont">↓ no</div>
+<div class="ar">↓</div>
+<div class="en">The team view is current without anyone reporting</div></div></details><details><summary><span class="sn">19</span>Who is best for the work</summary><div class="fl"><div class="st">&quot;Who can build a course on spreadsheet automation?&quot;</div>
+<div class="ar">↓</div>
+<div class="pr">Specialists check subject knowledge, availability and workload in parallel</div>
+<div class="ar">↓</div>
+<div class="pr">Rank on what people have actually produced, not what they claim</div>
+<div class="ar">↓</div>
+<div class="en">&quot;Arun. He wrote the related course, reviewed two others, and has the lightest load&quot;</div></div></details><details><summary><span class="sn">20</span>Capability gaps</summary><div class="fl"><div class="st">Compare what the team can do against what the catalogue needs</div>
+<div class="ar">↓</div>
+<div class="q">Is a subject covered by only one person?</div>
+<div class="ex"><b>yes</b> &quot;Only one person can build cloud courses. If they leave, that subject stops&quot;</div>
+<div class="cont">↓ no</div>
+<div class="ar">↓</div>
+<div class="en">A standing gap list that changes as skills do</div></div></details><details><summary><span class="sn">21</span>Organizational memory</summary><div class="fl"><div class="st">&quot;Why did we stop using that supplier?&quot;</div>
+<div class="ar">↓</div>
+<div class="pr">Find the meeting, the reason given at the time, and who was there</div>
+<div class="ar">↓</div>
+<div class="q">May this person see that record?</div>
+<div class="ex"><b>no</b> Not surfaced, and not hinted at</div>
+<div class="cont">↓ yes</div>
+<div class="ar">↓</div>
+<div class="en">The decision and its reasoning — not just the outcome</div></div></details><div class="foot"><i></i></div></div>
+<div class="lane" style="--lc:#574689"><div class="lh">COURSE<span>Course work</span></div><details><summary><span class="sn">22</span>Course building pipeline</summary><div class="fl"><div class="st">A course moves between stages, from first outline to publication</div>
+<div class="ar">↓</div>
+<div class="pr">Each stage has an owner; every change keeps its version history</div>
+<div class="ar">↓</div>
+<div class="q">Has it sat at one stage too long?</div>
+<div class="ex"><b>yes</b> &quot;The React module has been waiting for review for eight days&quot;</div>
+<div class="cont">↓ no</div>
+<div class="ar">↓</div>
+<div class="en">Published, with its full version history kept</div></div></details><details><summary><span class="sn">24</span>Presentations and documents</summary><div class="fl"><div class="st">&quot;Make a deck introducing spreadsheet automation&quot;</div>
+<div class="ar">↓</div>
+<div class="pr">The skill decides the content and the structure</div>
+<div class="ar">↓</div>
+<div class="pr">Rendered into the organization’s own format and branding</div>
+<div class="ar">↓</div>
+<div class="q">Is it going outside the organization?</div>
+<div class="ex"><b>yes</b> Reviewed before anyone sees it</div>
+<div class="cont">↓ no</div>
+<div class="ar">↓</div>
+<div class="en">Fourteen slides, correctly formatted, ready to edit</div></div></details><div class="foot"><i></i></div></div>
+<div class="lane" style="--lc:#29527E"><div class="lh">WORKPLACE<span>The workplace</span></div><details><summary><span class="sn">25</span>Room and hall booking</summary><div class="fl"><div class="st">&quot;Book the hall Tuesday at 3&quot;</div>
+<div class="ar">↓</div>
+<div class="q">Does the space actually suit it?</div>
+<div class="ex"><b>no</b> Say why, and offer one that does</div>
+<div class="cont">↓ yes</div>
+<div class="ar">↓</div>
+<div class="q">Is it free?</div>
+<div class="ex"><b>yes</b> Booked</div>
+<div class="cont">↓ no</div>
+<div class="ar">↓</div>
+<div class="pr">Look for a move rather than refusing: &quot;move the other booking to the small room?&quot;</div>
+<div class="ar">↓</div>
+<div class="q">Do they agree?</div>
+<div class="ex"><b>no</b> The original booking stands. Nothing changes</div>
+<div class="cont">↓ yes</div>
+<div class="ar">↓</div>
+<div class="en">Booked — and everyone affected is told</div></div></details><details><summary><span class="sn">26</span>Meetings and video calls</summary><div class="fl"><div class="st">&quot;Set up a review with the course team on Tuesday afternoon&quot;</div>
+<div class="ar">↓</div>
+<div class="pr">Find a time everyone is free</div>
+<div class="ar">↓</div>
+<div class="q">Is a room needed?</div>
+<div class="ex"><b>yes</b> Booked through the room flow, clash rules and all</div>
+<div class="cont">↓ no</div>
+<div class="ar">↓</div>
+<div class="pr">Create the video link and send the invitations</div>
+<div class="ar">↓</div>
+<div class="en">Everything arranged from one instruction</div></div></details><details><summary><span class="sn">27</span>Meeting decisions carried through</summary><div class="fl"><div class="st">A meeting ends</div>
+<div class="ar">↓</div>
+<div class="pr">Take the notes and identify what was actually decided</div>
+<div class="ar">↓</div>
+<div class="pr">Assign each action to a named person, with a date</div>
+<div class="ar">↓</div>
+<div class="q">Done by that date?</div>
+<div class="ex"><b>no</b> &quot;You agreed to review the AI Basics module by Friday — is that done?&quot;</div>
+<div class="cont">↓ yes</div>
+<div class="ar">↓</div>
+<div class="en">Closed, and the closure is recorded against the decision</div></div></details><details><summary><span class="sn">28</span>Events</summary><div class="fl"><div class="st">An event is proposed</div>
+<div class="ar">↓</div>
+<div class="pr">Tasks, budget, suppliers, speakers, registrations and materials</div>
+<div class="ar">↓</div>
+<div class="q">Are tasks overdue, or registrations behind last time?</div>
+<div class="ex"><b>yes</b> &quot;Nine days out. Three tasks overdue and registrations behind where they were last time&quot;</div>
+<div class="cont">↓ no</div>
+<div class="ar">↓</div>
+<div class="pr">Run the event</div>
+<div class="ar">↓</div>
+<div class="en">A closing report</div></div></details><details><summary><span class="sn">29</span>Rooms and utilities used</summary><div class="fl"><div class="st">The working day ends</div>
+<div class="ar">↓</div>
+<div class="q">Is there something only a person can tell us?</div>
+<div class="ex"><b>no</b> Ask nothing at all</div>
+<div class="cont">↓ yes</div>
+<div class="ar">↓</div>
+<div class="q">Has this person had two questions today?</div>
+<div class="ex"><b>yes</b> Hold it until tomorrow</div>
+<div class="cont">↓ no</div>
+<div class="ar">↓</div>
+<div class="pr">One short question: &quot;was the air conditioning on today?&quot; — &quot;yes, 9 to 6&quot;</div>
+<div class="ar">↓</div>
+<div class="en">Recorded in four seconds, and available to look back over any period</div></div></details><details><summary><span class="sn">30</span>Equipment register</summary><div class="fl"><div class="st">A fault is reported on the spot, including by voice</div>
+<div class="ar">↓</div>
+<div class="pr">Logged against the room and the item, with its condition</div>
+<div class="ar">↓</div>
+<div class="q">Has this item failed before?</div>
+<div class="ex"><b>yes</b> &quot;The projector in Hall 2 has been reported faulty three times this month&quot;</div>
+<div class="cont">↓ no</div>
+<div class="ar">↓</div>
+<div class="en">Servicing history and holder updated</div></div></details><details><summary><span class="sn">31</span>Document storage</summary><div class="fl"><div class="st">A document is filed against a course, a person or an event</div>
+<div class="ar">↓</div>
+<div class="pr">Version history kept; access follows that record’s own permissions</div>
+<div class="ar">↓</div>
+<div class="q">Is a required document missing, or expiring?</div>
+<div class="ex"><b>yes</b> &quot;The insurance certificate expires in thirty days&quot;</div>
+<div class="cont">↓ no</div>
+<div class="ar">↓</div>
+<div class="en">It knows which documents should be there, not only which are</div></div></details><details><summary><span class="sn">32</span>Announcements and policies</summary><div class="fl"><div class="st">A notice or policy is issued</div>
+<div class="ar">↓</div>
+<div class="pr">Sent to the organization, acknowledgement tracked per person</div>
+<div class="ar">↓</div>
+<div class="q">Has everyone confirmed reading it?</div>
+<div class="ex"><b>no</b> &quot;Six of twenty-two people have not acknowledged. Send a reminder?&quot;</div>
+<div class="cont">↓ yes</div>
+<div class="ar">↓</div>
+<div class="en">Recorded against each person</div></div></details><div class="foot"><i></i></div></div>
+<div class="lane" style="--lc:#8C5A16"><div class="lh">EVERYDAY<span>Foundation and daily use</span></div><details><summary><span class="sn">02</span>One connected record</summary><div class="fl"><div class="st">A question crosses several kinds of record</div>
+<div class="ar">↓</div>
+<div class="q">Are the records linked, or filed separately?</div>
+<div class="ex"><b>separately</b> Then it cannot be answered in one go — this is why they are linked</div>
+<div class="cont">↓ yes</div>
+<div class="ar">↓</div>
+<div class="pr">Follow the links across people, courses, rooms, documents</div>
+<div class="ar">↓</div>
+<div class="en">&quot;Which courses has Priya written, and what is she building now?&quot; — answered in one go</div></div></details><details><summary><span class="sn">07</span>Personal assistant</summary><div class="fl"><div class="st">&quot;What’s on me today?&quot;</div>
+<div class="ar">↓</div>
+<div class="pr">Gather this person’s deadlines, approvals, and what they are waiting on</div>
+<div class="ar">↓</div>
+<div class="q">Does the answer need someone else’s record?</div>
+<div class="ex"><b>yes</b> Included only if this person could already open it themselves</div>
+<div class="cont">↓ no</div>
+<div class="ar">↓</div>
+<div class="en">Their own work only — nothing belonging to anyone else</div></div></details><details><summary><span class="sn">10</span>Suggestions from watching</summary><div class="fl"><div class="st">The same routine is done by hand, repeatedly</div>
+<div class="ar">↓</div>
+<div class="pr">Notice the pattern and what it would replace</div>
+<div class="ar">↓</div>
+<div class="pr">Offer it back: &quot;every Monday you check overdue courses — shall I send that at 9am?&quot;</div>
+<div class="ar">↓</div>
+<div class="q">Accepted?</div>
+<div class="ex"><b>no</b> Dropped. Nothing is automated without agreement</div>
+<div class="cont">↓ yes</div>
+<div class="ar">↓</div>
+<div class="en">It becomes a standing instruction, and enters the main flow</div></div></details><details><summary><span class="sn">13</span>Daily briefing</summary><div class="fl"><div class="st">The briefing is due for one person</div>
+<div class="ar">↓</div>
+<div class="pr">Collect what changed, what needs them today, and what is at risk</div>
+<div class="ar">↓</div>
+<div class="q">Is anything urgent enough not to wait?</div>
+<div class="ex"><b>yes</b> Sent now instead of held for the briefing</div>
+<div class="cont">↓ no</div>
+<div class="ar">↓</div>
+<div class="en">One short summary — where most of what is noticed gets delivered</div></div></details><details><summary><span class="sn">14</span>Technology and AI news</summary><div class="fl"><div class="st">The home screen loads</div>
+<div class="ar">↓</div>
+<div class="pr">Current AI and technology news, filtered to the subjects taught here</div>
+<div class="ar">↓</div>
+<div class="q">Does an item affect a course we publish?</div>
+<div class="ex"><b>yes</b> Name the course and when it was last revised</div>
+<div class="cont">↓ no</div>
+<div class="ar">↓</div>
+<div class="en">The same panel for everyone — the one part of the screen that is not personal</div></div></details><div class="foot"><i></i></div></div>
+    </div>
+    <svg viewBox="0 0 1360 880" width="1360" height="880" xmlns="http://www.w3.org/2000/svg" font-family="-apple-system,Segoe UI,Inter,system-ui,sans-serif"><defs><marker id="m" markerWidth="9" markerHeight="9" refX="7.6" refY="3.2" orient="auto"><path d="M0,0 L7.6,3.2 L0,6.4 z" fill="#8F969D"/></marker><marker id="a" markerWidth="9" markerHeight="9" refX="7.6" refY="3.2" orient="auto"><path d="M0,0 L7.6,3.2 L0,6.4 z" fill="#8C5A16"/></marker></defs>
+<path d="M 170 0 L 170 48 L 680 48" fill="none" stroke="#8F969D" stroke-width="1.4" stroke-linejoin="round"/>
+<path d="M 510 0 L 510 48 L 680 48" fill="none" stroke="#8F969D" stroke-width="1.4" stroke-linejoin="round"/>
+<path d="M 850 0 L 850 48 L 680 48" fill="none" stroke="#8F969D" stroke-width="1.4" stroke-linejoin="round"/>
+<path d="M 1190 0 L 1190 48 L 680 48" fill="none" stroke="#8F969D" stroke-width="1.4" stroke-linejoin="round"/>
+<path d="M 680 48 L 680 102" fill="none" stroke="#8F969D" stroke-width="1.4" stroke-linejoin="round" marker-end="url(#m)"/>
+<rect x="390.0" y="102.0" width="580" height="56" rx="6" fill="#E7F0EE" stroke="#BFD5D0" stroke-width="1.3"/>
+<text x="680" y="127.0" text-anchor="middle" font-size="12.5" font-weight="550" fill="#14615A">Record it: who did it, under whose authority,</text>
+<text x="680" y="142.0" text-anchor="middle" font-size="12.5" font-weight="550" fill="#14615A">what changed, and how to undo it</text>
+<path d="M 680 158 L 680 205" fill="none" stroke="#8F969D" stroke-width="1.4" stroke-linejoin="round" marker-end="url(#m)"/>
+<rect x="520.0" y="207.0" width="320" height="46" rx="6" fill="#E7F0EE" stroke="#BFD5D0" stroke-width="1.3"/>
+<text x="680" y="234.5" text-anchor="middle" font-size="13" font-weight="650" fill="#14615A">Publish the change</text>
+<path d="M 680 253 L 680 288" fill="none" stroke="#8F969D" stroke-width="1.4" stroke-linejoin="round"/>
+<path d="M 680 288 L 345 288" fill="none" stroke="#8F969D" stroke-width="1.4" stroke-linejoin="round"/>
+<path d="M 680 288 L 1010 288" fill="none" stroke="#8F969D" stroke-width="1.4" stroke-linejoin="round"/>
+<rect x="40" y="300" width="640" height="232" rx="10" fill="none" stroke="#8C5A16" stroke-width="1.2" stroke-dasharray="6 5" opacity=".8"/>
+<rect x="56" y="291" width="239.20000000000002" height="18" rx="4" fill="#FBFAF8"/>
+<text x="64" y="304" font-size="10" font-weight="700" letter-spacing="2.2" fill="#8C5A16">WHAT THE CHANGE SETS OFF</text>
+<path d="M 345 288 L 345 306" fill="none" stroke="#8F969D" stroke-width="1.4" stroke-linejoin="round"/>
+<path d="M 200 306 L 490 306" fill="none" stroke="#8F969D" stroke-width="1.4" stroke-linejoin="round"/>
+<path d="M 200 306 L 200 320" fill="none" stroke="#8F969D" stroke-width="1.4" stroke-linejoin="round" marker-end="url(#m)"/>
+<path d="M 490 306 L 490 320" fill="none" stroke="#8F969D" stroke-width="1.4" stroke-linejoin="round" marker-end="url(#m)"/>
+<path d="M 345 306 L 345 414" fill="none" stroke="#8F969D" stroke-width="1.4" stroke-linejoin="round"/>
+<path d="M 200 414 L 490 414" fill="none" stroke="#8F969D" stroke-width="1.4" stroke-linejoin="round"/>
+<path d="M 200 414 L 200 428" fill="none" stroke="#8F969D" stroke-width="1.4" stroke-linejoin="round" marker-end="url(#m)"/>
+<path d="M 490 414 L 490 428" fill="none" stroke="#8F969D" stroke-width="1.4" stroke-linejoin="round" marker-end="url(#m)"/>
+<rect x="60.0" y="320.0" width="280" height="60" rx="6" fill="#FAF2E4" stroke="#DFC594" stroke-width="1.3"/>
+<text x="200" y="347.0" text-anchor="middle" font-size="11.5" font-weight="550" fill="#8C5A16">A standing rule matches it</text>
+<text x="200" y="362.0" text-anchor="middle" font-size="11.5" font-weight="550" fill="#8C5A16">→ it re-enters at the top</text>
+<rect x="350.0" y="320.0" width="280" height="60" rx="6" fill="#FAF2E4" stroke="#DFC594" stroke-width="1.3"/>
+<text x="490" y="347.0" text-anchor="middle" font-size="11.5" font-weight="550" fill="#8C5A16">An agreed action completes</text>
+<text x="490" y="362.0" text-anchor="middle" font-size="11.5" font-weight="550" fill="#8C5A16">→ stop chasing it</text>
+<rect x="60.0" y="428.0" width="280" height="60" rx="6" fill="#FAF2E4" stroke="#DFC594" stroke-width="1.3"/>
+<text x="200" y="455.0" text-anchor="middle" font-size="11.5" font-weight="550" fill="#8C5A16">An answer now exists</text>
+<text x="200" y="470.0" text-anchor="middle" font-size="11.5" font-weight="550" fill="#8C5A16">→ ask one short question</text>
+<rect x="350.0" y="428.0" width="280" height="60" rx="6" fill="#FAF2E4" stroke="#DFC594" stroke-width="1.3"/>
+<text x="490" y="455.0" text-anchor="middle" font-size="11.5" font-weight="550" fill="#8C5A16">Something watched changed</text>
+<text x="490" y="470.0" text-anchor="middle" font-size="11.5" font-weight="550" fill="#8C5A16">→ add it to their briefing</text>
+<path d="M 60 350 L 24 350" fill="none" stroke="#8C5A16" stroke-width="1.4" stroke-linejoin="round"/>
+<path d="M 24 350 L 24 16" fill="none" stroke="#8C5A16" stroke-width="1.4" stroke-linejoin="round" marker-end="url(#a)"/>
+<text x="38" y="200" text-anchor="start" font-size="10.5" font-weight="700" fill="#8C5A16" font-family="ui-monospace,Consolas,monospace">back to the seven</text>
+<text x="38" y="213" text-anchor="start" font-size="10.5" font-weight="700" fill="#8C5A16" font-family="ui-monospace,Consolas,monospace">starts, as a new</text>
+<text x="38" y="226" text-anchor="start" font-size="10.5" font-weight="700" fill="#8C5A16" font-family="ui-monospace,Consolas,monospace">operation</text>
+<rect x="700" y="300" width="620" height="550" rx="10" fill="none" stroke="#29527E" stroke-width="1.2" stroke-dasharray="6 5" opacity=".8"/>
+<rect x="716" y="291" width="174.10000000000002" height="18" rx="4" fill="#FBFAF8"/>
+<text x="724" y="304" font-size="10" font-weight="700" letter-spacing="2.2" fill="#29527E">HOW IT COMES BACK</text>
+<path d="M 1010 288 L 1010 316" fill="none" stroke="#8F969D" stroke-width="1.4" stroke-linejoin="round" marker-end="url(#m)"/>
+<polygon points="1010,318.0 1160.0,360 1010,402.0 860.0,360" fill="#fff" stroke="#9AA2AA" stroke-width="1.4"/>
+<text x="1010" y="364.5" text-anchor="middle" font-size="12.5" font-weight="600" fill="#14171B">Is it being spoken back?</text>
+<rect x="1140.0" y="336.0" width="172" height="48" rx="6" fill="#E7F0EE" stroke="#BFD5D0" stroke-width="1.3"/>
+<text x="1226" y="357.0" text-anchor="middle" font-size="11.5" font-weight="550" fill="#14615A">Shown where</text>
+<text x="1226" y="372.0" text-anchor="middle" font-size="11.5" font-weight="550" fill="#14615A">it was asked</text>
+<path d="M 1160 360 L 1142 360" fill="none" stroke="#8F969D" stroke-width="1.4" stroke-linejoin="round" marker-end="url(#m)"/>
+<text x="1146" y="348" text-anchor="start" font-size="10.5" font-weight="700" fill="#29527E" font-family="ui-monospace,Consolas,monospace">no</text>
+<polygon points="1010,436.0 1180.0,484 1010,532.0 840.0,484" fill="#fff" stroke="#9AA2AA" stroke-width="1.4"/>
+<text x="1010" y="481.0" text-anchor="middle" font-size="12.5" font-weight="600" fill="#14171B">Is the room shared, and are</text>
+<text x="1010" y="496.0" text-anchor="middle" font-size="12.5" font-weight="600" fill="#14171B">there restricted fields in it?</text>
+<path d="M 1010 402 L 1010 436" fill="none" stroke="#8F969D" stroke-width="1.4" stroke-linejoin="round" marker-end="url(#m)"/>
+<text x="1020" y="424" text-anchor="start" font-size="10.5" font-weight="700" fill="#29527E" font-family="ui-monospace,Consolas,monospace">yes</text>
+<rect x="1140.0" y="460.0" width="172" height="48" rx="6" fill="#FBEDEB" stroke="#E2BDB6" stroke-width="1.3"/>
+<text x="1226" y="481.0" text-anchor="middle" font-size="11.5" font-weight="550" fill="#8E3423">On screen only.</text>
+<text x="1226" y="496.0" text-anchor="middle" font-size="11.5" font-weight="550" fill="#8E3423">Not read aloud</text>
+<path d="M 1180 484 L 1142 484" fill="none" stroke="#8F969D" stroke-width="1.4" stroke-linejoin="round" marker-end="url(#m)"/>
+<text x="1146" y="472" text-anchor="start" font-size="10.5" font-weight="700" fill="#8E3423" font-family="ui-monospace,Consolas,monospace">yes</text>
+<rect x="910.0" y="581.0" width="200" height="46" rx="6" fill="#E7F0EE" stroke="#BFD5D0" stroke-width="1.3"/>
+<text x="1010" y="608.5" text-anchor="middle" font-size="13" font-weight="650" fill="#14615A">Speak it</text>
+<path d="M 1010 532 L 1010 581" fill="none" stroke="#8F969D" stroke-width="1.4" stroke-linejoin="round" marker-end="url(#m)"/>
+<text x="1020" y="566" text-anchor="start" font-size="10.5" font-weight="700" fill="#29527E" font-family="ui-monospace,Consolas,monospace">no</text>
+<path d="M 1226 384 L 1296 384" fill="none" stroke="#8F969D" stroke-width="1.4" stroke-linejoin="round"/>
+<path d="M 1226 508 L 1296 508" fill="none" stroke="#8F969D" stroke-width="1.4" stroke-linejoin="round"/>
+<path d="M 1296 384 L 1296 700" fill="none" stroke="#8F969D" stroke-width="1.4" stroke-linejoin="round"/>
+<path d="M 1296 700 L 1222 700" fill="none" stroke="#8F969D" stroke-width="1.4" stroke-linejoin="round" marker-end="url(#m)"/>
+<rect x="800.0" y="674.0" width="420" height="52" rx="6" fill="#E7F0EE" stroke="#BFD5D0" stroke-width="1.3"/>
+<text x="1010" y="697.0" text-anchor="middle" font-size="11.5" font-weight="550" fill="#14615A">Any figure comes with the parts</text>
+<text x="1010" y="712.0" text-anchor="middle" font-size="11.5" font-weight="550" fill="#14615A">it was computed from</text>
+<path d="M 1010 627 L 1010 674" fill="none" stroke="#8F969D" stroke-width="1.4" stroke-linejoin="round" marker-end="url(#m)"/>
+<rect x="900.0" y="775.0" width="220" height="50" rx="25" fill="#E3EFE6" stroke="#B4D2BC" stroke-width="1.3"/>
+<text x="1010" y="804.5" text-anchor="middle" font-size="13.5" font-weight="700" fill="#1E5B32">Delivered</text>
+<path d="M 1010 726 L 1010 775" fill="none" stroke="#8F969D" stroke-width="1.4" stroke-linejoin="round" marker-end="url(#m)"/>
+</svg>
+  </div>
+</div>
+
+<div class="note">
+  <div class="nt"><h4>Why it narrows twice</h4>
+    <p>The two waists are the whole argument. <b>Nothing reaches a record without passing the
+      gate</b>, and <b>nothing changes without being recorded and published</b>. Because the shape
+      pinches there, you can see that before reading a word — and it is why permission and the
+      activity log only have to be built once.</p></div>
+  <div class="nt"><h4>Why four lanes, not twenty-three</h4>
+    <p>The four families are the build scope’s own section headings — the employee side, course
+      work, the workplace, and the foundation items. Twenty-three columns would be unreadable;
+      four columns with the detail one click away keeps the <b>whole map visible at once</b>.</p></div>
+  <div class="nt"><h4>Where the branches actually matter</h4>
+    <p>A form skips the speech and read-back questions. An unattended rule skips them too but
+      answers every question in the gate. Only a spoken request ever reaches “is the room shared?”
+      at the bottom. <b>Straight down, those three journeys looked identical.</b> Here they don’t.</p></div>
+</div>
+
+<footer>
+  <b>31</b> of the build scope’s 32 capabilities are on this page — 9 on the
+  spine, 22 in the four lanes. Nothing names a language, a framework or a provider: only
+  what happens, and on what condition.<br>
+  <span style="color:#8C5A16">Parked, not dropped: <b style="color:#8C5A16">23 — course quality
+  check</b>. Course work now runs from the pipeline straight to publication. It can be put back
+  without changing anything else on the chart.</span>
+  &nbsp;·&nbsp; Derived from <b>Application Build Scope</b>.
+</footer>
+</div>
+</body>
+</html>

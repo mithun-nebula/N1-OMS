@@ -1,0 +1,404 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Demo — chat-first brief</title>
+<style>
+:root{
+  --paper:#FBFAF8; --ink:#16181B; --ink2:#4A4F57; --ink3:#8A9099; --ink4:#B4B9C0;
+  --rule:#E7E3DC; --rule2:#F1EEE8;
+  --accent:#1E4B44; --accent2:#2F6B60; --accent-soft:#E9F0ED;
+  --gold:#A0722A; --gold-soft:#FBF4E7; --gold-rule:#DFC79B;
+  --rose:#96382C; --rose-soft:#FBEEEB;
+  --serif: ui-serif,'Iowan Old Style','Palatino Linotype',Palatino,Georgia,serif;
+  --sans: -apple-system,BlinkMacSystemFont,'Segoe UI',Inter,system-ui,sans-serif;
+  --mono: ui-monospace,'Cascadia Mono',Consolas,monospace;
+}
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+body{background:#EFEDE8;font-family:var(--sans);color:var(--ink);
+  -webkit-font-smoothing:antialiased;padding:38px 20px 70px;
+  display:flex;flex-direction:column;align-items:center;gap:24px}
+
+.head{max-width:660px;text-align:center}
+.head .k{font-size:10px;letter-spacing:.24em;text-transform:uppercase;color:var(--ink3);
+  font-weight:650;margin-bottom:10px}
+.head h1{font-family:var(--serif);font-size:26px;font-weight:400;letter-spacing:-.02em}
+.head p{font-size:13.5px;color:var(--ink2);margin-top:9px;line-height:1.6}
+.head p b{color:var(--accent)}
+
+.phone{width:334px;background:#17181A;border-radius:44px;padding:10px;flex-shrink:0;
+  box-shadow:0 2px 4px rgba(0,0,0,.1),0 26px 56px -12px rgba(20,20,20,.34)}
+.screen{background:var(--paper);border-radius:35px;overflow:hidden;height:700px;
+  display:flex;flex-direction:column;position:relative}
+.notch{position:absolute;top:0;left:50%;transform:translateX(-50%);width:110px;height:25px;
+  background:#17181A;border-radius:0 0 15px 15px;z-index:40}
+.sbar{padding:12px 22px 6px;display:flex;justify-content:space-between;font-size:11px;
+  font-weight:650;flex-shrink:0}
+
+/* ---------- CHAT VIEW ---------- */
+.view{position:absolute;inset:0;top:38px;display:flex;flex-direction:column;
+  transition:transform .42s cubic-bezier(.2,.8,.2,1),opacity .3s}
+.view.hidden{transform:translateX(-16%);opacity:0;pointer-events:none}
+.view.right.hidden{transform:translateX(16%)}
+
+.chead{padding:12px 20px 11px;border-bottom:1px solid var(--rule);flex-shrink:0}
+.chead .d{font-size:9.5px;letter-spacing:.18em;text-transform:uppercase;color:var(--ink3);
+  font-weight:700;margin-bottom:4px}
+.chead h2{font-family:var(--serif);font-size:19px;font-weight:400;letter-spacing:-.015em}
+.chead h2 em{font-style:italic;color:var(--accent)}
+.chead .sub{font-size:10.5px;color:var(--ink3);margin-top:3px}
+
+.chat{flex:1;overflow-y:auto;padding:14px 16px 6px;display:flex;flex-direction:column;gap:9px}
+.chat::-webkit-scrollbar{width:0}
+.bub{max-width:87%;padding:10px 13px;font-size:12.6px;line-height:1.5;
+  animation:pop .32s cubic-bezier(.2,.8,.2,1)}
+@keyframes pop{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+.bub.ai{align-self:flex-start;background:var(--gold-soft);border:1px solid var(--gold-rule);
+  border-radius:15px 15px 15px 5px;color:#3B3226;font-family:var(--serif);font-style:italic}
+.bub.me{align-self:flex-end;background:var(--accent);color:#fff;border-radius:15px 15px 5px 15px}
+.bub.sys{align-self:center;background:none;color:var(--ink4);font-size:10.5px;
+  letter-spacing:.08em;text-transform:uppercase;font-weight:700;padding:4px}
+
+.opts{display:flex;gap:6px;flex-wrap:wrap;padding:2px 16px 8px;
+  animation:pop .3s cubic-bezier(.2,.8,.2,1)}
+.opt{font-size:11.5px;padding:7px 12px;border-radius:16px;background:#fff;
+  border:1px solid var(--gold-rule);color:#6E5320;cursor:pointer;font-family:inherit;
+  font-weight:550}
+.opt.p{background:var(--gold);border-color:var(--gold);color:#fff}
+.opt.g{border-color:var(--rule);color:var(--ink3)}
+.opt.t{font-family:var(--mono);font-weight:600;min-width:44px;text-align:center}
+
+.inbar{border-top:1px solid var(--rule);background:#fff;padding:10px 16px 18px;flex-shrink:0;
+  display:flex;align-items:center;gap:10px}
+.inbar .ph{flex:1;font-size:12px;color:var(--ink4)}
+.inbar .mic{width:31px;height:31px;border-radius:9px;background:var(--accent);color:#fff;
+  display:grid;place-items:center;font-size:12px}
+
+/* ---------- DASHBOARD VIEW ---------- */
+.dhead{padding:12px 20px 10px;flex-shrink:0}
+.dhead .d{font-size:9.5px;letter-spacing:.18em;text-transform:uppercase;color:var(--ink3);
+  font-weight:700;margin-bottom:5px}
+.dhead h2{font-family:var(--serif);font-size:22px;font-weight:400;letter-spacing:-.02em}
+.dhead h2 em{font-style:italic;color:var(--accent)}
+
+.dbody{flex:1;overflow-y:auto;padding:0 18px 14px}
+.dbody::-webkit-scrollbar{width:0}
+.shead{display:flex;align-items:center;justify-content:space-between;font-size:9.5px;
+  letter-spacing:.15em;text-transform:uppercase;color:var(--ink3);font-weight:700;
+  margin:12px 0 8px;padding-bottom:5px;border-bottom:1px solid var(--rule2)}
+.shead .hint{letter-spacing:0;text-transform:none;font-weight:500;color:var(--ink4);font-size:9.5px}
+
+.row{display:flex;align-items:center;gap:9px;padding:10px 8px;background:#fff;
+  border:1px solid var(--rule);border-radius:10px;margin-bottom:7px;cursor:grab;
+  transition:box-shadow .18s,transform .18s,opacity .18s}
+.row:active{cursor:grabbing}
+.row.drag{opacity:.4}
+.row.over{box-shadow:0 0 0 2px var(--accent2)}
+.row .grip{color:var(--ink4);font-size:13px;line-height:1;letter-spacing:-1px}
+.row .t{font-family:var(--mono);font-size:10.5px;color:var(--ink3);width:33px;flex-shrink:0}
+.row .mark{width:18px;height:18px;border-radius:5px;border:1.6px solid var(--ink4);flex-shrink:0;
+  display:grid;place-items:center;font-size:10px;color:#fff;transition:.15s}
+.row.done .mark{background:var(--accent2);border-color:var(--accent2)}
+.row .nm{font-size:12.4px;flex:1;color:var(--ink);line-height:1.3}
+.row.done .nm{color:var(--ink4);text-decoration:line-through}
+.row .h{font-family:var(--mono);font-size:10.5px;color:var(--ink3)}
+.row.meet{background:#F4F7FA;border-color:#D8E2EB;cursor:default}
+.row.meet .nm{color:#3A5470}
+.row.meet .mark{background:#DCE5EE;border:none;color:#3A5470}
+.row.meet .grip{opacity:.25}
+
+.tally{font-size:10.5px;color:var(--ink3);text-align:center;margin-top:10px;padding-top:9px;
+  border-top:1px solid var(--rule2)}
+.tally b{color:var(--accent)}
+
+.mini{background:var(--gold-soft);border:1px solid var(--gold-rule);border-radius:11px;
+  padding:10px 12px;margin-top:10px}
+.mini .w{font-size:8.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--gold);
+  font-weight:700;margin-bottom:4px}
+.mini .m{font-family:var(--serif);font-style:italic;font-size:12.5px;color:#3B3226;line-height:1.45}
+.mini .a{display:flex;gap:6px;margin-top:8px}
+.mini .b{font-size:11px;padding:5px 10px;border-radius:7px;border:1px solid var(--gold-rule);
+  background:#fff;color:#6E5320;font-weight:600;cursor:pointer;font-family:inherit}
+
+.tabs{border-top:1px solid var(--rule);background:rgba(255,255,255,.96);flex-shrink:0;
+  display:grid;grid-template-columns:1fr 1fr 74px 1fr 1fr;padding:9px 6px 16px;
+  position:relative;overflow:visible}
+.tb{display:flex;flex-direction:column;align-items:center;gap:4px;font-size:8.5px;
+  color:var(--ink4);font-weight:600}
+.tb .i{font-size:15px}
+.tb.on{color:var(--accent)}
+.tbc{position:relative;display:flex;flex-direction:column;align-items:center}
+.orb{position:absolute;top:-27px;width:56px;height:56px;border-radius:50%;background:var(--accent);
+  display:grid;place-items:center;box-shadow:0 0 0 5px var(--paper),0 8px 22px -5px rgba(30,75,68,.5);
+  cursor:pointer}
+.orb .m{font-size:21px;color:var(--gold-rule)}
+.tbc .lb{margin-top:36px;font-size:7.5px;letter-spacing:.1em;text-transform:uppercase;
+  color:var(--ink4);font-weight:700;white-space:nowrap}
+
+.ctrl{display:flex;gap:9px;flex-wrap:wrap;justify-content:center;max-width:560px}
+.cbtn{font-size:12px;padding:9px 15px;border-radius:9px;border:1px solid #D6D2CA;background:#fff;
+  color:var(--ink2);cursor:pointer;font-family:inherit;font-weight:550}
+.cbtn:hover{border-color:var(--accent2);color:var(--accent)}
+.note{max-width:560px;font-size:12px;color:var(--ink3);text-align:center;line-height:1.65}
+.note b{color:var(--accent)}
+</style>
+</head>
+<body>
+
+<div class="head">
+  <div class="k">Working demo</div>
+  <h1>Chat first, then the dashboard</h1>
+  <p>The brief arrives as a <b>conversation</b>, not a list. Tap your way through it without typing
+     a word — then the day appears on the dashboard, where you can <b>drag things into any order
+     you like</b>.</p>
+</div>
+
+<div class="phone"><div class="screen">
+  <div class="notch"></div>
+  <div class="sbar"><span id="clock">9:10</span><span>◉ ▮▮▮</span></div>
+
+  <!-- ============ CHAT ============ -->
+  <div class="view" id="chatview">
+    <div class="chead">
+      <div class="d" id="dline">Monday, 5 August</div>
+      <h2>Good morning, <em>James</em></h2>
+      <div class="sub" id="csub">Your brief — 4 things</div>
+    </div>
+    <div class="chat" id="chat"></div>
+    <div class="opts" id="opts"></div>
+    <div class="inbar"><span class="ph">Type instead, if you prefer…</span><span class="mic">◉</span></div>
+  </div>
+
+  <!-- ============ DASHBOARD ============ -->
+  <div class="view right hidden" id="dashview">
+    <div class="dhead">
+      <div class="d">Monday, 5 August</div>
+      <h2>Your <em>day</em></h2>
+    </div>
+    <div class="dbody">
+      <div class="shead">Today's work <span class="hint">drag to reorder</span></div>
+      <div id="rows"></div>
+      <div class="tally" id="tally"></div>
+      <div class="mini" id="mini" style="display:none">
+        <div class="w">✦ Asking</div>
+        <div class="m" id="minim"></div>
+        <div class="a" id="minia"></div>
+      </div>
+    </div>
+    <div class="tabs">
+      <div class="tb on"><span class="i">◉</span>Today</div>
+      <div class="tb"><span class="i">◷</span>Visits</div>
+      <div class="tbc">
+        <div class="orb" onclick="backToChat()"><span class="m">✦</span></div>
+        <span class="lb">Hold to speak</span>
+      </div>
+      <div class="tb"><span class="i">◎</span>Team</div>
+      <div class="tb"><span class="i">◍</span>More</div>
+    </div>
+  </div>
+
+</div></div>
+
+<div class="ctrl">
+  <button class="cbtn" onclick="location.reload()">↺ Start again</button>
+  <button class="cbtn" onclick="evening()">Jump to 6:00 pm</button>
+  <button class="cbtn" onclick="reopen()">Reopen the app at 2pm</button>
+</div>
+
+<div class="note">
+  <b>Tap through the brief</b> — four decisions, then pick what you're doing and how long each takes.
+  The dashboard appears when the conversation ends. <b>Drag the rows</b> to reorder them, tap to tick
+  off. Then try <b>Reopen at 2pm</b> — the brief does not come back.
+</div>
+
+<script>
+const chat = document.getElementById('chat');
+const opts = document.getElementById('opts');
+let picked = [], step = 0, times = {};
+
+const WORK = [
+  {id:'m4',  nm:'AI for Data Analysis — module 4', t:['1h','2h','3h']},
+  {id:'ar',  nm:"Review Arun's draft",             t:['30m','1h','2h']},
+  {id:'fr',  nm:'Prepare Friday session',          t:['1h','2h','3h']},
+  {id:'ct',  nm:'Chase the contracts',             t:['30m','1h']}
+];
+
+function say(t, cls='ai'){
+  chat.insertAdjacentHTML('beforeend', '<div class="bub '+cls+'">'+t+'</div>');
+  chat.scrollTop = chat.scrollHeight;
+}
+function ask(list){
+  opts.innerHTML = list.map(o=>'<span class="opt '+(o.c||'')+'" onclick="'+o.go+'">'+o.l+'</span>').join('');
+  chat.scrollTop = chat.scrollHeight;
+}
+function clearOpts(){ opts.innerHTML=''; }
+function delay(fn,ms=520){ setTimeout(fn,ms); }
+
+/* ---- the brief ---- */
+const BRIEF = [
+  { msg:'Ravi checked in at 10:05 yesterday but never checked out. He usually leaves around 4pm.',
+    o:[{l:'Set 4:00 pm',c:'p',go:"reply('Set 4:00 pm','Done — logged 10:05 to 4:00.')"},
+       {l:'Open visit',go:"reply('Open visit','Opened. I will keep it aside for you.')"}] },
+  { msg:'Priya has asked for Friday off. Nothing of hers clashes that day.',
+    o:[{l:'Approve',c:'p',go:"reply('Approve','Approved. Priya has been told.')"},
+       {l:'Decline',go:"reply('Decline','Declined — shall I draft her a note?')"}] },
+  { msg:'Three people still have no signed contract on file — Karthik, Divya and Naveen.',
+    o:[{l:'Chase them',c:'p',go:"reply('Chase them','Reminders drafted, waiting for your approval.')"},
+       {l:'Later',c:'g',go:"reply('Later','Fine — I will raise it again on Thursday.')"}] },
+  { msg:'A major update to a tool you teach was released this week. Your course covering it was last revised eight months ago.',
+    o:[{l:'Open the course',c:'p',go:"reply('Open the course','Opened in the background for you.')"},
+       {l:'Dismiss',c:'g',go:"reply('Dismiss','Dropped.')"}] }
+];
+
+function start(){
+  say('Good morning. Four things need you this morning.');
+  delay(()=>nextBrief(),700);
+}
+function nextBrief(){
+  if(step < BRIEF.length){
+    say(BRIEF[step].msg);
+    ask(BRIEF[step].o);
+  } else { clearOpts(); delay(planning,500); }
+}
+function reply(userText, aiText){
+  clearOpts();
+  say(userText,'me');
+  step++;
+  document.getElementById('csub').textContent =
+    step >= BRIEF.length ? 'Brief complete' : 'Your brief — ' + (BRIEF.length-step) + ' left';
+  delay(()=>{ say(aiText); delay(nextBrief,600); }, 420);
+}
+
+/* ---- planning ---- */
+function planning(){
+  say('That is the brief cleared. <b>What are you doing today?</b>');
+  delay(()=>{
+    opts.innerHTML = WORK.map(w=>
+      '<span class="opt" id="p_'+w.id+'" onclick="toggle(\''+w.id+'\')">'+w.nm+'</span>').join('')
+      + '<span class="opt p" onclick="donePick()">That\'s all</span>';
+  },380);
+}
+function toggle(id){
+  const el = document.getElementById('p_'+id);
+  if(picked.includes(id)){ picked = picked.filter(x=>x!==id); el.classList.remove('p'); }
+  else { picked.push(id); el.classList.add('p'); }
+}
+function donePick(){
+  if(!picked.length){ say('Pick at least one, or I will leave the day open.'); return; }
+  clearOpts();
+  say(picked.map(id=>WORK.find(w=>w.id===id).nm).join(', '),'me');
+  delay(askTime,480);
+}
+function askTime(){
+  const left = picked.filter(id=>!times[id]);
+  if(!left.length){ delay(finish,300); return; }
+  const w = WORK.find(x=>x.id===left[0]);
+  say('How long for <b>'+w.nm+'</b>?');
+  opts.innerHTML = w.t.map(t=>'<span class="opt t" onclick="setT(\''+w.id+'\',\''+t+'\')">'+t+'</span>').join('')
+    + '<span class="opt g" onclick="skipT()">skip</span>';
+}
+function setT(id,t){
+  clearOpts(); times[id]=t; say(t,'me'); delay(askTime,440);
+}
+function skipT(){
+  clearOpts();
+  say('skip','me');
+  delay(()=>{
+    say('I need a time for each one — otherwise I cannot tell later whether it ran over or something '
+      + 'else took the time.');
+    delay(askTime,700);
+  },420);
+}
+function finish(){
+  const mins = t => t==='30m'?30:parseInt(t)*60;
+  const total = picked.reduce((s,id)=>s+mins(times[id]),0);
+  say('Planned. You have a review with Arun 11–12, so I have arranged the rest around it.');
+  delay(()=>{
+    say('Meetings 1h · Work '+fmt(total)+(total+60>480?' — that is more than the day holds'
+        :' · Free '+fmt(480-total-60)));
+    delay(()=>{ say('Your day is on the dashboard.','sys'); buildDash(total); delay(toDash,700); },600);
+  },600);
+}
+const fmt = m => (m>=60?Math.floor(m/60)+'h':'') + (m%60?(m%60)+'m':'');
+
+/* ---- dashboard ---- */
+function buildDash(total){
+  const mins = t => t==='30m'?30:parseInt(t)*60;
+  let t=9*60, html='', placed=false;
+  picked.forEach(id=>{
+    const w=WORK.find(x=>x.id===id), d=mins(times[id]);
+    if(!placed && t+d>11*60){ html+=mkRow('11:00','Review with Arun','1h',true); t=12*60; placed=true; }
+    html+=mkRow(clock(t), w.nm, times[id], false);
+    t+=d;
+  });
+  if(!placed) html+=mkRow('11:00','Review with Arun','1h',true);
+  document.getElementById('rows').innerHTML = html;
+  document.getElementById('tally').innerHTML =
+    'Meetings <b>1h</b> · Work <b>'+fmt(total)+'</b>' +
+    (total+60>480 ? ' · <span style="color:var(--rose)">over the day</span>' : ' · Free <b>'+fmt(480-total-60)+'</b>');
+  wireDrag();
+}
+function clock(m){ return Math.floor(m/60)+':'+String(m%60).padStart(2,'0'); }
+function mkRow(time,nm,h,meet){
+  return '<div class="row'+(meet?' meet':'')+'" draggable="'+(!meet)+'" onclick="tick(this)">'
+    +'<span class="grip">⋮⋮</span><span class="t">'+time+'</span>'
+    +'<span class="mark">'+(meet?'▣':'✓')+'</span>'
+    +'<span class="nm">'+nm+'</span><span class="h">'+h+'</span></div>';
+}
+function tick(el){ if(!el.classList.contains('meet')) el.classList.toggle('done'); }
+
+let dragEl=null;
+function wireDrag(){
+  document.querySelectorAll('#rows .row[draggable=true]').forEach(r=>{
+    r.addEventListener('dragstart',e=>{dragEl=r;r.classList.add('drag')});
+    r.addEventListener('dragend',()=>{dragEl=null;
+      document.querySelectorAll('.row').forEach(x=>x.classList.remove('drag','over'))});
+    r.addEventListener('dragover',e=>{e.preventDefault();
+      if(dragEl && dragEl!==r){ r.classList.add('over'); }});
+    r.addEventListener('dragleave',()=>r.classList.remove('over'));
+    r.addEventListener('drop',e=>{e.preventDefault();r.classList.remove('over');
+      if(dragEl && dragEl!==r){
+        const rows=document.getElementById('rows');
+        const all=[...rows.children];
+        all.indexOf(dragEl) < all.indexOf(r) ? r.after(dragEl) : r.before(dragEl);
+      }});
+  });
+}
+
+function toDash(){
+  document.getElementById('chatview').classList.add('hidden');
+  document.getElementById('dashview').classList.remove('hidden');
+}
+function backToChat(){
+  document.getElementById('dashview').classList.add('hidden');
+  document.getElementById('chatview').classList.remove('hidden');
+}
+function reopen(){
+  document.getElementById('clock').textContent='14:00';
+  toDash();
+}
+function evening(){
+  document.getElementById('clock').textContent='18:02';
+  toDash();
+  const m=document.getElementById('mini');
+  document.getElementById('minim').textContent =
+    'The module took longer than the two hours you planned. What happened?';
+  document.getElementById('minia').innerHTML =
+    '<span class="b" onclick="answerMiss()">Underestimated</span>'
+   +'<span class="b" onclick="answerMiss()">Blocked</span>'
+   +'<span class="b" onclick="answerMiss()">Explain in chat</span>';
+  m.style.display='block';
+}
+function answerMiss(){
+  document.getElementById('minim').textContent =
+    'Noted. You usually need about half again as long for this kind of work — shall I plan for three hours next time?';
+  document.getElementById('minia').innerHTML =
+    '<span class="b" onclick="document.getElementById(\'mini\').style.display=\'none\'">Yes, do that</span>'
+   +'<span class="b" onclick="document.getElementById(\'mini\').style.display=\'none\'">No, keep two</span>';
+}
+
+start();
+</script>
+</body>
+</html>

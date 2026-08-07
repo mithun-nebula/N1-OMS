@@ -1,0 +1,456 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Mock UI — Mobile</title>
+<style>
+:root{
+  --canvas:#E9E7E2;
+  --screen:#F7F5F1;
+  --card:#FFFFFF;
+  --cream:#F2EEE6;
+  --ink:#1A1A1C;
+  --ink2:#55565C;
+  --ink3:#96979D;
+  --line:#E5E1D9;
+  --mint:#BFE3D6;
+  --mint-deep:#7FC9AC;
+  --mint-soft:#DDF0E8;
+  --amber:#E8C170;
+  --coral:#E58A6B;
+  --coral-soft:#F8E4DC;
+  --sans:Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--canvas);font-family:var(--sans);color:var(--ink);
+  -webkit-font-smoothing:antialiased;padding:52px 32px 72px}
+
+/* ---------- canvas header ---------- */
+.brand{display:flex;align-items:center;gap:10px;justify-content:center;margin-bottom:14px}
+.brand .mk{width:26px;height:26px;border-radius:9px;background:var(--ink);color:var(--mint);
+  display:grid;place-items:center;font-size:13px;font-weight:700}
+.brand .nm{font-size:12px;font-weight:700;letter-spacing:.34em;text-transform:uppercase}
+.lede{max-width:620px;margin:0 auto 44px;text-align:center}
+.lede h1{font-size:27px;font-weight:750;letter-spacing:-.03em}
+.lede p{font-size:13.5px;color:var(--ink2);margin-top:8px;line-height:1.6}
+
+/* ---------- stage ---------- */
+.stage{display:flex;gap:38px;justify-content:center;flex-wrap:wrap;align-items:flex-start}
+.unit{display:flex;flex-direction:column;align-items:center;width:312px}
+.cap{margin-top:18px;text-align:center;max-width:280px}
+.cap .k{font-size:9.5px;font-weight:750;letter-spacing:.22em;text-transform:uppercase;color:var(--ink3)}
+.cap p{font-size:12px;color:var(--ink2);margin-top:5px;line-height:1.55}
+
+.phone{width:312px;background:#17181A;border-radius:48px;padding:9px;
+  box-shadow:0 2px 3px rgba(20,20,20,.12),0 30px 60px -18px rgba(20,20,20,.35)}
+.screen{background:var(--screen);border-radius:40px;overflow:hidden;height:648px;
+  display:flex;flex-direction:column;position:relative}
+.pill-notch{position:absolute;top:9px;left:50%;transform:translateX(-50%);
+  width:86px;height:22px;background:#17181A;border-radius:12px;z-index:30}
+.sbar{padding:13px 24px 4px;display:flex;justify-content:space-between;font-size:11px;
+  font-weight:650;flex-shrink:0}
+.body{flex:1;overflow:hidden;display:flex;flex-direction:column;padding:0 14px}
+
+/* ---------- shared bits ---------- */
+.micro{font-size:9px;font-weight:750;letter-spacing:.2em;text-transform:uppercase;color:var(--ink3)}
+.h-row{padding:10px 6px 12px;flex-shrink:0}
+.h-row h2{font-size:20px;font-weight:750;letter-spacing:-.03em;margin-top:4px}
+.h-row .sub{font-size:11px;color:var(--ink3);margin-top:3px;font-weight:550}
+
+.avatar{width:34px;height:34px;border-radius:50%;background:var(--mint);color:#1E4B3C;
+  display:grid;place-items:center;font-size:12px;font-weight:750;flex-shrink:0}
+.iconbtn{width:34px;height:34px;border-radius:50%;border:1px solid var(--line);background:#fff;
+  display:grid;place-items:center;font-size:13px;color:var(--ink2);flex-shrink:0}
+
+.tag{display:inline-block;font-size:8.5px;font-weight:750;letter-spacing:.06em;
+  text-transform:uppercase;padding:3px 8px;border-radius:20px}
+.tag.grey{background:#ECEAE4;color:var(--ink2)}
+.tag.coral{background:var(--coral-soft);color:#B05237}
+.tag.mint{background:var(--mint-soft);color:#2C6B54}
+
+/* ---------- bottom nav ---------- */
+.nav{flex-shrink:0;background:#fff;border-top:1px solid var(--line);
+  display:grid;grid-template-columns:1fr 1fr 76px 1fr 1fr;padding:10px 10px 20px;position:relative}
+.nb{display:flex;flex-direction:column;align-items:center;gap:4px;font-size:8.5px;
+  font-weight:650;color:var(--ink3)}
+.nb .ic{font-size:15px;line-height:1}
+.nb.on{color:var(--ink)}
+.nb.on .ic{color:var(--mint-deep)}
+.orbwrap{position:relative;display:flex;flex-direction:column;align-items:center}
+.orb{position:absolute;top:-30px;width:58px;height:58px;border-radius:50%;background:var(--ink);
+  display:grid;place-items:center;font-size:19px;color:var(--mint);
+  box-shadow:0 0 0 6px var(--screen),0 10px 22px -6px rgba(20,20,20,.45)}
+.orbwrap .lb{margin-top:34px;font-size:7.5px;font-weight:750;letter-spacing:.12em;
+  text-transform:uppercase;color:var(--ink3);white-space:nowrap}
+
+/* ================= SCREEN 1 — BRIEF ================= */
+.chat{flex:1;overflow:hidden;display:flex;flex-direction:column;gap:8px;padding:2px 2px 8px}
+.bub{max-width:88%;padding:10px 13px;font-size:12px;line-height:1.5;font-weight:500}
+.bub.ai{align-self:flex-start;background:#fff;border:1px solid var(--line);
+  border-radius:18px 18px 18px 6px;color:var(--ink)}
+.bub.me{align-self:flex-end;background:var(--ink);color:#F4F2EC;border-radius:18px 18px 6px 18px}
+.chips{display:flex;gap:6px;flex-wrap:wrap;padding-left:4px}
+.chip{font-size:11px;font-weight:650;padding:7px 13px;border-radius:20px;background:#fff;
+  border:1px solid var(--line);color:var(--ink2)}
+.chip.p{background:var(--mint);border-color:var(--mint);color:#1E4B3C}
+.chip.t{min-width:44px;text-align:center;font-variant-numeric:tabular-nums}
+.inbar{flex-shrink:0;margin:6px 2px 12px;background:#fff;border:1px solid var(--line);
+  border-radius:26px;padding:8px 8px 8px 16px;display:flex;align-items:center;gap:10px}
+.inbar .ph{flex:1;font-size:11.5px;color:var(--ink3);font-weight:500}
+.inbar .mic{width:32px;height:32px;border-radius:50%;background:var(--ink);color:var(--mint);
+  display:grid;place-items:center;font-size:13px}
+
+/* ================= SCREEN 2 — TODAY ================= */
+.hero{background:var(--ink);border-radius:22px;padding:12px 15px 11px;color:#F4F2EC;
+  flex-shrink:0;margin:0 2px}
+.hero .micro{color:#8E8F94}
+.hero .big{font-size:25px;font-weight:750;letter-spacing:-.03em;margin-top:2px}
+.hero .big span{font-size:14px;color:#8E8F94;font-weight:600}
+.hero .meta{display:flex;gap:6px;margin-top:7px}
+.hero .m{font-size:9.5px;font-weight:650;padding:4px 9px;border-radius:14px;background:#2A2B2E;color:#C9CAC9}
+.hero .m.g{background:var(--mint);color:#1E4B3C}
+.list{flex:1;overflow:hidden;padding:9px 2px 3px;display:flex;flex-direction:column;gap:5px}
+.row{background:#fff;border:1px solid var(--line);border-radius:15px;padding:7px 11px;
+  display:flex;align-items:center;gap:9px}
+.row .tm{font-size:10px;font-weight:650;color:var(--ink3);width:34px;flex-shrink:0;
+  font-variant-numeric:tabular-nums}
+.row .ck{width:20px;height:20px;border-radius:7px;border:1.6px solid #D4D1C9;flex-shrink:0;
+  display:grid;place-items:center;font-size:11px}
+.row.done .ck{background:var(--mint);border-color:var(--mint);color:#1E4B3C}
+.row .nm{flex:1;font-size:11.8px;font-weight:600;line-height:1.3}
+.row.done .nm{color:var(--ink3);text-decoration:line-through}
+.row .dur{font-size:10px;font-weight:650;color:var(--ink3)}
+.row.meet{background:var(--cream);border-color:#E7E0D2}
+.row.meet .ck{background:#E7E0D2;border:none;color:#8B7F63;font-size:9px}
+.row .sub-tag{display:block;margin-top:3px}
+.ask{flex-shrink:0;background:var(--cream);border:1px solid #E7E0D2;border-radius:18px;
+  padding:10px 13px;margin:3px 2px 9px}
+.ask .q{font-size:11.5px;font-weight:600;line-height:1.45}
+.ask .btns{display:flex;gap:6px;margin-top:8px}
+.ask .b{font-size:10px;font-weight:650;padding:6px 10px;border-radius:16px;background:#fff;
+  border:1px solid var(--line);color:var(--ink2)}
+
+/* ================= SCREEN 3 — STREAK ================= */
+.ringcard{background:var(--ink);border-radius:24px;padding:18px 16px;color:#F4F2EC;
+  flex-shrink:0;margin:0 2px;display:flex;flex-direction:column;align-items:center}
+.ringwrap{position:relative;width:190px;height:190px}
+.ringwrap svg{transform:rotate(-90deg)}
+.ringc{position:absolute;inset:0;display:grid;place-items:center;text-align:center}
+.ringc .n{font-size:34px;font-weight:750;letter-spacing:-.04em}
+.ringc .l{font-size:8.5px;font-weight:750;letter-spacing:.18em;text-transform:uppercase;color:#8E8F94}
+.legend{width:100%;margin-top:14px;display:flex;flex-direction:column;gap:7px}
+.lg{display:flex;align-items:center;gap:9px;font-size:11px;font-weight:600}
+.lg .dot{width:9px;height:9px;border-radius:50%;flex-shrink:0}
+.lg .v{margin-left:auto;color:#8E8F94;font-weight:650;font-size:10.5px}
+.week{margin:12px 2px 0;background:#fff;border:1px solid var(--line);border-radius:18px;
+  padding:12px 14px;flex-shrink:0}
+.week .days{display:flex;justify-content:space-between;margin-top:9px}
+.day{display:flex;flex-direction:column;align-items:center;gap:5px;font-size:8.5px;
+  font-weight:700;color:var(--ink3)}
+.day .d{width:26px;height:26px;border-radius:50%;display:grid;place-items:center;font-size:10px}
+.day .d.full{background:var(--mint);color:#1E4B3C}
+.day .d.kept{background:var(--mint-soft);color:#2C6B54;border:1.4px dashed var(--mint-deep)}
+.day .d.miss{background:var(--coral-soft);color:#B05237}
+.day .d.pause{background:#ECEAE4;color:var(--ink3)}
+.day .d.todo{border:1.4px solid var(--line);color:var(--ink3);background:#fff}
+.wnote{font-size:9.5px;color:var(--ink3);margin-top:10px;line-height:1.5;font-weight:550}
+.priv{margin:10px 2px 12px;text-align:center;font-size:9.5px;color:var(--ink3);
+  font-weight:600;line-height:1.5}
+.priv b{color:var(--ink)}
+
+/* ================= SCREEN 4 — CALENDAR ================= */
+.cal-h{display:flex;align-items:center;justify-content:space-between;padding:10px 6px 10px;flex-shrink:0}
+.cal-h h2{font-size:19px;font-weight:750;letter-spacing:-.03em}
+.cal-h .arr{display:flex;gap:6px}
+.grid{flex-shrink:0;padding:0 2px}
+.dow{display:grid;grid-template-columns:repeat(7,1fr);gap:4px;margin-bottom:5px}
+.dow span{text-align:center;font-size:8px;font-weight:750;letter-spacing:.1em;color:var(--ink3)}
+.cells{display:grid;grid-template-columns:repeat(7,1fr);gap:4px}
+.cell{background:#fff;border:1px solid var(--line);border-radius:10px;height:38px;
+  padding:4px 0 0;text-align:center;position:relative}
+.cell .dn{font-size:10px;font-weight:650;color:var(--ink2)}
+.cell.dim .dn{color:#C9C6BF}
+.cell.today{background:var(--ink);border-color:var(--ink)}
+.cell.today .dn{color:#fff}
+.cell .dots{display:flex;gap:2px;justify-content:center;margin-top:3px}
+.cell .dots i{width:4px;height:4px;border-radius:50%;background:var(--mint-deep)}
+.cell.today .dots i{background:var(--mint)}
+.cell .ev{position:absolute;left:2px;right:2px;bottom:2px;font-size:6.5px;font-weight:750;
+  background:var(--mint);color:#1E4B3C;border-radius:6px;padding:1.5px 0;letter-spacing:.02em}
+.sheet{flex:1;margin:11px 2px 0;background:#fff;border:1px solid var(--line);
+  border-radius:20px 20px 0 0;padding:13px 14px;overflow:hidden}
+.sheet .grab{width:32px;height:4px;border-radius:2px;background:var(--line);margin:0 auto 10px}
+.sheet .sh{display:flex;align-items:baseline;justify-content:space-between;margin-bottom:9px}
+.sheet .sh b{font-size:12.5px;font-weight:750}
+.mt{display:flex;gap:9px;padding:8px 0;border-top:1px solid #F0EDE6;align-items:flex-start}
+.mt .tm{font-size:10px;font-weight:650;color:var(--ink3);width:34px;flex-shrink:0;padding-top:1px}
+.mt .nm{font-size:11.5px;font-weight:600;line-height:1.35}
+.mt .pp{font-size:9.5px;color:var(--ink3);margin-top:2px;font-weight:550}
+.toast{flex-shrink:0;margin:8px 2px 12px;background:var(--ink);color:#F4F2EC;border-radius:16px;
+  padding:10px 12px;display:flex;align-items:center;gap:9px}
+.toast .tx{flex:1;font-size:10px;font-weight:550;line-height:1.45}
+.toast .tb{font-size:9.5px;font-weight:700;padding:5px 10px;border-radius:14px;flex-shrink:0}
+.toast .ok{background:#2A2B2E;color:#C9CAC9}
+.toast .un{background:var(--mint);color:#1E4B3C}
+
+.foot{max-width:640px;margin:52px auto 0;text-align:center;font-size:11.5px;color:var(--ink3);
+  line-height:1.7;font-weight:550}
+.foot b{color:var(--ink2)}
+</style>
+</head>
+<body>
+
+<div class="brand"><span class="mk">✦</span><span class="nm">Organization A</span></div>
+<div class="lede">
+  <h1>The staff app, on a phone</h1>
+  <p>Four screens from the application in <b>Application-Build-Scope.pdf</b> — the morning brief,
+     the day it produces, the streak that tracks it, and the shared calendar. Staff side only.</p>
+</div>
+
+<div class="stage">
+
+<!-- ================= 1 · BRIEF ================= -->
+<div class="unit">
+<div class="phone"><div class="screen">
+  <div class="pill-notch"></div>
+  <div class="sbar"><span>9:06</span><span>●●●</span></div>
+  <div class="body">
+    <div class="h-row" style="display:flex;align-items:center;justify-content:space-between">
+      <div>
+        <div class="micro">Wed, 5 August</div>
+        <h2>Morning, James</h2>
+        <div class="sub">Your brief — 2 of 4 left</div>
+      </div>
+      <div class="avatar">JD</div>
+    </div>
+    <div class="chat">
+      <div class="bub ai">Good morning. Four things need you this morning.</div>
+      <div class="bub ai">Priya has asked for <b>Friday off</b>. Nothing of hers clashes that day.</div>
+      <div class="bub me">Approve</div>
+      <div class="bub ai">Approved — Priya has been told.</div>
+      <div class="bub ai">That's the brief. <b>What are you doing today?</b></div>
+      <div class="bub me">Module 4, and review Arun's draft</div>
+      <div class="bub ai">How long for <b>module 4</b>?</div>
+      <div class="chips">
+        <span class="chip t">1h</span><span class="chip t p">2h</span><span class="chip t">3h</span>
+      </div>
+    </div>
+    <div class="inbar"><span class="ph">Tap a reply — or just say it</span><span class="mic">●</span></div>
+  </div>
+</div></div>
+<div class="cap">
+  <div class="k">01 · The morning brief</div>
+  <p>Once a day, as a conversation. Every question carries tappable replies — the whole brief
+     clears without typing. A time for each item is required, not optional.</p>
+</div>
+</div>
+
+<!-- ================= 2 · TODAY ================= -->
+<div class="unit">
+<div class="phone"><div class="screen">
+  <div class="pill-notch"></div>
+  <div class="sbar"><span>14:20</span><span>●●●</span></div>
+  <div class="body">
+    <div class="h-row">
+      <div class="micro">Wed, 5 August</div>
+      <h2>Today</h2>
+    </div>
+    <div class="hero">
+      <div class="micro">Committed today</div>
+      <div class="big">4h <span>work · 1h 30m meetings</span></div>
+      <div class="meta"><span class="m g">1h 30m free</span><span class="m">2 of 4 done</span></div>
+    </div>
+    <div class="list">
+      <div class="row done">
+        <span class="tm">9:00</span><span class="ck">✓</span>
+        <span class="nm">AI for Data Analysis — module 4</span><span class="dur">2h</span>
+      </div>
+      <div class="row meet">
+        <span class="tm">11:00</span><span class="ck">▶</span>
+        <span class="nm">Review with Arun</span><span class="dur">1h</span>
+      </div>
+      <div class="row">
+        <span class="tm">12:00</span><span class="ck"></span>
+        <span class="nm">Prepare Friday session
+          <span class="sub-tag"><span class="tag grey">carried over — meeting</span></span>
+        </span><span class="dur">1h</span>
+      </div>
+      <div class="row meet">
+        <span class="tm">14:00</span><span class="ck">▶</span>
+        <span class="nm">Team catch-up</span><span class="dur">30m</span>
+      </div>
+      <div class="row done">
+        <span class="tm">15:00</span><span class="ck">✓</span>
+        <span class="nm">Chase the contracts
+          <span class="sub-tag"><span class="tag coral">ran over</span></span>
+        </span><span class="dur">1h</span>
+      </div>
+    </div>
+    <div class="ask">
+      <div class="q">The module took longer than the two hours you planned. What happened?</div>
+      <div class="btns">
+        <span class="b">Underestimated</span><span class="b">Blocked</span><span class="b">Explain in chat</span>
+      </div>
+    </div>
+    <div class="nav">
+      <div class="nb on"><span class="ic">●</span>Today</div>
+      <div class="nb"><span class="ic">▦</span>Calendar</div>
+      <div class="orbwrap"><div class="orb">✦</div><span class="lb">Hold to speak</span></div>
+      <div class="nb"><span class="ic">◎</span>Team</div>
+      <div class="nb"><span class="ic">≡</span>More</div>
+    </div>
+  </div>
+</div></div>
+<div class="cap">
+  <div class="k">02 · The day it becomes</div>
+  <p>Work and meetings in one sequence, in time order. A meeting that took your time shows as
+     <i>carried over</i>, never as a failure — only <i>ran over</i> gets one short question.</p>
+</div>
+</div>
+
+<!-- ================= 3 · STREAK ================= -->
+<div class="unit">
+<div class="phone"><div class="screen">
+  <div class="pill-notch"></div>
+  <div class="sbar"><span>18:02</span><span>●●●</span></div>
+  <div class="body">
+    <div class="h-row">
+      <div class="micro">Only you can see this</div>
+      <h2>Your streak</h2>
+    </div>
+    <div class="ringcard">
+      <div class="ringwrap">
+        <svg width="190" height="190" viewBox="0 0 190 190">
+          <circle cx="95" cy="95" r="84" fill="none" stroke="#2A2B2E" stroke-width="13"/>
+          <circle cx="95" cy="95" r="84" fill="none" stroke="#7FC9AC" stroke-width="13"
+            stroke-linecap="round" stroke-dasharray="527.8" stroke-dashoffset="132"/>
+          <circle cx="95" cy="95" r="66" fill="none" stroke="#2A2B2E" stroke-width="13"/>
+          <circle cx="95" cy="95" r="66" fill="none" stroke="#E8C170" stroke-width="13"
+            stroke-linecap="round" stroke-dasharray="414.7" stroke-dashoffset="138"/>
+          <circle cx="95" cy="95" r="48" fill="none" stroke="#2A2B2E" stroke-width="13"/>
+          <circle cx="95" cy="95" r="48" fill="none" stroke="#E58A6B" stroke-width="13"
+            stroke-linecap="round" stroke-dasharray="301.6" stroke-dashoffset="0"/>
+        </svg>
+        <div class="ringc"><div><div class="n">12</div><div class="l">clean days</div></div></div>
+      </div>
+      <div class="legend">
+        <div class="lg"><span class="dot" style="background:#7FC9AC"></span>Committed work done<span class="v">3 of 4</span></div>
+        <div class="lg"><span class="dot" style="background:#E8C170"></span>Finished within its time<span class="v">2 of 3</span></div>
+        <div class="lg"><span class="dot" style="background:#E58A6B"></span>Day planned<span class="v">done</span></div>
+      </div>
+    </div>
+    <div class="week">
+      <div class="micro">This week</div>
+      <div class="days">
+        <div class="day"><span class="d full">✓</span>M</div>
+        <div class="day"><span class="d full">✓</span>T</div>
+        <div class="day"><span class="d kept">✓</span>W</div>
+        <div class="day"><span class="d miss">✕</span>T</div>
+        <div class="day"><span class="d pause">–</span>F</div>
+        <div class="day"><span class="d todo"></span>S</div>
+        <div class="day"><span class="d todo"></span>S</div>
+      </div>
+      <div class="wnote">Wednesday was interrupted by a meeting — the streak kept.
+        Thursday ran over — it broke. Friday was leave — paused, not broken.</div>
+    </div>
+    <div class="priv"><b>Personal only.</b> Never shown to a manager, never compared with anyone.</div>
+  </div>
+</div></div>
+<div class="cap">
+  <div class="k">03 · The streak</div>
+  <p>A day counts clean when every committed item finished within its time. Being interrupted
+     doesn't break it — the time was taken from you. Leave pauses it.</p>
+</div>
+</div>
+
+<!-- ================= 4 · CALENDAR ================= -->
+<div class="unit">
+<div class="phone"><div class="screen">
+  <div class="pill-notch"></div>
+  <div class="sbar"><span>10:41</span><span>●●●</span></div>
+  <div class="body">
+    <div class="cal-h">
+      <h2>August</h2>
+      <div class="arr"><span class="iconbtn">‹</span><span class="iconbtn">›</span></div>
+    </div>
+    <div class="grid">
+      <div class="dow"><span>M</span><span>T</span><span>W</span><span>T</span><span>F</span><span>S</span><span>S</span></div>
+      <div class="cells">
+        <div class="cell dim"><span class="dn">27</span></div>
+        <div class="cell dim"><span class="dn">28</span></div>
+        <div class="cell dim"><span class="dn">29</span></div>
+        <div class="cell dim"><span class="dn">30</span></div>
+        <div class="cell dim"><span class="dn">31</span></div>
+        <div class="cell"><span class="dn">1</span></div>
+        <div class="cell"><span class="dn">2</span></div>
+        <div class="cell"><span class="dn">3</span><span class="dots"><i></i></span></div>
+        <div class="cell"><span class="dn">4</span><span class="dots"><i></i><i></i></span></div>
+        <div class="cell today"><span class="dn">5</span><span class="dots"><i></i><i></i></span></div>
+        <div class="cell"><span class="dn">6</span><span class="dots"><i></i><i></i><i></i></span></div>
+        <div class="cell"><span class="dn">7</span><span class="dots"><i></i></span></div>
+        <div class="cell"><span class="dn">8</span></div>
+        <div class="cell"><span class="dn">9</span></div>
+        <div class="cell"><span class="dn">10</span><span class="dots"><i></i></span></div>
+        <div class="cell"><span class="dn">11</span></div>
+        <div class="cell"><span class="dn">12</span><span class="dots"><i></i><i></i></span></div>
+        <div class="cell"><span class="dn">13</span><span class="dots"><i></i></span></div>
+        <div class="cell"><span class="dn">14</span></div>
+        <div class="cell"><span class="dn">15</span></div>
+        <div class="cell"><span class="dn">16</span></div>
+        <div class="cell"><span class="dn">17</span><span class="dots"><i></i></span></div>
+        <div class="cell"><span class="dn">18</span><span class="ev">SHOWCASE</span></div>
+        <div class="cell"><span class="dn">19</span><span class="dots"><i></i></span></div>
+        <div class="cell"><span class="dn">20</span><span class="dots"><i></i><i></i></span></div>
+        <div class="cell"><span class="dn">21</span></div>
+        <div class="cell"><span class="dn">22</span></div>
+        <div class="cell"><span class="dn">23</span></div>
+        <div class="cell"><span class="dn">24</span><span class="dots"><i></i></span></div>
+        <div class="cell"><span class="dn">25</span></div>
+        <div class="cell"><span class="dn">26</span><span class="dots"><i></i></span></div>
+        <div class="cell"><span class="dn">27</span><span class="dots"><i></i></span></div>
+        <div class="cell"><span class="dn">28</span><span class="ev">TOWN HALL</span></div>
+        <div class="cell"><span class="dn">29</span></div>
+        <div class="cell"><span class="dn">30</span></div>
+        <div class="cell"><span class="dn">31</span></div>
+        <div class="cell dim"><span class="dn">1</span></div>
+        <div class="cell dim"><span class="dn">2</span></div>
+        <div class="cell dim"><span class="dn">3</span></div>
+        <div class="cell dim"><span class="dn">4</span></div>
+        <div class="cell dim"><span class="dn">5</span></div>
+        <div class="cell dim"><span class="dn">6</span></div>
+      </div>
+    </div>
+    <div class="sheet">
+      <div class="grab"></div>
+      <div class="sh"><b>Thursday 6</b><span class="micro">2 meetings</span></div>
+      <div class="mt"><span class="tm">10:00</span>
+        <span><span class="nm">Course outline — AI Basics</span>
+        <span class="pp">Karthik, Divya · Small room</span></span></div>
+      <div class="mt"><span class="tm">15:00</span>
+        <span><span class="nm">Course review</span>
+        <span class="pp">Priya, Arun, Meena · Online — link attached</span></span></div>
+    </div>
+    <div class="toast">
+      <span class="tx"><b>Arun</b> moved Thursday's review to 15:00 and added Meena.</span>
+      <span class="tb ok">OK</span><span class="tb un">Undo</span>
+    </div>
+  </div>
+</div></div>
+<div class="cap">
+  <div class="k">04 · The common calendar</div>
+  <p>One month view, open to everyone. Cells show density, not detail — tap a day for the full
+     list. Any change tells everyone affected what changed and who changed it, with undo.</p>
+</div>
+</div>
+
+</div>
+
+<div class="foot">
+  Every screen traces to <b>Application-Build-Scope.pdf</b> — the brief and day rules from
+  appendix A, the calendar rules from appendix E. Staff side only; no bottom tab or screen exists
+  for anything outside the plan.
+</div>
+
+</body>
+</html>
