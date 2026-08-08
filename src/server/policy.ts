@@ -243,6 +243,7 @@ export const OPEN_NODE_TYPES = new Set([
   "announcement",
   "utility-capture",
   "fault",
+  "task",
 ]);
 
 export function buildDemoPermissionPolicy(

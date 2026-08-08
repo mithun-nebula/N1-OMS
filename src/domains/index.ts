@@ -3,6 +3,7 @@ import { peopleDomain } from "./people";
 import { courseDomain } from "./course";
 import { orgMemoryDomain } from "./org-memory";
 import { workplaceDomain } from "./workplace";
+import { tasksDomain } from "./tasks";
 import { assistantDomain } from "./assistant";
 import { autonomyDomain } from "./autonomy";
 
@@ -14,6 +15,7 @@ export const DOMAINS: DomainModule[] = [
   courseDomain,
   orgMemoryDomain,
   workplaceDomain,
+  tasksDomain,
   assistantDomain,
   autonomyDomain,
 ];

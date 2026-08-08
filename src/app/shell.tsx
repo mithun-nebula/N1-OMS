@@ -6,9 +6,12 @@ import { useEffect, useState } from "react";
 import { VoiceButton } from "./voice-input";
 
 const NAV = [
-  { href: "/today", label: "Today" },
+  { href: "/dashboard", label: "Dashboard" },
+  { href: "/tasks", label: "Tasks" },
+  { href: "/meetings", label: "Meetings" },
+  { href: "/booking", label: "Booking" },
+  { href: "/courses", label: "Projects" },
   { href: "/calendar", label: "Calendar" },
-  { href: "/courses", label: "Courses" },
   { href: "/team", label: "Team" },
 ];
 
@@ -18,7 +21,9 @@ export function Shell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
   const [user, setUser] = useState<{ displayName: string; role: string } | null>(null);
-  const navItems = user && ADMIN_ROLES.has(user.role) ? [...NAV, { href: "/admin", label: "Admin" }] : NAV;
+  const navItems = user && ADMIN_ROLES.has(user.role)
+    ? [...NAV, { href: "/rbac", label: "RBAC" }, { href: "/admin", label: "Admin" }]
+    : NAV;
 
   useEffect(() => {
     fetch("/api/me")

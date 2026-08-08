@@ -35,7 +35,7 @@ export default function LoginPage() {
     });
     setBusy(false);
     if (res.ok) {
-      router.push("/today");
+      router.push("/dashboard");
       router.refresh();
       return;
     }
@@ -54,7 +54,7 @@ export default function LoginPage() {
     });
     setBusy(false);
     if (res.ok) {
-      router.push("/today");
+      router.push("/dashboard");
       router.refresh();
       return;
     }
