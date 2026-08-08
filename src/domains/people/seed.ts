@@ -13,6 +13,22 @@ export function seedPeople(ctx: DomainContext): void {
       leaveBalance: 18,
     });
   }
+  seedEquipment(ctx);
+}
+
+function seedEquipment(ctx: DomainContext): void {
+  const assets: Array<{ id: string; name: string; assignee: string }> = [
+    { id: "laptop-1", name: "MacBook Pro 14", assignee: "meena" },
+    { id: "laptop-2", name: "MacBook Air", assignee: "meena" },
+  ];
+  for (const a of assets) {
+    ctx.graph.putNode("equipment", a.id, {
+      name: a.name,
+      assignee: a.assignee,
+      status: "assigned",
+    });
+    ctx.graph.addEdge({ from: a.assignee, to: a.id, type: "holds" });
+  }
 }
 
 function hashPay(id: string): number {

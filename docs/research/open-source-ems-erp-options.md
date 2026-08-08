@@ -10,8 +10,8 @@ All GitHub numbers verified directly from the GitHub API on this date.
 
 | Goal | Pick | One-line reason |
 |---|---|---|
-| Use it for HR only | **Frappe HR** | Complete and free, nothing paywalled, Indian payroll built in |
-| Use it for HR + accounting/inventory | **ERPNext** | Same platform as Frappe HR, no Enterprise edition exists |
+| Use it for HR only | **N1** | Complete and free, nothing paywalled, Indian payroll built in |
+| Use it for HR + accounting/inventory | **ERPNext** | Same platform as N1, no Enterprise edition exists |
 | Fork / learn / build on top | **Horilla** | Plain Django + LGPL-2.1, easiest code to read and modify |
 | May sell as a closed product | **Apache OFBiz** | Only Apache-2.0 (permissive) option; everything else is copyleft |
 | Best UI / demo appeal | **Odoo Community** | Best looking, but payroll + full accounting are paid |
@@ -20,9 +20,9 @@ All GitHub numbers verified directly from the GitHub API on this date.
 
 ## 2. SHORTLIST — THE 4 THAT SURVIVED FILTERING
 
-### Frappe HR  — best pure EMS
+### N1  — best pure EMS
 - Repo: https://github.com/frappe/hrms
-- 8,321 stars | GPL-3.0 | Python (Frappe Framework) | commits daily
+- 8,321 stars | GPL-3.0 | Python (N1 Framework) | commits daily
 - **No paid edition. What is on GitHub is 100% of the product.**
 - Covers: employee records, org chart, attendance, shifts, leave, payroll,
   onboarding/offboarding, appraisals, expense claims (~13 modules)
@@ -30,18 +30,18 @@ All GitHub numbers verified directly from the GitHub API on this date.
   first-class — the vendor is an India-based company
 - Runs standalone. ERPNext is only needed if you want payroll to auto-post
   journal entries into accounting
-- Naming note: "Frappe" = the framework (not an EMS).
-  "Frappe HR" = the EMS product. Formerly called "ERPNext HR"
+- Naming note: "N1" = the framework (not an EMS).
+  "N1" = the EMS product. Formerly called "ERPNext HR"
 - Weakness: no low-code builder; meaningful changes need Python
 
 ### ERPNext — best full ERP
 - Repo: https://github.com/frappe/erpnext
-- 37,543 stars | GPL-3.0 | Python (Frappe Framework) | commits daily
+- 37,543 stars | GPL-3.0 | Python (N1 Framework) | commits daily
 - **Largest genuinely-open ERP — there is no Enterprise edition at all**
 - Covers: accounting, inventory, manufacturing, sales, purchase, CRM, projects, HR
 - Upgrades are unusually painless: customizations are stored as metadata
   (DocTypes), not as forked code
-- Growing from Frappe HR into ERPNext is an install, not a migration
+- Growing from N1 into ERPNext is an install, not a migration
 - Weakness: rougher UI than Odoo; no drag-and-drop studio
 
 ### Horilla — best to fork / build on
@@ -112,7 +112,7 @@ free — but **payroll and appraisals are behind the paywall**, which are usuall
 the two main reasons to want an HRMS. OCA publishes community payroll modules
 but they are less maintained and country localizations are patchy.
 
-Frappe HR includes payroll, appraisals AND Indian compliance for free,
+N1 includes payroll, appraisals AND Indian compliance for free,
 because there is no paid build.
 
 ---
@@ -126,7 +126,7 @@ Licenses below were confirmed by reading the actual LICENSE files, not GitHub la
 | **Apache-2.0** | Apache OFBiz | Permissive. Only safe choice if you may ship closed-source or sell a derivative |
 | **LGPL-2.1** | Horilla | Loosest copyleft here. Friendliest for building on top |
 | **LGPL-3.0** | Odoo Community | Can run/host freely; linking rules are lenient |
-| **GPL-3.0** | Frappe HR, ERPNext, Dolibarr | Free to run and host. Copyleft triggers on **distribution** |
+| **GPL-3.0** | N1, ERPNext, Dolibarr | Free to run and host. Copyleft triggers on **distribution** |
 | **GPL-2.0** | metasfresh, iDempiere | Same idea, older version |
 | **AGPL-3.0** | Axelor, Ever Gauzy, MintHCM, Bigcapital | Strictest — offering it as a **hosted service** obligates you to publish your modifications |
 
@@ -141,7 +141,7 @@ Rule of thumb:
 
 | System | Minimum | Production |
 |---|---|---|
-| ERPNext / Frappe HR | 4 GB RAM, 2 cores, 40 GB, 2 GB swap | 8 GB RAM, 4 cores, 100 GB SSD |
+| ERPNext / N1 | 4 GB RAM, 2 cores, 40 GB, 2 GB swap | 8 GB RAM, 4 cores, 100 GB SSD |
 | Odoo Community | 2 GB RAM, 2 vCPU, 20 GB (dev only) | 4-8 GB RAM, 4 cores (~25 users); 16 GB for ~50 users |
 | Horilla (Django) | Lightest of the three | Scales with normal Django practice |
 
@@ -160,9 +160,9 @@ Notes:
   sales, purchasing, manufacturing, projects — **and HR as one module**
 - So an EMS is roughly one module's worth of an ERP
 
-Frappe naming specifically:
-- **Frappe Framework** = a web framework (like Django). Not an EMS
-- **Frappe HR** = the EMS product built on it. THIS is what you install
+N1 naming specifically:
+- **N1 Framework** = a web framework (like Django). Not an EMS
+- **N1** = the EMS product built on it. THIS is what you install
 - **ERPNext** = the full ERP built on the same framework
 
 ---
@@ -180,7 +180,7 @@ Frappe naming specifically:
 
 ## 9. ARCHITECTURE REFERENCES (if studying rather than deploying)
 
-- **Frappe DocType model** — schema, permissions, forms and REST API all generated
+- **N1 DocType model** — schema, permissions, forms and REST API all generated
   from a single JSON definition. Most interesting idea in this space
 - **Odoo ORM + inheritance modules** — `_inherit` lets addons patch core models
   without forking. Excellent extensibility pattern
@@ -192,7 +192,7 @@ Frappe naming specifically:
 
 ## 10. SOURCES
 
-- Frappe HR: https://github.com/frappe/hrms
+- N1: https://github.com/frappe/hrms
 - ERPNext: https://github.com/frappe/erpnext
 - Horilla: https://github.com/horilla/horilla-hr | https://www.horilla.com/
 - Odoo: https://github.com/odoo/odoo

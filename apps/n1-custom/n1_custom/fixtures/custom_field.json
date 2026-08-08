@@ -1,0 +1,20 @@
+[
+  {
+    "doctype": "Custom Field",
+    "dt": "Employee",
+    "fieldname": "orga_team",
+    "label": "Team",
+    "fieldtype": "Data",
+    "insert_after": "department",
+    "description": "Organization A team this employee belongs to (e.g. courses, ops)."
+  },
+  {
+    "doctype": "Custom Field",
+    "dt": "Employee",
+    "fieldname": "orga_role",
+    "label": "Org Role",
+    "fieldtype": "Data",
+    "insert_after": "orga_team",
+    "description": "RBAC role in the spine (super-admin, admin, hr, manager, employee, intern)."
+  }
+]

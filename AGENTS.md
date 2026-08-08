@@ -45,9 +45,16 @@ src/
     auth.ts           RBAC: session tokens, password hashing, getSessionUser
     auth-constants.ts edge-safe cookie name (importable from middleware)
     accounts.ts       demo credential store + verifyCredentials
-  config/       provider-agnostic stubs (LLM / video / Frappe) — decisions open
+  config/       provider-agnostic stubs + typed clients — decisions open
+    providers.ts     env-swappable LLM/Video/N1 factories (stubs now)
+    n1-client.ts N1 REST client (service-account auth, retry)
+    env.ts           typed env config
   app/          Next.js App Router — thin API routes + web UI (login, today)
   middleware.ts guards routes by session cookie (Edge runtime — no node:crypto)
+vendor/         vendored OSS (git submodules)
+  n1/    N1 = our HR/payroll backend (upstream frappe/hrms, version-16) — headless, REST-only
+apps/           our own code
+  n1-custom/ N1 customization layer (custom fields/fixtures on top of frappe+hrms)
 docs/           spec, research, mock UIs (CONTEXT.md, BUILD-PLAN.md, …)
 ```
 
@@ -101,7 +108,7 @@ Six roles, applied by the gate's permission layer (role × record × field):
 
 ## Status
 
-Phase 1 complete (in-memory). Cloud infra (Phase 0) and Frappe integration
+Phase 1 complete (in-memory). Cloud infra (Phase 0) and N1 integration
 (Phase 2) are next; both are abstracted behind the `RecordStore` / `ActivityLog` /
-`FigureStore` interfaces so a Supabase/Frappe-backed implementation drops in
+`FigureStore` interfaces so a Supabase/N1-backed implementation drops in
 without touching the gate or the API.

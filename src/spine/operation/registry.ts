@@ -9,6 +9,7 @@ export type PermissionRequirement = {
   nodeType: string;
   fields?: string[];
   recordNodeIds?: NodeId[];
+  allowedActors?: ActorId[];
 };
 
 export type PermissionAction =

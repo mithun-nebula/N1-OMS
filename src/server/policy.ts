@@ -22,7 +22,12 @@ const ADMIN_ACTIONS: PermissionAction[] = [
   "export",
 ];
 
-const MANAGED_NODE_TYPES = ["employee", "course"];
+const MANAGED_NODE_TYPES = [
+  "employee",
+  "course",
+  "onboarding",
+  "offboarding",
+];
 
 function superAdminRules(): PermissionRule[] {
   return MANAGED_NODE_TYPES.map((nodeType) => ({
@@ -115,6 +120,48 @@ export const DEMO_PERMISSION_RULES: PermissionRule[] = [
     recordScope: { kind: "own-team" },
     fields: { kind: "all-visible" },
   },
+  {
+    role: "hr",
+    nodeType: "onboarding",
+    actions: ["view", "create", "edit", "approve"],
+    recordScope: { kind: "all" },
+    fields: { kind: "all-visible" },
+  },
+  {
+    role: "hr",
+    nodeType: "offboarding",
+    actions: ["view", "create", "edit"],
+    recordScope: { kind: "all" },
+    fields: { kind: "all-visible" },
+  },
+  {
+    role: "manager",
+    nodeType: "onboarding",
+    actions: ["view", "create", "edit"],
+    recordScope: { kind: "own-team" },
+    fields: { kind: "all-visible" },
+  },
+  {
+    role: "manager",
+    nodeType: "offboarding",
+    actions: ["view", "create", "edit"],
+    recordScope: { kind: "own-team" },
+    fields: { kind: "all-visible" },
+  },
+  {
+    role: "employee",
+    nodeType: "onboarding",
+    actions: ["view"],
+    recordScope: { kind: "self" },
+    fields: { kind: "all-visible" },
+  },
+  {
+    role: "employee",
+    nodeType: "offboarding",
+    actions: ["view"],
+    recordScope: { kind: "self" },
+    fields: { kind: "all-visible" },
+  },
 ];
 
 export class DemoRoleProvider implements RoleProvider {
@@ -140,6 +187,10 @@ export class DemoRoleProvider implements RoleProvider {
 
   ownerOf(nodeType: string, recordNodeId: NodeId): ActorId | undefined {
     if (nodeType === "employee") return recordNodeId;
+    if (nodeType === "onboarding" || nodeType === "offboarding") {
+      const sep = recordNodeId.indexOf(":");
+      return sep >= 0 ? recordNodeId.slice(sep + 1) : recordNodeId;
+    }
     return this.owners.get(`${nodeType}:${recordNodeId}`);
   }
 }

@@ -11,6 +11,7 @@ export { RBAC_ROLES } from "@/domains/shared/people-roster";
 import type { RbacRole } from "@/domains/shared/people-roster";
 export { SESSION_COOKIE } from "./auth-constants";
 import { SESSION_COOKIE } from "./auth-constants";
+import { env } from "@/config/env";
 
 export interface AuthUser {
   id: string;
@@ -21,14 +22,15 @@ export interface AuthUser {
 
 export const SESSION_MAX_AGE = 60 * 60 * 24 * 7;
 
-const SECRET =
-  process.env.ORG_AUTH_SECRET ?? "dev-insecure-secret-change-me-in-prod";
+function secret(): string {
+  return env().authSecret;
+}
 
 export function createSessionToken(user: AuthUser): string {
   const payload = Buffer.from(
     JSON.stringify({ ...user, exp: Date.now() + SESSION_MAX_AGE * 1000 }),
   ).toString("base64url");
-  const sig = createHmac("sha256", SECRET).update(payload).digest("base64url");
+  const sig = createHmac("sha256", secret()).update(payload).digest("base64url");
   return `${payload}.${sig}`;
 }
 
@@ -36,7 +38,7 @@ export function readSessionToken(token: string | undefined): AuthUser | null {
   if (!token) return null;
   const [payload, sig] = token.split(".");
   if (!payload || !sig) return null;
-  const expected = createHmac("sha256", SECRET)
+  const expected = createHmac("sha256", secret())
     .update(payload)
     .digest("base64url");
   if (!safeEqual(sig, expected)) return null;

@@ -37,8 +37,9 @@ export class GateEngine {
 
     const actor = effectiveActor(operation.authority);
     const requirements = flattenRequirements(handler.permission(operation.args));
-    const allowed = requirements.every((req) =>
-      this.permissions
+    const allowed = requirements.every((req) => {
+      if (req.allowedActors?.includes(actor)) return true;
+      return this.permissions
         .can({
           actor,
           action: req.action,
@@ -46,8 +47,8 @@ export class GateEngine {
           recordNodeId: req.recordNodeIds?.[0],
           requiredFields: req.fields,
         })
-        .allowed,
-    );
+        .allowed;
+    });
     if (!allowed) {
       return { status: "forbidden" };
     }

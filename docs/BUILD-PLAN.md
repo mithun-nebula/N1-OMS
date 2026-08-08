@@ -11,9 +11,9 @@
 > **Locked stack (fully serverless on GCP, Mumbai region):**
 > Next.js (TypeScript) spine on **Cloud Run** (scale-to-zero) · **Supabase** Postgres
 > (ap-south-1) for the connected record + Auth + Storage + Realtime · **Upstash** Redis
-> (serverless) · **Frappe HR forked** and run as containers on **Cloud Run** with its
+> (serverless) · **N1 forked** and run as containers on **Cloud Run** with its
 > always-on parts (scheduler/workers) **externalized to Cloud Scheduler + Cloud Run Jobs**,
-> files on **Cloud Storage** — so nothing of ours runs 24/7. **No VM. No Frappe Cloud.**
+> files on **Cloud Storage** — so nothing of ours runs 24/7. **No VM. No N1 Cloud.**
 > Users on Windows/Linux/Mac open it in a browser; a native mobile client is enabled later
 > by keeping the spine API-first.
 >
@@ -43,11 +43,11 @@
 │   • Daily flow: brief (13) + commitments (14, A) + streak       │
 │   • Background work → Cloud Run Jobs on Cloud Scheduler         │
 └───────┬───────────────────────────────────┬───────────────────┘
-        │  spine calls REST; Frappe UI private │
+        │  spine calls REST; N1 UI private │
 ┌───────▼──────────────────────┐  ┌───────────▼──────────────────┐
-│  MANAGED DATA / STATE          │  │  FRAPPE HR  (YOUR fork)        │
+│  MANAGED DATA / STATE          │  │  N1 HR  (YOUR fork)        │
 │  • Supabase Postgres (Mumbai)  │  │  on Cloud Run, scale-to-zero   │
-│    – spine DB + Frappe DB      │  │  • web: Cloud Run (min-inst=0) │
+│    – spine DB + N1 DB      │  │  • web: Cloud Run (min-inst=0) │
 │  • Supabase Auth / Storage /   │  │  • files: mounted Cloud Storage│
 │    Realtime                     │  │  • scheduler: Cloud Run Job    │
 │  • Upstash Redis (serverless)   │  │    ← Cloud Scheduler (~2 min)  │
@@ -61,19 +61,19 @@
 
 **The one integration rule that must not be bent: the spine is the only writer.**
 No screen, no assistant, and no OSS service ever mutates a record directly. Every change —
-including one that *originates* in Frappe (e.g. a leave balance recalculated) — is expressed
-as an **Operation** and passes the gate. Frappe is the **raw HR/payroll ledger**; the spine is
+including one that *originates* in N1 (e.g. a leave balance recalculated) — is expressed
+as an **Operation** and passes the gate. N1 is the **raw HR/payroll ledger**; the spine is
 the **authority for decisions, workflow and permissions**.
 
-- **Reads** may go to Frappe directly, but always through our field-permission filter
-  (appendix C rules are stricter than Frappe's, and refusal-must-not-disclose is ours).
-- **Writes** always go Operation → Gate → (our handler wraps the Frappe REST call) → recorded.
-- **Frappe's web UI is never exposed to users** — only the spine calls its REST API (VPC
+- **Reads** may go to N1 directly, but always through our field-permission filter
+  (appendix C rules are stricter than N1's, and refusal-must-not-disclose is ours).
+- **Writes** always go Operation → Gate → (our handler wraps the N1 REST call) → recorded.
+- **N1's web UI is never exposed to users** — only the spine calls its REST API (VPC
   connector or an authed private endpoint; service-account credentials, never end-user).
 
 ---
 
-## 2. STACK & HOW FRAPPE IS USED
+## 2. STACK & HOW N1 IS USED
 
 ### 2.1 The locked stack
 
@@ -81,49 +81,49 @@ the **authority for decisions, workflow and permissions**.
 |---|---|---|
 | **Spine + web frontend** | **Next.js (TypeScript) on Cloud Run** | One TS stack end-to-end; serverless, scale-to-zero, pay-per-use; server actions/API routes fit the "three starts → one operation" funnel; great real-time story for chat + live calendar. Deploy via buildpacks (no Dockerfile for the spine). |
 | **Spine DB** | **Supabase Postgres (ap-south-1 Mumbai)** | Managed Postgres for the connected-record layer (02); you also get **Auth** (sign-on), **Storage** (docs, feature 32), **Realtime** (live calendar/brief) for free. |
-| **Frappe DB** | **Supabase Postgres (separate database)** | Frappe supports Postgres; one managed provider, Mumbai region. Avoids Cloud SQL and a VM DB. |
-| **Queue / cache** | **Upstash Redis (serverless)** | Pay-per-request, scale-to-zero — the "Neon of Redis". Holds BullMQ queues (spine) and RQ queues (Frappe). |
-| **HR / payroll / compliance** | **Frappe HR (your fork)** on Cloud Run | Payroll + Indian statutory compliance (PF/ESI/TDS) maintained upstream; you own the source; run headless. |
-| **Frappe files** | **Cloud Storage bucket** mounted as a volume (GCSFuse) | Persistent object storage; survives Cloud Run scale-to-zero; versioned. |
-| **Scheduling** | **Cloud Scheduler → Cloud Run Jobs** | Replaces Frappe's always-on scheduler loop and worker daemons with on-demand jobs → nothing runs 24/7. |
+| **N1 DB** | **Supabase Postgres (separate database)** | N1 supports Postgres; one managed provider, Mumbai region. Avoids Cloud SQL and a VM DB. |
+| **Queue / cache** | **Upstash Redis (serverless)** | Pay-per-request, scale-to-zero — the "Neon of Redis". Holds BullMQ queues (spine) and RQ queues (N1). |
+| **HR / payroll / compliance** | **N1 (your fork)** on Cloud Run | Payroll + Indian statutory compliance (PF/ESI/TDS) maintained upstream; you own the source; run headless. |
+| **N1 files** | **Cloud Storage bucket** mounted as a volume (GCSFuse) | Persistent object storage; survives Cloud Run scale-to-zero; versioned. |
+| **Scheduling** | **Cloud Scheduler → Cloud Run Jobs** | Replaces N1's always-on scheduler loop and worker daemons with on-demand jobs → nothing runs 24/7. |
 | **Compute** | **Cloud Run only (no Compute Engine VM)** | Managed containers; GCP handles restart/autoscale/healing; no OS/SSH/systemd. |
 | **Reverse proxy / TLS** | **Cloud Run custom domain (managed cert)** | Simplest; optional Cloud Load Balancer later. |
 | **Video** | **Google Meet** (likely, per E7) behind a provider-agnostic adapter | Link rules in E7 are ours; provider swappable. *Decision still open.* |
 | **Reasoning / LLM** | Provider-agnostic client (OpenAI / Anthropic / local) | Powers the assistant, document generation (24), standing-rule interpretation (08). *Decision still open.* |
 | **Monitor** | **Cloud Monitoring** uptime checks | Built into GCP; pings `/health`; alerts on downtime. |
 
-### 2.2 How Frappe is used — forked, containerized, always-on parts externalized
+### 2.2 How N1 is used — forked, containerized, always-on parts externalized
 
-The key idea (the lever that makes self-hosted Frappe serverless): **we replace Frappe's
-always-on scheduler and workers with on-demand Cloud Run Jobs.** Then even Frappe's web
+The key idea (the lever that makes self-hosted N1 serverless): **we replace N1's
+always-on scheduler and workers with on-demand Cloud Run Jobs.** Then even N1's web
 service can scale to zero, and nothing of ours runs 24/7.
 
-- **Source is yours** — fork Frappe HR to your own Git; vendor via submodule; rebrand/modify freely. **Keep tracking upstream** (pull regularly) so payroll/statutory law changes flow to you.
+- **Source is yours** — fork N1 to your own Git; vendor via submodule; rebrand/modify freely. **Keep tracking upstream** (pull regularly) so payroll/statutory law changes flow to you.
 - **Web (gunicorn)** → Cloud Run service, `min-instances = 0` (scales to zero; cold-start accepted on first REST call from the spine).
 - **Scheduler** → **Cloud Scheduler (cron) → Cloud Run Job** running `bench scheduler` once every ~2 min, then exits.
 - **Workers (RQ)** → **Cloud Run Job** every ~2–5 min running `bench worker` for a bounded window, then exits. (Or trigger on-demand when work is enqueued for lower latency.)
 - **socketio** → **dropped**; use Supabase Realtime for live updates (calendar/brief).
 - **Files** → mounted **Cloud Storage** bucket (GCSFuse) — persistent across scale-to-zero.
-- **DB** → Frappe on **Supabase Postgres** (separate database from the spine).
-- **Headless** — Frappe's web app is not user-facing; only the spine calls REST.
-- **One Dockerfile** for Frappe (built from the official `frappe-docker` base) → Artifact Registry. The Next.js spine needs none (buildpacks).
+- **DB** → N1 on **Supabase Postgres** (separate database from the spine).
+- **Headless** — N1's web app is not user-facing; only the spine calls REST.
+- **One Dockerfile** for N1 (built from the official `frappe-docker` base) → Artifact Registry. The Next.js spine needs none (buildpacks).
 
-> We do **not** port Frappe to TypeScript. Frappe is a Python *server application* — like
+> We do **not** port N1 to TypeScript. N1 is a Python *server application* — like
 > Postgres is a server you connect to, not code you import. Forking = owning its source; it
 > still runs as Python, in a container on Cloud Run, called via REST. We do **not** use
-> Frappe Cloud (the user's hard constraint), and we use **no VM**.
+> N1 Cloud (the user's hard constraint), and we use **no VM**.
 
 ### 2.3 Decisions — resolved and still-open
 
 **Resolved (this plan assumes them):**
 - ✅ **Spine:** Next.js (TypeScript) on Cloud Run (serverless, scale-to-zero).
-- ✅ **HR backend:** Frappe HR, **our fork**, containerized on Cloud Run (not Frappe Cloud, not a VM); headless.
-- ✅ **Always-on eliminated:** Frappe scheduler/workers externalized to Cloud Scheduler + Cloud Run Jobs.
-- ✅ **Spine DB / Frappe DB:** Supabase Postgres (Mumbai).
+- ✅ **HR backend:** N1, **our fork**, containerized on Cloud Run (not N1 Cloud, not a VM); headless.
+- ✅ **Always-on eliminated:** N1 scheduler/workers externalized to Cloud Scheduler + Cloud Run Jobs.
+- ✅ **Spine DB / N1 DB:** Supabase Postgres (Mumbai).
 - ✅ **Queue:** Upstash Redis (serverless).
 - ✅ **Files:** Cloud Storage.
 - ✅ **Region:** asia-south1 (Mumbai) — latency + Indian data residency.
-- ✅ **Payroll/statutory compliance:** in scope → Frappe's maintained compliance justified.
+- ✅ **Payroll/statutory compliance:** in scope → N1's maintained compliance justified.
 - ✅ **Compute:** Cloud Run only — **no VM**.
 - ✅ **Desktop delivery:** browser web app (Win/Linux/Mac, zero install).
 - ✅ **Mobile:** deferred — spine stays API-first.
@@ -143,7 +143,7 @@ service can scale to zero, and nothing of ours runs 24/7.
 | 01 Specialist assistants | **build** | — |
 | 02 One connected record | **build** (linking layer) | — |
 | 03 Three ways to do everything | **build** | — |
-| 04 Roles & permissions | **build** (appendix C is stricter) | (Frappe perms ignored/overridden) |
+| 04 Roles & permissions | **build** (appendix C is stricter) | (N1 perms ignored/overridden) |
 | 05 Activity record | **build** (once, in the spine) | — |
 | 06 Figures you can question | **build** | — |
 | 07 Personal assistant | **build** | — |
@@ -155,11 +155,11 @@ service can scale to zero, and nothing of ours runs 24/7.
 | 13 Daily briefing | **build** | — |
 | 14 Daily commitments | **build** (appendix A in full) | — |
 | 15 Technology & AI news | **build** | news API (TBD) |
-| **16 Employee records & directory** | **wrap** | **Frappe HR** (Employee) |
-| **17 Leave & attendance** | **wrap** | **Frappe HR** (Leave/Attendance) |
-| **18 Joining & leaving** | **build orchestration** | **Frappe HR** (Onboarding/Offboarding data) |
+| **16 Employee records & directory** | **wrap** | **N1** (Employee) |
+| **17 Leave & attendance** | **wrap** | **N1** (Leave/Attendance) |
+| **18 Joining & leaving** | **build orchestration** | **N1** (Onboarding/Offboarding data) |
 | 19 Course team progress | **build** | — |
-| 20 Who is best for the work | **build** | (reads Frappe Employee skills) |
+| 20 Who is best for the work | **build** | (reads N1 Employee skills) |
 | 21 Capability gaps | **build** | — |
 | 22 Organizational memory | **build** | — |
 | 23 Course building pipeline | **build** | — |
@@ -168,9 +168,9 @@ service can scale to zero, and nothing of ours runs 24/7.
 | 26 Meetings & video calls | **build** | Google Meet adapter (TBD) |
 | 27 Common calendar | **build** (appendix E is custom) | (do NOT reuse ERP calendars) |
 | 28 Meeting decisions carried through | **build** | — |
-| **29 Events** | **build orchestration** | **Frappe/ERPNext** Event model (optional) |
+| **29 Events** | **build orchestration** | **N1/ERPNext** Event model (optional) |
 | 30 Rooms & utilities used | **build** | — |
-| **31 Equipment register** | **wrap** | **Frappe Asset** |
+| **31 Equipment register** | **wrap** | **N1 Asset** |
 | **32 Document storage** | **wrap** | **Supabase Storage / Cloud Storage** |
 | 33 Announcements & policies | **build** | — |
 
@@ -186,48 +186,57 @@ Effort estimates assume a small team (2–4) and are rough. **Phase 1 is load-be
 parallelise past it.** Phases 2/3/4 can run in parallel after Phase 1.
 
 > **Progress (updated 2026-08-07):** Phase 1 spine complete in-memory + RBAC auth + web shell.
-> Phase 0 cloud infra is **not** started. Phases 2 & 3 have early domain operations landed
-> (leave.request, course.updateStage + figures) on the in-memory store; the Frappe-backed
-> record services are pending Phase 0. Phases 4–8 not started. See each checklist for `[x]`.
+> **Phase 0 local skeleton complete (GCP excluded)**: N1 (our Frappe HR fork) vendored as a
+> submodule, typed N1 REST client (service-account) + DocType→record mappings, custom app
+> scaffold, env-swappable provider clients, CI, enriched `/health`. Only GCP
+> provisioning/deploy/monitoring/backup items remain. **Phase 2 People core complete (14/15)**:
+> leave lifecycle, joining (named step-owners), leaving (asset/course handover), separation
+> auto-suspend hook, field-restricted payroll — all through the gate; only the GCP "verify N1
+> background jobs" item remains. Phase 3 has an early course operation + figure. Phases 4–8
+> not started. See each checklist for `[x]`.
 
 ### Phase 0 — GCP project, serverless infra & skeleton  ·  ~1–2 weeks
 **Goal:** stand up the fully-managed serverless stack on GCP Mumbai (no VM).
 
 - Create the GCP project; enable the APIs; pick asia-south1 (Mumbai) for everything.
 - Provision Supabase (Mumbai), Upstash Redis, Cloud Storage; deploy Next.js to Cloud Run.
-- Fork Frappe HR; build its container; deploy web to Cloud Run (scale-to-zero, GCS mounted);
+- Fork N1; build its container; deploy web to Cloud Run (scale-to-zero, GCS mounted);
   wire scheduler/workers as Cloud Scheduler → Cloud Run Jobs.
 - Wire the LLM provider-agnostic client; CI via Cloud Build; seed demo data.
 
 **Build checklist:**
-> Status: cloud/GCP/Frappe infra **not started**. Three interface/seed items landed in-repo (`src/config/providers.ts`, `src/domains/**/seed.ts`).
+> Status: **local skeleton complete (GCP excluded).** N1 vendored as a submodule; typed
+> N1 REST client (service-account auth) + DocType→record mappings landed; provider clients are
+> env-swappable (stubs now, real LLM/Meet later); CI runs lint+typecheck+test+build. **Only the GCP
+> provisioning/deploy/monitoring/backup items remain** (GCP project, Supabase, Cloud Run, Cloud
+> Scheduler, networking, domain, monitoring, backups, Cloud Build auto-deploy).
 
 - [ ] GCP project + billing; enable Cloud Run, Cloud Scheduler, Cloud Build, Artifact Registry, Cloud Storage, Cloud Monitoring, VPC Access
 - [ ] Region fixed: **asia-south1 (Mumbai)** for all resources
-- [ ] Supabase project (ap-south-1 Mumbai): spine Postgres + Frappe Postgres (separate DBs); enable Auth, Storage, Realtime
+- [ ] Supabase project (ap-south-1 Mumbai): spine Postgres + N1 Postgres (separate DBs); enable Auth, Storage, Realtime
 - [ ] Upstash Redis (serverless) — closest region to Mumbai; note the REST/UPSTASH endpoints
-- [ ] Cloud Storage bucket for Frappe files + Supabase Storage bucket for spine docs (versioning on)
+- [ ] Cloud Storage bucket for N1 files + Supabase Storage bucket for spine docs (versioning on)
 - [ ] Next.js (TypeScript) repo; deploy to Cloud Run via buildpacks (no Dockerfile); `/health` endpoint
-- [ ] Fork Frappe HR to your Git; vendor via submodule tracking upstream version branch
-- [ ] Frappe container built from official `frappe-docker` base → Artifact Registry
-- [ ] Deploy Frappe web to Cloud Run (min-instances=0); mount Cloud Storage bucket as a volume
-- [ ] Frappe DB provisioned on Supabase Postgres (Frappe in Postgres mode); `bench migrate`
+- [x] Fork N1 to your Git; vendor via submodule tracking upstream version branch — vendored at `vendor/n1` (upstream `frappe/hrms` `version-16`, v16.15.0); repoint `.gitmodules` to your fork
+- [ ] N1 container built from official `frappe-docker` base → Artifact Registry
+- [ ] Deploy N1 web to Cloud Run (min-instances=0); mount Cloud Storage bucket as a volume
+- [ ] N1 DB provisioned on Supabase Postgres (N1 in Postgres mode); `bench migrate`
 - [ ] Cloud Scheduler → Cloud Run Job: `bench scheduler` every ~2 min (set Job timeout + overlap guard)
 - [ ] Cloud Scheduler → Cloud Run Job: `bench worker` drainer every ~2–5 min (bounded window)
-- [ ] Cloud Run ↔ Frappe networking: VPC connector OR authed private endpoint; Frappe web UI NOT public
-- [ ] Spine → Frappe REST client uses a **service account**, never end-user creds
-- [x] LLM provider-agnostic client interface (provider swappable) — `src/config/providers.ts` (`LlmProvider`)
-- [x] Google Meet adapter interface stub — `src/config/providers.ts` (`VideoProvider`)
+- [ ] Cloud Run ↔ N1 networking: VPC connector OR authed private endpoint; N1 web UI NOT public
+- [x] Spine → N1 REST client uses a **service account**, never end-user creds — `src/config/n1-client.ts` (`token KEY:SECRET`, retry) + `src/domains/people/n1-mapping.ts`
+- [x] LLM provider-agnostic client interface (provider swappable) — `src/config/providers.ts` (`LlmProvider`); `ORG_LLM_PROVIDER` selects stub/dev/real
+- [x] Google Meet adapter interface stub — `src/config/providers.ts` (`VideoProvider`); `ORG_VIDEO_PROVIDER` (real client = GCP service account, later)
 - [ ] Custom domain mapped to Cloud Run (Next.js); managed TLS certificate
-- [ ] Cloud Monitoring uptime checks: spine `/health` + Frappe `/api/method/ping`
-- [ ] Backups: enable Supabase PITR; GCS bucket versioning + lifecycle; periodic Frappe `bench backup` → GCS Job
-- [ ] CI: ESLint, `tsc --noEmit`, Cloud Build auto-deploy on merge
+- [ ] Cloud Monitoring uptime checks: spine `/health` + N1 `/api/method/ping`
+- [ ] Backups: enable Supabase PITR; GCS bucket versioning + lifecycle; periodic N1 `bench backup` → GCS Job
+- [x] CI: ESLint, `tsc --noEmit`, Cloud Build auto-deploy on merge — lint+typecheck+test+build via `.github/workflows/ci.yml` (Cloud Build auto-deploy is the remaining GCP piece)
 - [x] Seed data for demo people (James, Priya, Arun, Meena, Karthik, Divya, Ravi, Naveen) — `src/domains/people/seed.ts`
-- [ ] Verify: spine can call Frappe REST; scheduler Job fires; worker Job drains a test queue
+- [ ] Verify: spine can call N1 REST; scheduler Job fires; worker Job drains a test queue — client unit-tested (auth+retry); live + scheduler/worker verify pending Phase 0 GCP
 
-**Exit:** all-managed stack live in Mumbai — Next.js + Frappe on Cloud Run, Supabase, Upstash,
-GCS, Cloud Scheduler — with no VM; one REST round-trip from spine to Frappe succeeds; backups
-and monitoring verified; no Frappe UI is user-facing.
+**Exit:** all-managed stack live in Mumbai — Next.js + N1 on Cloud Run, Supabase, Upstash,
+GCS, Cloud Scheduler — with no VM; one REST round-trip from spine to N1 succeeds; backups
+and monitoring verified; no N1 UI is user-facing.
 
 ### Phase 1 — The spine: Operations, the Gate, the Record  ·  ~3–4 weeks
 **Goal:** the part the whole architecture depends on. Everything else is a leaf on this.
@@ -240,7 +249,7 @@ and monitoring verified; no Frappe UI is user-facing.
 - **Connected Record / linking layer (02)** — linked people/courses/rooms/equipment/docs/decisions
   so one query crosses them all.
 - **Permission model (04, appendix C)** — role × record × field, applied together; separate
-  view/create/edit/approve/**export**/delete actions (**export ≠ view**). Stricter than Frappe.
+  view/create/edit/approve/**export**/delete actions (**export ≠ view**). Stricter than N1.
 - **Figures-you-can-question (06)** — every stored figure keeps the parts it was computed from.
 
 Surface in this phase: **headless JSON API only** (no UI yet).
@@ -274,39 +283,41 @@ query returns; a stored figure opens into its components.
 > ⚠️ Do not start Phase 2+ until the gate, activity log and permission layer are solid. They
 > are the single funnel point; debt here is fatal.
 
-### Phase 2 — People & HR (Frappe fork, on Cloud Run)  ·  ~3–4 weeks
+### Phase 2 — People & HR (N1 fork, on Cloud Run)  ·  ~3–4 weeks
 **Goal:** the commodity HR/payroll layer, expressed as operations through our gate.
 
-- **16 Employee records & directory** — map Frappe `Employee` → our Record nodes; reads go
+- **16 Employee records & directory** — map N1 `Employee` → our Record nodes; reads go
   through our field-permission filter (pay shows as 🔒 Restricted, never silently missing).
 - **17 Leave & attendance** — a leave request is an Operation; the gate enforces
-  **people ⇒ always ask** even though Frappe could auto-approve. Balance reads come from
-  Frappe (the ledger); the *decision* is ours, recorded.
+  **people ⇒ always ask** even though N1 could auto-approve. Balance reads come from
+  N1 (the ledger); the *decision* is ours, recorded.
 - **18 Joining & leaving** — guided process with **named step-owners** (not a checklist), built
-  on top of Frappe onboarding/offboarding data. Separation date feeds the autonomy engine's
+  on top of N1 onboarding/offboarding data. Separation date feeds the autonomy engine's
   auto-suspend (Phase 6).
 
 **Build checklist:**
-> Status: early domain operations on the in-memory store. Leave + field-filtered directory work end-to-end; everything reading/writing **Frappe** is pending Phase 0. RBAC (6 roles) landed here.
+> Status: **core complete (in-memory)** — leave lifecycle, joining (named step-owners), leaving
+> (asset/course handover), separation auto-suspend hook, and field-restricted payroll, all flowing
+> through the gate. Only the GCP-only "verify N1 background jobs" item remains.
 
-- [ ] Frappe REST client wrapper (auth, retry, typed mappings)
+- [x] N1 REST client wrapper (auth, retry, typed mappings) — `src/config/n1-client.ts` + `n1-mapping.ts` (landed in Phase 0)
 - [x] Employee record → connected-record node mapping — `src/domains/people/seed.ts`
-- [x] Directory read API through our field-permission filter (pay = 🔒 Restricted, never absent) — `GET /api/records/[type]/[id]`
+- [x] Directory read API through our field-permission filter (pay = 🔒 Restricted, never absent) — `GET /api/people/[id]` (+ `/api/records/[type]/[id]`)
 - [x] Leave-request Operation (form + typed now; voice in Phase 7) — `src/domains/people/operations.ts`
 - [x] Gate rule: leave = people ⇒ always ask — category `people` + Gate check 4
-- [ ] Leave balance read-through from Frappe
-- [ ] Leave clash check before routing to approver
-- [ ] Approval flow + decline-with-reason, all recorded
-- [ ] Attendance read-through
-- [ ] Joining process: step-owner model (named owners, not a checklist) + overdue-step chase
-- [ ] Leaving process: outstanding-asset + outstanding-course handover detection
-- [ ] Separation-date hook → stub for autonomy auto-suspend (Phase 6)
-- [ ] Payroll stays in Frappe; field-restricted, never exposed except via permission
-- [ ] Verify Frappe background jobs (emails, payroll runs) process via the worker-drain Cloud Run Job within acceptable latency
-- [x] Tests: restricted user cannot see pay; refusal does not hint existence — `src/server/rbac.test.ts`
+- [x] Leave balance read-through from N1 — `PeopleRecordService.getLeaveBalance` + `GET /api/people/[id]/leave-balance`
+- [x] Leave clash check before routing to approver — `findLeaveClashes` (flagged to approver, not blocking)
+- [x] Approval flow + decline-with-reason, all recorded — `leave.approve` / `leave.decline` (recorded + undoable)
+- [x] Attendance read-through — `PeopleRecordService.listAttendance` + `GET /api/people/[id]/attendance`
+- [x] Joining process: step-owner model (named owners, not a checklist) + overdue-step chase — `joining.start` / `joining.completeStep` (allowedActors grant) + `findOverdueSteps`
+- [x] Leaving process: outstanding-asset + outstanding-course handover detection — `leaving.start` (detects via graph traverse) + `leaving.completeHandover` (reassigns, recorded + undoable)
+- [x] Separation-date hook → stub for autonomy auto-suspend (Phase 6) — `leaving.applySeparation` (category `leaving-org`, sets `suspendedRules`; never auto-graduates)
+- [x] Payroll stays in N1; field-restricted, never exposed except via permission — `PeopleRecordService.listPaySlips` + `GET /api/people/[id]/payslips` (hr/admin/self only); pay 🔒 for everyone else
+- [ ] Verify N1 background jobs (emails, payroll runs) process via the worker-drain Cloud Run Job within acceptable latency — GCP (Phase 0)
+- [x] Tests: restricted user cannot see pay; refusal does not hint existence — `src/server/rbac.test.ts` + `src/domains/people/*.test.ts`
 
 **Exit:** directory browse, leave request→approval, and an onboarding step-owner chase all
-work through the gate; a restricted user cannot see pay; Frappe's web UI is not in the path.
+work through the gate; a restricted user cannot see pay; N1's web UI is not in the path.
 
 ### Phase 3 — Course work domain  ·  ~3–4 weeks
 **Goal:** the organisation's core differentiator on the course side. Entirely ours.
@@ -344,9 +355,9 @@ with its reasoning.
 - **26 Meetings & video calls** — one instruction → time/room/link/invites; immutable link (E7).
 - **27 Common calendar** — appendix E **in full**: month-only, open-to-all, **notify + record +
   undo (all three required, atomic)**. Custom — do NOT reuse an ERP calendar.
-- **28 Meeting decisions carried through** · **29 Events** (orchestration over optional Frappe
+- **28 Meeting decisions carried through** · **29 Events** (orchestration over optional N1
   Event data) · **30 Rooms & utilities used** (short-question capture, 2/day-limited) ·
-  **31 Equipment register** (wrap Frappe Asset; voice fault reports) · **32 Document storage**
+  **31 Equipment register** (wrap N1 Asset; voice fault reports) · **32 Document storage**
   (Supabase/Cloud Storage, versioned, role-access; knows required-vs-supplied) ·
   **33 Announcements & policies** (per-person acknowledgement).
 
@@ -373,7 +384,7 @@ with its reasoning.
 - [ ] Events: tasks/budget/suppliers/speakers/registrations/materials/closing-report
 - [ ] Overdue-task + registration-pacing detection
 - [ ] Rooms/utilities-used: one short-question capture (within the 2/day limit)
-- [ ] Equipment register: wrap Frappe Asset; fault Operation (voice-ready)
+- [ ] Equipment register: wrap N1 Asset; fault Operation (voice-ready)
 - [ ] Repeat-fault detection ("three times this month")
 - [ ] Document storage: Supabase Storage / Cloud Storage, versioned, role-access metadata
 - [ ] Required-vs-supplied doc tracking + expiry raising ("insurance cert expires in 30 days")
@@ -463,7 +474,7 @@ assistant never comments on the person or compares people.
 
 **Exit:** a supervised rule correctly graduates after 10 clean approvals; a money-touching
 variant is refused graduation; the graduated rule auto-suspends when its author's role is
-downgraded in Frappe.
+downgraded in N1.
 
 ### Phase 7 — Voice, web surfaces & polish  ·  ~3–4 weeks
 **Goal:** three ways to do everything, on real screens, in a browser.
@@ -512,7 +523,7 @@ downgraded in Frappe.
 - [ ] Cloud Run tuning: concurrency, timeout, max-instances, min-instances per service
 - [ ] Cold-start mitigation (periodic warm ping via Cloud Scheduler if latency demands)
 - [ ] Cloud Run Job timeouts + scheduler-overlap guard (idempotent ticks)
-- [ ] Supabase PITR verified + a real restore drill (spine DB + Frappe DB)
+- [ ] Supabase PITR verified + a real restore drill (spine DB + N1 DB)
 - [ ] GCS / Supabase Storage versioning + lifecycle policies
 - [ ] Activity-log immutability guarantee (append-only, tamper-evident hashing)
 - [ ] Payroll/compliance verification vs the org's actual statutory requirements
@@ -533,19 +544,19 @@ No VM, no OS, no systemd. Resilience is the cloud platform's job, in three layer
 | Worry | Managed resolution |
 |---|---|
 | A container crashes | **Cloud Run auto-restarts** failed/evicted instances; new instance spun up on next request |
-| Traffic spike | **Cloud Run autoscales** (configured max-instances); spine + Frappe scale independently |
+| Traffic spike | **Cloud Run autoscales** (configured max-instances); spine + N1 scale independently |
 | "How do I know it went down?" | **Cloud Monitoring** uptime checks ping `/health` every minute → alert (email/Pub/Sub) |
 | "What did it do before dying?" | **Cloud Logging** — structured logs, retained, searchable (no journald/files to lose) |
 | DB failure / data loss | **Supabase PITR** (point-in-time recovery) + **Cloud Storage versioning** |
 | Whole-region failure | Restore DBs from Supabase backup + redeploy Cloud Run services in another region (disaster-recovery runbook) |
-| A Frappe scheduler tick overruns | Cloud Run **Job timeout** kills it; ticks are **idempotent**; next tick resumes |
+| A N1 scheduler tick overruns | Cloud Run **Job timeout** kills it; ticks are **idempotent**; next tick resumes |
 
-**Cost shape:** pay-per-use. The Next.js spine and Frappe web scale to zero between requests;
+**Cost shape:** pay-per-use. The Next.js spine and N1 web scale to zero between requests;
 you pay for the managed DBs (Supabase always-on instance — the one always-on cost, but managed),
 Cloud Storage, and per-invocation Cloud Run Jobs/requests. No idle VM.
 
-**Escape hatch:** if the externalized-Frappe-on-Cloud-Run assembly ever proves too fragile, the
-*same Frappe fork* can move to a single Compute Engine VM (its standard install) without
+**Escape hatch:** if the externalized-N1-on-Cloud-Run assembly ever proves too fragile, the
+*same N1 fork* can move to a single Compute Engine VM (its standard install) without
 changing the spine — one config swap. The spine stays serverless regardless.
 
 ---
@@ -555,13 +566,13 @@ changing the spine — one config swap. The spine stays serverless regardless.
 | Risk | Mitigation |
 |---|---|
 | **Gate becomes a bottleneck / single point of failure.** It is the hottest path. | Keep the six checks cheap and stateless where possible; Cloud Run autoscaling; load-test in Phase 8. |
-| **Frappe drifts from our permission model.** Frappe's perms are looser than appendix C. | Our field-permission layer is the *only* one user-facing; Frappe perms used only for raw-data scoping, never disclosure. |
-| **Cold-start latency on Frappe web** after scale-to-zero (seconds). | Spine calls it server-side (users don't hit it directly); add a periodic warm ping if latency-sensitive. |
+| **N1 drifts from our permission model.** N1's perms are looser than appendix C. | Our field-permission layer is the *only* one user-facing; N1 perms used only for raw-data scoping, never disclosure. |
+| **Cold-start latency on N1 web** after scale-to-zero (seconds). | Spine calls it server-side (users don't hit it directly); add a periodic warm ping if latency-sensitive. |
 | **Background-job latency** (minutes) from periodic worker-drain Jobs. | Acceptable for HR (emails, payroll, recalc); tune drain frequency; trigger on-demand for time-sensitive work. |
-| **Scheduler-overlap / killed ticks** in Cloud Run Jobs. | Make ticks **idempotent**; set Job timeouts; run every ~2 min; verify Frappe's scheduler locking. |
-| **Non-standard Frappe deployment** (split across Cloud Run + GCS + Jobs). | Document the assembly; keep the Frappe fork close to upstream so official fixes apply; know the VM escape hatch exists. |
-| **Vendored Frappe falling behind upstream** (payroll law changes missed). | Submodule tracks upstream; scheduled (monthly) pull + `bench migrate`; payroll compliance is the strongest reason to stay current. |
-| **"Two databases" (spine Postgres + Frappe Postgres).** | Both on Supabase, separate databases; clear ownership — spine = connected record/decisions/activity log; Frappe = raw HR/payroll. Spine is the only writer across both. |
+| **Scheduler-overlap / killed ticks** in Cloud Run Jobs. | Make ticks **idempotent**; set Job timeouts; run every ~2 min; verify N1's scheduler locking. |
+| **Non-standard N1 deployment** (split across Cloud Run + GCS + Jobs). | Document the assembly; keep the N1 fork close to upstream so official fixes apply; know the VM escape hatch exists. |
+| **Vendored N1 falling behind upstream** (payroll law changes missed). | Submodule tracks upstream; scheduled (monthly) pull + `bench migrate`; payroll compliance is the strongest reason to stay current. |
+| **"Two databases" (spine Postgres + N1 Postgres).** | Both on Supabase, separate databases; clear ownership — spine = connected record/decisions/activity log; N1 = raw HR/payroll. Spine is the only writer across both. |
 | **Daily commitments (A) under-built.** Most rule-dense feature; users resent it if wrong. | Phase 5 is ring-fenced; implement A2–A9 edge cases with tests before any UI polish. |
 | **LLM provider lock-in / cost.** | Provider-agnostic client from Phase 0; assistant routing/boundaries are ours, not the model's. |
 | **Autonomy graduating something it shouldn't.** | Three never-graduate categories are hard-coded gate rules, not LLM judgement; cap-and-suspend automatic. |
@@ -593,7 +604,7 @@ itself; the morning brief replaces the standup).
 |---|---|---|
 | 0 GCP serverless infra & skeleton | 1–2 | — |
 | 1 The spine (gate/record/log) | 3–4 | 0 |
-| 2 People & HR (Frappe fork on Cloud Run) | 3–4 | 1 |
+| 2 People & HR (N1 fork on Cloud Run) | 3–4 | 1 |
 | 3 Course work | 3–4 | 1 |
 | 4 Workplace (rooms/meetings/calendar/events/docs) | 4–5 | 1 |
 | 5 Assistant & daily flow | 4–5 | 2, 3, 4 |

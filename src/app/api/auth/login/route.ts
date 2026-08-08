@@ -5,6 +5,7 @@ import {
   SESSION_MAX_AGE,
 } from "@/server/auth";
 import { verifyCredentials } from "@/server/accounts";
+import { env } from "@/config/env";
 
 export const dynamic = "force-dynamic";
 
@@ -30,7 +31,7 @@ export async function POST(request: Request) {
   res.cookies.set(SESSION_COOKIE, token, {
     httpOnly: true,
     sameSite: "lax",
-    secure: process.env.NODE_ENV === "production",
+    secure: env().isProduction,
     path: "/",
     maxAge: SESSION_MAX_AGE,
   });

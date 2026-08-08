@@ -41,6 +41,16 @@ const SEED_COURSES: SeedCourse[] = [
     stage: "outline",
     modules: [{ name: "Intro", state: "not-started" }],
   },
+  {
+    id: "ai-basics",
+    title: "AI Basics",
+    owner: "meena",
+    stage: "published",
+    modules: [
+      { name: "Intro", state: "published" },
+      { name: "Foundations", state: "published" },
+    ],
+  },
 ];
 
 export function seedCourse(ctx: DomainContext): void {

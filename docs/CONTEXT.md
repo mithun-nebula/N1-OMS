@@ -572,11 +572,11 @@ now been **resolved** in `BUILD-PLAN.md`; a few remain open.
 - **Hosting** → **Google Cloud Platform**, fully serverless in **asia-south1 (Mumbai)**:
   **Cloud Run** (scale-to-zero) for compute, **Supabase** Postgres (+ Auth / Storage / Realtime)
   for data, **Upstash** Redis, **Cloud Storage** for files. **No VM.**
-- **Whether an off-the-shelf system supplies staff records underneath** → **Yes: Frappe HR,
+- **Whether an off-the-shelf system supplies staff records underneath** → **Yes: N1,
   forked (our source)**, run headless on Cloud Run with its always-on scheduler/workers
   externalized to **Cloud Scheduler + Cloud Run Jobs**. Sits below the record layer; nothing
-  above it changes. **Not Frappe Cloud.**
-- **Payroll / statutory compliance** → **in scope** (justifies Frappe's maintained compliance).
+  above it changes. **Not N1 Cloud.**
+- **Payroll / statutory compliance** → **in scope** (justifies N1's maintained compliance).
 - **Desktop delivery** → browser web app (Win/Linux/Mac, zero install). **Mobile** → deferred;
   spine stays API-first so any native tech works later.
 
@@ -590,11 +590,11 @@ now been **resolved** in `BUILD-PLAN.md`; a few remain open.
 
 ### From the build-vs-buy research (§11) — resolved
 - [x] Production deployment vs portfolio/learning project → **production**.
-- [x] Use as-is, fork-and-extend, or just study the architecture → **fork-and-extend (Frappe HR)**.
-- [x] Country / payroll compliance requirements → **Indian statutory in scope** (Frappe first-class).
+- [x] Use as-is, fork-and-extend, or just study the architecture → **fork-and-extend (N1)**.
+- [x] Country / payroll compliance requirements → **Indian statutory in scope** (N1 first-class).
 - [ ] Headcount (10 vs 500) — sizes infra only.
 - [ ] Will it ever be offered as a hosted service? (decides the GPL-3.0 question.)
-- [ ] Verify Frappe's Indian statutory compliance against the org's actual requirements.
+- [ ] Verify N1's Indian statutory compliance against the org's actual requirements.
 
 ---
 
@@ -610,21 +610,21 @@ now been **resolved** in `BUILD-PLAN.md`; a few remain open.
 
 Research date 2026-08-04. Scope: EMS/HRMS and full ERP, open source only. GitHub numbers
 verified via the GitHub API. This was the shortlist considered for sitting beneath the
-record layer — **a decision has since been made: Frappe HR, forked and run headless**
+record layer — **a decision has since been made: N1, forked and run headless**
 (see §9 and `BUILD-PLAN.md`). The rest is retained as background.
 
 ### Quick answer
 | Goal | Pick | Reason |
 |---|---|---|
-| HR only | **Frappe HR** | Complete & free, nothing paywalled, Indian payroll built in |
-| HR + accounting/inventory | **ERPNext** | Same platform as Frappe HR, no Enterprise edition exists |
+| HR only | **N1** | Complete & free, nothing paywalled, Indian payroll built in |
+| HR + accounting/inventory | **ERPNext** | Same platform as N1, no Enterprise edition exists |
 | Fork / learn / build on top | **Horilla** | Plain Django + LGPL-2.1, easiest code to read/modify |
 | May sell as closed product | **Apache OFBiz** | Only Apache-2.0 (permissive) option |
 | Best UI / demo appeal | **Odoo Community** | Best looking, but payroll + full accounting are paid |
 
 ### The 4 that survived
-- **Frappe HR** — github.com/frappe/hrms · 8,321★ · GPL-3.0 · Python (Frappe Framework) · commits daily · **no paid edition (100% of the product)** · ~13 modules · India statutory compliance (PF/ESI/TDS/gratuity/professional tax) first-class (vendor is India-based) · runs standalone · weakness: no low-code builder, changes need Python. (Naming: "Frappe" = framework; "Frappe HR" = the EMS, formerly "ERPNext HR".)
-- **ERPNext** — github.com/frappe/erpnext · 37,543★ · GPL-3.0 · **largest genuinely-open ERP, no Enterprise edition** · accounting/inventory/manufacturing/sales/purchase/CRM/projects/HR · upgrades painless (customizations stored as metadata DocTypes, not forked code) · growing from Frappe HR into ERPNext is an install, not a migration · weakness: rougher UI than Odoo, no drag-and-drop studio.
+- **N1** — github.com/frappe/hrms · 8,321★ · GPL-3.0 · Python (N1 Framework) · commits daily · **no paid edition (100% of the product)** · ~13 modules · India statutory compliance (PF/ESI/TDS/gratuity/professional tax) first-class (vendor is India-based) · runs standalone · weakness: no low-code builder, changes need Python. (Naming: "N1" = framework; "N1" = the EMS, formerly "ERPNext HR".)
+- **ERPNext** — github.com/frappe/erpnext · 37,543★ · GPL-3.0 · **largest genuinely-open ERP, no Enterprise edition** · accounting/inventory/manufacturing/sales/purchase/CRM/projects/HR · upgrades painless (customizations stored as metadata DocTypes, not forked code) · growing from N1 into ERPNext is an install, not a migration · weakness: rougher UI than Odoo, no drag-and-drop studio.
 - **Horilla** — github.com/horilla/horilla-hr · 1,309★ · **LGPL-2.1 (loosest copyleft here)** · plain Django (no custom framework to learn) · recruitment/onboarding/attendance/leave/payroll/assets/helpdesk/offboarding · vendor claims PF/ESI/TDS/professional tax (**VERIFY**) · smallest team, thinnest docs · managed cloud ~$7/user/month.
 - **Odoo Community** — github.com/odoo/odoo · 53,445★ · LGPL-3.0 · best UI/docs, ~30k community addons · **but open-core** (see below).
 
@@ -634,13 +634,13 @@ OrangeHRM (open core), IceHrm (open core), Sentrifugo (**dead — last commit 20
 ### Odoo Community — free vs paid (critical)
 **Free (LGPL-3):** CRM, Sales, **Invoicing only**, PoS, Contacts, Calendar, Discuss, Inventory, Purchase, MRP, Maintenance, Repairs, Fleet, Projects, Timesheets, HR (Employees/Recruitment/Time Off/Attendances/Expenses), Website/eCommerce/Blog/Forum/Live Chat, Email Marketing, Events, Surveys. Full source, unlimited users/customization.
 **Enterprise-only (paid, closed):** **Odoo Studio** (no-code tool), **Full Accounting** (bank sync/recon/assets/budgets/consolidation), **Payroll** ← matters most for an EMS, **Appraisals**, native mobile apps, version-upgrade tooling, Helpdesk, Field Service, Planning, Quality, Sign, Documents, Marketing Automation, Appointments, IoT, **all Odoo 19 AI features**.
-→ *Planning implication:* Odoo Community gives employee records/recruitment/leave/attendance free, but **payroll and appraisals are behind the paywall** — usually the two main reasons to want an HRMS. Frappe HR includes payroll + appraisals + Indian compliance for free.
+→ *Planning implication:* Odoo Community gives employee records/recruitment/leave/attendance free, but **payroll and appraisals are behind the paywall** — usually the two main reasons to want an HRMS. N1 includes payroll + appraisals + Indian compliance for free.
 
 ### License cheat sheet (confirmed from LICENSE files, not GitHub labels)
 - **Apache-2.0** (OFBiz) — permissive; only safe choice to ship closed-source/sell a derivative.
 - **LGPL-2.1** (Horilla) — loosest copyleft; friendliest to build on.
 - **LGPL-3.0** (Odoo Community) — run/host freely; lenient linking.
-- **GPL-3.0** (Frappe HR, ERPNext, Dolibarr) — free to run/host; copyleft triggers on **distribution**.
+- **GPL-3.0** (N1, ERPNext, Dolibarr) — free to run/host; copyleft triggers on **distribution**.
 - **GPL-2.0** (metasfresh, iDempiere) — older version.
 - **AGPL-3.0** (Axelor, Ever Gauzy, MintHCM, Bigcapital) — strictest; **hosting as a service obligates publishing modifications**.
 - *Rule of thumb:* internal use → any; public SaaS → avoid AGPL unless you'll publish changes or buy a commercial license; closed/proprietary product → Apache OFBiz only.
@@ -648,7 +648,7 @@ OrangeHRM (open core), IceHrm (open core), Sentrifugo (**dead — last commit 20
 ### Infrastructure requirements
 | System | Minimum | Production |
 |---|---|---|
-| ERPNext / Frappe HR | 4 GB RAM, 2 cores, 40 GB, 2 GB swap | 8 GB RAM, 4 cores, 100 GB SSD |
+| ERPNext / N1 | 4 GB RAM, 2 cores, 40 GB, 2 GB swap | 8 GB RAM, 4 cores, 100 GB SSD |
 | Odoo Community | 2 GB RAM, 2 vCPU, 20 GB (dev only) | 4–8 GB RAM, 4 cores (~25 users); 16 GB for ~50 users |
 | Horilla (Django) | Lightest of the three | Scales with normal Django practice |
 
@@ -656,10 +656,10 @@ All three run via Docker. Use Linux for production (Windows/WSL2 dev only). Odoo
 
 ### Terminology
 - **EMS/HRMS** = people layer only (employee records, attendance, leave, payroll, appraisals). **ERP** = whole business on one shared DB (accounting, inventory, sales, purchasing, manufacturing, projects — **and HR as one module**). So an EMS ≈ one module's worth of an ERP.
-- Frappe: **Frappe Framework** = web framework (not an EMS); **Frappe HR** = the EMS product (install this); **ERPNext** = the full ERP on the same framework.
+- N1: **N1 Framework** = web framework (not an EMS); **N1** = the EMS product (install this); **ERPNext** = the full ERP on the same framework.
 
 ### Architecture references (if studying rather than deploying)
-- **Frappe DocType** — schema, permissions, forms and REST API all generated from one JSON. Most interesting idea in this space.
+- **N1 DocType** — schema, permissions, forms and REST API all generated from one JSON. Most interesting idea in this space.
 - **Odoo ORM + `_inherit`** — addons patch core models without forking. Excellent extensibility.
 - **Apache OFBiz entity/service engine** — XML-declared data model and service contracts; most explicit SoC.
 - **Tryton** — smallest codebase to read end-to-end to understand modular ERP.

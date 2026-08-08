@@ -1,0 +1,13 @@
+[project]
+name = "n1-custom"
+version = "0.1.0"
+description = "Organization A customizations for the N1 HR/payroll backend (fork of Frappe HR)."
+readme = "README.md"
+requires-python = ">=3.10"
+
+[build-system]
+requires = ["setuptools"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+packages = ["n1_custom"]
