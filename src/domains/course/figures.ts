@@ -34,3 +34,12 @@ export function courseCompletionFigure(
     sourceNodeId: course.id,
   };
 }
+
+export function recomputeCompletion(
+  store: FigureStore,
+  course: { id: NodeId; title: string; modules: CourseModule[] },
+): Figure {
+  const figure = courseCompletionFigure(store, course);
+  store.replace(figure);
+  return figure;
+}

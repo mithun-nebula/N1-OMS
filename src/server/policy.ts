@@ -27,6 +27,7 @@ const MANAGED_NODE_TYPES = [
   "course",
   "onboarding",
   "offboarding",
+  "org-memory",
 ];
 
 function superAdminRules(): PermissionRule[] {
@@ -160,6 +161,34 @@ export const DEMO_PERMISSION_RULES: PermissionRule[] = [
     nodeType: "offboarding",
     actions: ["view"],
     recordScope: { kind: "self" },
+    fields: { kind: "all-visible" },
+  },
+  {
+    role: "hr",
+    nodeType: "org-memory",
+    actions: ["view", "create"],
+    recordScope: { kind: "all" },
+    fields: { kind: "all-visible" },
+  },
+  {
+    role: "manager",
+    nodeType: "org-memory",
+    actions: ["view", "create"],
+    recordScope: { kind: "all" },
+    fields: { kind: "all-visible" },
+  },
+  {
+    role: "employee",
+    nodeType: "org-memory",
+    actions: ["view"],
+    recordScope: { kind: "all" },
+    fields: { kind: "all-visible" },
+  },
+  {
+    role: "intern",
+    nodeType: "org-memory",
+    actions: ["view"],
+    recordScope: { kind: "all" },
     fields: { kind: "all-visible" },
   },
 ];

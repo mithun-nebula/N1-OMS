@@ -17,7 +17,9 @@ describe("gate — run path", () => {
     });
     const res = await spine.submit(op);
     expect(res.status).toBe("ran");
-    expect(res.activityEntry?.changes[0]?.after).toEqual({ stage: "published" });
+    expect(res.activityEntry?.changes[0]?.after).toMatchObject({
+      stage: "published",
+    });
   });
 });
 

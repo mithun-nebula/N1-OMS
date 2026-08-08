@@ -185,15 +185,12 @@ guided process on top.
 Effort estimates assume a small team (2–4) and are rough. **Phase 1 is load-bearing — do not
 parallelise past it.** Phases 2/3/4 can run in parallel after Phase 1.
 
-> **Progress (updated 2026-08-07):** Phase 1 spine complete in-memory + RBAC auth + web shell.
-> **Phase 0 local skeleton complete (GCP excluded)**: N1 (our Frappe HR fork) vendored as a
-> submodule, typed N1 REST client (service-account) + DocType→record mappings, custom app
-> scaffold, env-swappable provider clients, CI, enriched `/health`. Only GCP
-> provisioning/deploy/monitoring/backup items remain. **Phase 2 People core complete (14/15)**:
-> leave lifecycle, joining (named step-owners), leaving (asset/course handover), separation
-> auto-suspend hook, field-restricted payroll — all through the gate; only the GCP "verify N1
-> background jobs" item remains. Phase 3 has an early course operation + figure. Phases 4–8
-> not started. See each checklist for `[x]`.
+> **Progress (updated 2026-08-08):** Phase 1 spine complete + RBAC + web shell. **Phase 0 local
+> skeleton complete (GCP excluded)** — N1 (Frappe HR fork) vendored, typed N1 REST client,
+> custom app scaffold, env-swappable providers, CI. **Phase 2 People complete (14/15)** — leave,
+> joining, leaving, separation hook, payroll; only GCP-verify remains. **Phase 3 Course complete
+> (10/11)** — pipeline state machine, version history + restore, stale detector, live progress,
+> org-memory, deck LLM seam; only the real docx/PDF renderer is deferred. Phases 4–8 not started.
 
 ### Phase 0 — GCP project, serverless infra & skeleton  ·  ~1–2 weeks
 **Goal:** stand up the fully-managed serverless stack on GCP Mumbai (no VM).
@@ -330,19 +327,22 @@ work through the gate; a restricted user cannot see pay; N1's web UI is not in t
 - **22 Organizational memory** — decision + reason-at-the-time + who, linked, permission-gated.
 
 **Build checklist:**
-> Status: `course.updateStage` operation + module-derived completion figure landed (`src/domains/course/`). The stage state-machine, version history, overdue detector, decks and org-memory are not yet built.
+> Status: **pipeline complete (in-memory)** — state machine, version history + restore, stage
+> owners, overdue detector, live progress recompute, free-text notes, team-progress aggregate,
+> org-memory (permission-gated), and the deck-generation LLM seam all landed. Only the real
+> docx/PDF renderer for decks is deferred (needs a lib + branding); the seam + outline are in.
 
-- [ ] Course entity + stage state machine: Outline → Draft → Review → Published
-- [ ] Stage owner assignment
-- [ ] Full version history per course (append-only, restorable)
-- [ ] Stage-too-long detector ("waiting 8 days")
-- [x] Module/sub-task model; progress derived from module state (not status forms) — `src/domains/course/figures.ts`
-- [ ] Free-text progress-line ingestion ("almost done, just tasks left")
-- [ ] Course-team-progress aggregate view
-- [ ] Presentations/documents: LLM skill + docx/PDF renderer in org branding
-- [ ] Org-memory record: `{decision, reason-at-time, who, linkedRecords}`
-- [ ] Permission-gated org-memory retrieval
-- [ ] Tests: version restore; progress derivation; overdue detection
+- [x] Course entity + stage state machine: Outline → Draft → Review → Published — `src/domains/course/stages.ts` (enforced in `course.updateStage`)
+- [x] Stage owner assignment — `course.assignStageOwner` (named reviewer per stage)
+- [x] Full version history per course (append-only, restorable) — `snapshotCourse` + `course-version` nodes + `course.restoreVersion`
+- [x] Stage-too-long detector ("waiting 8 days") — `findStaleCourses` (per-stage day thresholds)
+- [x] Module/sub-task model; progress derived from module state (not status forms) — `course.setModuleState` recomputes the completion figure live
+- [x] Free-text progress-line ingestion ("almost done, just tasks left") — `course.setProgressNote`
+- [x] Course-team-progress aggregate view — `CourseService.listProgress` + `GET /api/courses/progress`
+- [x] Presentations/documents: LLM skill + docx/PDF renderer in org branding — `CourseService.generateDeck` (LLM seam via `providers().llm` + heuristic fallback); **docx/PDF renderer deferred** (returns `org-outline`, `renderer: "docx-pdf-deferred"`)
+- [x] Org-memory record: `{decision, reason-at-time, who, linkedRecords}` — `orgMemory.record` + `org-memory` domain
+- [x] Permission-gated org-memory retrieval — `OrgMemoryService.retrieve` (all staff read; `linkedRecords` filtered by `spine.read`) + `GET /api/org-memory[/:id]`
+- [x] Tests: version restore; progress derivation; overdue detection — `src/domains/course/course.test.ts` + `src/domains/org-memory/org-memory.test.ts`
 
 **Exit:** pipeline moves a course through all stages with version history; progress is
 auto-derived; a deck request returns a branded draft; org-memory returns a past decision

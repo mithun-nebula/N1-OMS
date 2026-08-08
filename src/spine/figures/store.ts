@@ -18,6 +18,21 @@ export class InMemoryFigureStore implements FigureStore {
     this.byRecord.set(key, list);
   }
 
+  replace(figure: Figure): void {
+    const key = recordKey(figure.sourceNodeType, figure.sourceNodeId);
+    const existing = this.byRecord.get(key) ?? [];
+    for (const old of existing) {
+      if (old.label === figure.label && old.id !== figure.id) {
+        this.byId.delete(old.id);
+      }
+    }
+    const kept = existing.filter(
+      (f) => !(f.label === figure.label && f.id !== figure.id),
+    );
+    this.byRecord.set(key, kept);
+    this.put(figure);
+  }
+
   get(id: string): Figure | undefined {
     return this.byId.get(id);
   }

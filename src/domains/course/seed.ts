@@ -6,6 +6,7 @@ interface SeedCourse {
   title: string;
   owner: string;
   stage: string;
+  stageEnteredAt: string;
   modules: CourseModule[];
 }
 
@@ -15,6 +16,7 @@ const SEED_COURSES: SeedCourse[] = [
     title: "AI for Presentations",
     owner: "priya",
     stage: "review",
+    stageEnteredAt: "2026-07-20",
     modules: [
       { name: "Intro", state: "published" },
       { name: "Tools", state: "published" },
@@ -28,6 +30,7 @@ const SEED_COURSES: SeedCourse[] = [
     title: "AI for Data Analysis",
     owner: "priya",
     stage: "draft",
+    stageEnteredAt: "2026-08-01",
     modules: [
       { name: "Intro", state: "published" },
       { name: "Sheets", state: "draft" },
@@ -39,6 +42,7 @@ const SEED_COURSES: SeedCourse[] = [
     title: "Spreadsheet Automation",
     owner: "karthik",
     stage: "outline",
+    stageEnteredAt: "2026-08-04",
     modules: [{ name: "Intro", state: "not-started" }],
   },
   {
@@ -46,6 +50,7 @@ const SEED_COURSES: SeedCourse[] = [
     title: "AI Basics",
     owner: "meena",
     stage: "published",
+    stageEnteredAt: "2026-06-01",
     modules: [
       { name: "Intro", state: "published" },
       { name: "Foundations", state: "published" },
@@ -59,7 +64,9 @@ export function seedCourse(ctx: DomainContext): void {
     ctx.graph.putNode("course", course.id, {
       title: course.title,
       stage: course.stage,
+      stageEnteredAt: course.stageEnteredAt,
       owner: course.owner,
+      stageOwners: {},
       modules: course.modules,
     });
     ctx.graph.addEdge({ from: course.owner, to: course.id, type: "writes" });

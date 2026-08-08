@@ -21,6 +21,7 @@ export interface Figure {
 
 export interface FigureStore {
   put(figure: Figure): void;
+  replace(figure: Figure): void;
   get(id: string): Figure | undefined;
   forRecord(nodeType: string, nodeId: NodeId, label?: string): Figure[];
   breakdown(id: string): { figure: Figure; parts: FigurePart[] } | undefined;
