@@ -191,7 +191,7 @@
 
 ---
 
-## Summary
+## Summary — App UI gaps
 
 | Category | Items | Backend ready? |
 |---|---|---|
@@ -199,4 +199,206 @@
 | Medium — feature pages | 7 | ✅ all backend exists |
 | Medium — page editing | 5 | ✅ all backend exists |
 | Low — polish | 9 | Mostly frontend |
-| **Total** | **26** | |
+| **Subtotal** | **26** | |
+
+---
+
+## N1 (Frappe HR) — DocType gaps
+
+N1 has **161 DocTypes**. We've mapped **3** (Employee, Leave Application, Attendance).
+Each unmapped DocType needs: a mapping in `n1-mapping.ts`, permission rules in
+`policy.ts`, optionally custom operations, and a UI page.
+
+### What we've mapped (3 of 161)
+
+| N1 DocType | Our node type | Status |
+|---|---|---|
+| `Employee` | `employee` | ✅ mapped + UI (directory, dashboard) |
+| `Leave Application` | `leave` | ✅ mapped + operations (request/approve/decline) |
+| `Attendance` | `attendance` | ✅ mapped + read-through |
+| `Salary Slip` | `payslip` | ⚠️ referenced in service but not mapped in `n1-mapping.ts` |
+
+---
+
+### Critical — Payroll & Indian statutory (46 DocTypes)
+
+Cannot run an organisation without these. Every one is available via N1 REST.
+
+- [ ] **Salary structures** — `Salary Structure`, `Salary Component`, `Salary Detail`,
+      `Salary Structure Assignment`, `Bulk Salary Structure Assignment`
+      Define pay grades, components (basic, HRA, allowances, deductions), assign to employees.
+- [ ] **Payslip generation** — `Salary Slip`, `Payroll Entry`, `Payroll Period`,
+      `Payroll Period Date`, `Payroll Settings`
+      Monthly payroll runs, automated payslip creation, posting to accounting.
+- [ ] **Indian income tax** — `Income Tax Slab`, `Income Tax Slab Other Charges`,
+      `Taxable Salary Slab`, `Employee Tax Exemption Declaration`,
+      `Employee Tax Exemption Declaration Category`, `Employee Tax Exemption Category`,
+      `Employee Tax Exemption Sub Category`, `Employee Tax Exemption Proof Submission`,
+      `Employee Tax Exemption Proof Submission Detail`
+      TDS calculation, 80C/80D/HRA exemptions, old vs new regime, proof collection.
+- [ ] **Gratuity** — `Gratuity`, `Gratuity Rule`, `Gratuity Rule Slab`,
+      `Gratuity Applicable Component`
+      Gratuity accrual & calculation per Payment of Gratuity Act.
+- [ ] **Benefits** — `Employee Benefit Application`, `Employee Benefit Application Detail`,
+      `Employee Benefit Claim`, `Employee Benefit Detail`, `Employee Benefit Ledger`
+      Medical reimbursement, LTA, flexi-benefits.
+- [ ] **Additional compensation** — `Additional Salary`, `Arrear`, `Retention Bonus`,
+      `Employee Incentive`, `Overtime Slip`, `Overtime Type`,
+      `Overtime Details`, `Overtime Salary Component`
+      One-off payments, arrears correction, retention/incentive bonuses, overtime.
+- [ ] **Salary controls** — `Salary Withholding`, `Salary Withholding Cycle`,
+      `Payroll Correction`, `Payroll Correction Child`, `Payroll Employee Detail`
+      Hold salary (e.g. during notice), correct posted payroll.
+
+### Critical — Recruitment & Onboarding (21 DocTypes)
+
+Growing org needs a hiring pipeline.
+
+- [ ] **Job openings** — `Job Opening`, `Job Opening Template`, `Job Requisition`,
+      `Staffing Plan`, `Staffing Plan Detail`
+      Open positions, hiring plan, headcount budgeting.
+- [ ] **Applicants** — `Job Applicant`, `Job Applicant Source`
+      Track candidates, source, status (applied → screening → interviewed → offered).
+- [ ] **Interviews** — `Interview`, `Interview Detail`, `Interview Type`,
+      `Interviewer`, `Interview Feedback`, `Skill Assessment`
+      Schedule interviews, collect feedback, score candidates.
+- [ ] **Offers** — `Job Offer`, `Job Offer Term`, `Job Offer Term Template`,
+      `Offer Term`, `Appointment Letter`, `Appointment Letter Content`,
+      `Appointment Letter Template`
+      Generate offer letters with terms, appointment letters.
+- [ ] **Referrals** — `Employee Referral`
+      Track employee referrals + referral bonus eligibility.
+- [ ] **Onboarding (detailed)** — `Employee Onboarding`, `Employee Onboarding Template`,
+      `Employee Boarding Activity`
+      Note: we have a custom `joining.start` operation — but N1's onboarding is richer
+      (boarding activities, templates, document tracking).
+
+### High — Leave (advanced, 17 DocTypes)
+
+We have basic request/approve. N1 has the full leave management suite.
+
+- [ ] **Leave policies** — `Leave Type`, `Leave Policy`, `Leave Policy Assignment`,
+      `Leave Policy Detail`
+      Define leave types (casual, sick, earned, compensatory), policy per grade/role.
+- [ ] **Allocations** — `Leave Allocation`, `Leave Period`, `Leave Ledger Entry`
+      Allocate leave balance per period, track ledger (earned → used → balance).
+- [ ] **Block lists** — `Leave Block List`, `Leave Block List Date`,
+      `Leave Block List Allow`
+      Block leave during critical periods, allow exceptions.
+- [ ] **Encashment** — `Leave Encashment`
+      Convert unused leave to payout.
+- [ ] **Advanced types** — `Compensatory Leave Request`, `Earned Leave Schedule`,
+      `Leave Adjustment`, `Leave Control Panel`
+      Comp-off, earned-leave auto-accrual, bulk adjustments.
+
+### High — Expense & Travel (14 DocTypes)
+
+Everyday employee need.
+
+- [ ] **Expense claims** — `Expense Claim`, `Expense Claim Type`,
+      `Expense Claim Detail`, `Expense Claim Account`, `Expense Claim Advance`,
+      `Expense Taxes and Charges`
+      Submit expenses (travel, food, misc), approval flow, accounting integration.
+- [ ] **Travel requests** — `Travel Request`, `Travel Itinerary`,
+      `Travel Request Costing`, `Purpose of Travel`
+      Request travel, itinerary, cost estimation, approval.
+- [ ] **Advances** — `Employee Advance`
+      Salary advance / travel advance, repayment tracking.
+- [ ] **Vehicles** — `Vehicle Log`, `Vehicle Service`, `Vehicle Service Item`
+      Company vehicle logbook, service history, fuel tracking.
+
+### High — Attendance & Shifts (12 DocTypes)
+
+Beyond basic attendance read-through.
+
+- [ ] **Check-in/out** — `Employee Checkin`, `Employee Attendance Tool`,
+      `Upload Attendance`
+      Biometric/device integration, bulk upload, attendance regularization.
+- [ ] **Shifts** — `Shift Type`, `Shift Assignment`, `Shift Assignment Tool`,
+      `Shift Request`, `Shift Location`, `Shift Schedule`,
+      `Shift Schedule Assignment`
+      Define shifts, assign employees, shift-swap requests, shift locations.
+- [ ] **Attendance requests** — `Attendance Request`, `Holiday List Assignment`
+      Employee-initiated correction, holiday list per department/location.
+
+### Medium — Performance & Appraisal (19 DocTypes)
+
+- [ ] **Appraisal cycles** — `Appraisal`, `Appraisal Cycle`, `Appraisal Template`,
+      `Appraisal Goal`, `Appraisal KRA`, `Appraisal Template Goal`, `Appraisee`
+      Annual/quarterly appraisal cycles, self-assessment, manager review.
+- [ ] **Feedback** — `Employee Performance Feedback`,
+      `Employee Feedback Criteria`, `Employee Feedback Rating`
+      360-degree feedback, structured criteria.
+- [ ] **Goals & KRAs** — `Goal`, `KRA`
+      OKR-style goal tracking, key result areas.
+- [ ] **Skills** — `Skill`, `Employee Skill`, `Employee Skill Map`,
+      `Designation Skill`, `Expected Skill Set`
+      Skill matrix, gap analysis (complements our course capability-gaps feature).
+
+### Medium — Training (7 DocTypes)
+
+Complements our course pipeline.
+
+- [ ] **Training programs** — `Training Program`, `Training Event`,
+      `Training Event Employee`
+      Define training programs, schedule events, enroll employees.
+- [ ] **Feedback & results** — `Training Feedback`, `Training Result`,
+      `Training Result Employee`
+      Post-training feedback, pass/fail results.
+- [ ] **Employee training** — `Employee Training`
+      Training history per employee.
+
+### Medium — Employee lifecycle (13 DocTypes)
+
+Beyond our custom joining/leaving operations.
+
+- [ ] **Promotion & transfer** — `Employee Promotion`, `Employee Transfer`
+      Promotion with new pay grade, inter-department transfer.
+- [ ] **Separation (detailed)** — `Employee Separation`, `Employee Separation Template`,
+      `Exit Interview`
+      Note: we have `leaving.start` + `leaving.applySeparation` — but N1's is richer
+      (separation templates, structured exit interviews).
+- [ ] **Full & final settlement** — `Full and Final Statement`,
+      `Full and Final Asset`, `Full and Final Outstanding Statement`
+      Calculate dues, asset recovery, outstanding loans/advances at exit.
+- [ ] **Grievance** — `Employee Grievance`, `Grievance Type`
+      Employee grievance redressal tracking.
+- [ ] **Organisation** — `Employee Grade`, `Employment Type`,
+      `Employee Cost Center`, `Department Approver`
+      Grade/level management, cost-center allocation, delegated approvers.
+- [ ] **Daily work summary** — `Daily Work Summary`, `Daily Work Summary Group`,
+      `Daily Work Summary Group User`
+      Standup-style daily summary (N1's version — we deliberately built a richer one
+      via the assistant day-plan, but N1's is available if needed).
+
+---
+
+## Summary — N1 DocType gaps
+
+| Category | DocTypes | Priority | Our custom layer? |
+|---|---|---|---|
+| Payroll & statutory | 46 | **Critical** | ❌ nothing |
+| Recruitment & onboarding | 21 | **Critical** | ⚠️ partial (joining.start) |
+| Leave (advanced) | 17 | **High** | ⚠️ partial (request/approve only) |
+| Expense & travel | 14 | **High** | ❌ nothing |
+| Attendance & shifts | 12 | **High** | ⚠️ partial (read-through only) |
+| Performance & appraisal | 19 | **Medium** | ❌ nothing |
+| Training | 7 | **Medium** | ❌ nothing (our course pipeline is separate) |
+| Employee lifecycle | 13 | **Medium** | ⚠️ partial (leaving operations) |
+| **Total unmapped** | **149** | | |
+| Already mapped | 3 | | ✅ |
+
+### How to wire a new N1 DocType (pattern)
+
+For each DocType group above, the work is:
+
+1. **Map** — add to `src/domains/people/n1-mapping.ts`
+   (`mapXyz(record: N1Record)` → our node shape).
+2. **Permission rules** — add to `src/server/policy.ts`
+   (who can `view`/`edit`/`export` the new node type).
+3. **Read-through** — extend `PeopleRecordService` (or a new domain service)
+   to pull via `n1-client.ts` when `n1Mode() === "live"`.
+4. **Operations** — if we add custom workflow (like `leave.request`),
+   add handlers in the domain + register them.
+5. **UI page** — server component + Shell + client interactivity.
+6. **Tests** — mapping + permission + read-through.
