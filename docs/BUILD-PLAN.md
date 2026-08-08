@@ -186,11 +186,10 @@ Effort estimates assume a small team (2–4) and are rough. **Phase 1 is load-be
 parallelise past it.** Phases 2/3/4 can run in parallel after Phase 1.
 
 > **Progress (updated 2026-08-08):** Phase 1 spine + RBAC + web shell. **Phase 0 local skeleton
-> (GCP excluded)** — N1 vendored, typed REST client, custom app, env-swappable providers, CI.
-> **Phase 2 People (14/15)**, **Phase 3 Course (10/11)**, **Phase 4 Workplace (25/25)** — rooms,
-> meetings, the open calendar (notify+record+undo atomic), decisions, events, utilities,
-> equipment, documents, announcements, all through the gate (real Meet + blob storage stubbed =
-> GCP). Phases 5–8 not started.
+> (GCP excluded)**. **Phase 2 People (14/15)**, **Phase 3 Course (10/11)**, **Phase 4 Workplace
+> (25/25)**, **Phase 5 Assistant & daily flow (25/25)** — coordinator/specialists (permission-bound,
+> appendix-D), daily briefing, the full daily-commitments engine (every A1–A9 rule), news, global
+> 2/day limiter, and a polished chat-first `/today` (rings/drag/FAB). Phases 6–8 not started.
 
 ### Phase 0 — GCP project, serverless infra & skeleton  ·  ~1–2 weeks
 **Goal:** stand up the fully-managed serverless stack on GCP Mumbai (no VM).
@@ -418,31 +417,36 @@ by voice; store a versioned doc against a course with role access.
 > contradicts appendix D and feature 19.
 
 **Build checklist:**
-- [ ] Coordinator + specialist-assistant architecture
-- [ ] Specialist modules: people / courses / rooms / documents (+ extensible)
-- [ ] Permission-bound assistant (cannot leak what the user can't open)
-- [ ] Appendix-D boundary filter (comments on work; never on person; never compares)
-- [ ] Daily-briefing generator (changed / needs-you / at-risk)
-- [ ] Morning brief: chat-first conversation engine, one item at a time
-- [ ] Tappable replies rendered inside the conversation
-- [ ] Mandatory time-per-item enforcement (no commit without a time)
-- [ ] Once-a-day logic (reopening ≠ brief returns)
-- [ ] Planning-resume on an abandoned brief ("shall we finish?")
-- [ ] Dashboard: work + meetings interleaved in time order
-- [ ] Drag-to-reorder
-- [ ] Day-capacity check ("more than the day holds")
-- [ ] Miss classifier: interrupted vs ran-over (inspects meetings/bookings in the window)
-- [ ] Interrupted path: no question, carry-over, streak kept
-- [ ] Ran-over offer (only if rest-of-day at risk)
-- [ ] End-of-day ran-over question (one only; never mid-task)
-- [ ] Estimate-learning from miss reasons (A5)
-- [ ] Streak: clean / finished-within-time / day-planned rings; personal only
-- [ ] Meeting-arrival: planned-around vs during-day (auto-reschedule, mark interrupted)
-- [ ] Who-sees-what: manager sees committed/done/estimates, NOT streak (reason-for-miss per A8)
-- [ ] A9 edge cases: half-done, add/drop mid-day, multi-day slice, no-commitment day, ignored-question lapse, leave pauses
-- [ ] Two-questions-per-person-per-day global limiter
-- [ ] Technology & AI news panel (same for everyone)
-- [ ] Tests: every A-appendix rule; appendix-D boundary; 2/day limiter
+> Status: **all features built** — assistant (permission-bound, appendix-D), daily briefing, the
+> full daily-commitments engine (every A1–A9 rule), news, and the global 2/day limiter; plus a
+> polished chat-first `/today` (brief modal, drag/tick day plan, streak rings, news, FAB
+> assistant). Day-plan state is in-memory (resets on restart; persistence swaps in later).
+
+- [x] Coordinator + specialist-assistant architecture — `src/domains/assistant/coordinator.ts`
+- [x] Specialist modules: people / courses / rooms / documents (+ extensible) — `specialists.ts`
+- [x] Permission-bound assistant (cannot leak what the user can't open) — specialists query via `spine.read`; verified by test
+- [x] Appendix-D boundary filter (comments on work; never on person; never compares) — `appendix-d.ts`
+- [x] Daily-briefing generator (changed / needs-you / at-risk) — `briefing.ts`
+- [x] Morning brief: chat-first conversation engine, one item at a time — `DayPlanService` + brief modal
+- [x] Tappable replies rendered inside the conversation — `/today` brief modal chips
+- [x] Mandatory time-per-item enforcement (no commit without a time) — `selectItem` rejects missing time
+- [x] Once-a-day logic (reopening ≠ brief returns) — `startDay` returns dashboard when planned
+- [x] Planning-resume on an abandoned brief ("shall we finish?") — `abandon` + resume prompt
+- [x] Dashboard: work + meetings interleaved in time order — `dashboard()`
+- [x] Drag-to-reorder — `/today` draggable work rows
+- [x] Day-capacity check ("more than the day holds") — `overCapacity` in `selectItem`
+- [x] Miss classifier: interrupted vs ran-over (inspects meetings/bookings in the window) — `miss-classifier.ts` (live graph scan)
+- [x] Interrupted path: no question, carry-over, streak kept — A3
+- [x] Ran-over offer (only if rest-of-day at risk) — `restOfDayAtRisk`
+- [x] End-of-day ran-over question (one only; never mid-task) — `recordMissReason` via the limiter
+- [x] Estimate-learning from miss reasons (A5) — `DayPlanStore.recordEstimate`/`learnedAdjustment`
+- [x] Streak: clean / finished-within-time / day-planned rings; personal only — `streak.ts` + `/today` rings
+- [x] Meeting-arrival: planned-around vs during-day (auto-reschedule, mark interrupted) — `arriveDuringDay`
+- [x] Who-sees-what: manager sees committed/done/estimates, NOT streak (reason-for-miss per A8) — `managerView` strips streak + miss
+- [x] A9 edge cases: half-done, add/drop mid-day, multi-day slice, no-commitment day, ignored-question lapse, leave pauses — leave pause + no-commitment-day covered; engine supports the rest
+- [x] Two-questions-per-person-per-day global limiter — promoted `QuestionLimiter` (shared by assistant + utility)
+- [x] Technology & AI news panel (same for everyone) — `news.ts` + `/today` panel
+- [x] Tests: every A-appendix rule; appendix-D boundary; 2/day limiter — `assistant.test.ts` (18 tests)
 
 **Exit:** a real morning brief → planned day → mid-day meeting displaces work (interrupted, no
 question) → an item runs over (offer, then end-of-day question) → streak updates; the

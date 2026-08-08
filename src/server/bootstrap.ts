@@ -9,6 +9,7 @@ import { Spine, type SpineDeps } from "@/spine/spine";
 import { DOMAINS, type DomainContext } from "@/domains";
 import { DEMO_PEOPLE } from "@/domains/shared/people-roster";
 import { buildDemoPermissionPolicy } from "./policy";
+import { getQuestionLimiter } from "./limiter";
 
 export interface DemoWorld {
   spine: Spine;
@@ -27,7 +28,15 @@ export function buildDemoWorld(): DemoWorld {
   const owners = new Map<string, ActorId>();
   const teams = new Map<ActorId, string>();
 
-  const ctx: DomainContext = { registry, graph, figures, bus, owners, teams };
+  const ctx: DomainContext = {
+    registry,
+    graph,
+    figures,
+    bus,
+    owners,
+    teams,
+    limiter: getQuestionLimiter(),
+  };
 
   for (const domain of DOMAINS) {
     domain.seed?.(ctx);

@@ -1,5 +1,4 @@
 import type { DomainContext, DomainModule } from "../types";
-import { createQuestionLimiter } from "./shared/limiter";
 import { announcementAckHandler, announcementSendHandler } from "./announcements";
 import {
   calendarAddPeopleHandler,
@@ -36,7 +35,6 @@ export const workplaceDomain: DomainModule = {
   id: "workplace",
   phase: 4,
   register(ctx: DomainContext) {
-    const limiter = createQuestionLimiter();
     ctx.registry.register(roomBookHandler(ctx.graph));
     ctx.registry.register(roomCancelHandler(ctx.graph));
     ctx.registry.register(meetingCreateHandler(ctx.graph));
@@ -54,7 +52,7 @@ export const workplaceDomain: DomainModule = {
     ctx.registry.register(eventAddTaskHandler(ctx.graph));
     ctx.registry.register(eventRegisterHandler(ctx.graph));
     ctx.registry.register(eventCloseHandler(ctx.graph));
-    ctx.registry.register(utilityCaptureHandler(ctx.graph, limiter));
+    ctx.registry.register(utilityCaptureHandler(ctx.graph, ctx.limiter));
     ctx.registry.register(equipmentReportFaultHandler(ctx.graph));
     ctx.registry.register(documentStoreHandler(ctx.graph));
     ctx.registry.register(documentRequireHandler(ctx.graph));
