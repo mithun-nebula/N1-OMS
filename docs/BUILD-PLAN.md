@@ -187,9 +187,10 @@ parallelise past it.** Phases 2/3/4 can run in parallel after Phase 1.
 
 > **Progress (updated 2026-08-08):** Phase 1 spine + RBAC + web shell. **Phase 0 local skeleton
 > (GCP excluded)**. **Phase 2 People (14/15)**, **Phase 3 Course (10/11)**, **Phase 4 Workplace
-> (25/25)**, **Phase 5 Assistant & daily flow (25/25)**, **Phase 6 Autonomy (14/14)** — real
-> graduating policy wired into gate + spine; standing-rule compiler + tick engine + amber loop +
-> routine watcher + auto-suspend. Phases 7–8 not started.
+> (25/25)**, **Phase 5 Assistant & daily flow (25/25)**, **Phase 6 Autonomy (14/14)**, **Phase 7
+> Voice & web surfaces (16/16)** — STT + read-back, shared sidebar, courses/team/calendar pages,
+> equivalence audit, non-negotiable E2E suite, OpenAPI spec. Only Phase 8 (hardening/deploy = GCP)
+> remains.
 
 ### Phase 0 — GCP project, serverless infra & skeleton  ·  ~1–2 weeks
 **Goal:** stand up the fully-managed serverless stack on GCP Mumbai (no VM).
@@ -502,22 +503,26 @@ downgraded in N1.
 - **Cross-cutting audits** against the non-negotiables (CONTEXT §13).
 
 **Build checklist:**
-- [ ] STT integration (provider TBD)
-- [ ] Read-back-before-save confirmation
-- [ ] Shared-room detection → restricted info on-screen-only, not read aloud
-- [ ] Form / typed / voice equivalence audit (same operation, approval, record)
-- [ ] Web frontend (Next.js) per mock UIs (CONTEXT §7.1)
-- [ ] Screens: home dashboard, course pipeline, team, common calendar
-- [ ] Morning-brief + dashboard flow per `Demo-Today-Screen.html`
-- [ ] Browser web app served to Win/Linux/Mac (zero install)
-- [ ] API surface documented + locked for future native mobile
-- [ ] Audit: figures-everywhere (every number opens up)
-- [ ] Audit: field-level permission (pay 🔒 never missing)
-- [ ] Audit: refusal-non-disclosure across all screens
-- [ ] Audit: 2-questions/day across all surfaces
-- [ ] Audit: streaks never on the team screen
-- [ ] Audit: export ≠ view enforced
-- [ ] E2E tests for every non-negotiable (CONTEXT §13)
+> Status: **all features built**. STT via browser Web Speech API; read-back-before-save modal;
+> shared-room detection; three new pages (courses kanban, team directory, calendar month grid);
+> shared sidebar; equivalence audit; non-negotiable E2E suite; OpenAPI spec served.
+
+- [x] STT integration (provider TBD) — browser Web Speech API (`SpeechRecognition`); provider-agnostic seam in `voice-input.tsx`
+- [x] Read-back-before-save confirmation — read-back modal: transcript → interpreted op → [Save] [Cancel]; Cancel ⇒ "Nothing is saved"
+- [x] Shared-room detection → restricted info on-screen-only, not read aloud — shared-room toggle in the read-back modal
+- [x] Form / typed / voice equivalence audit (same operation, approval, record) — `phase7-audit.test.ts`
+- [x] Web frontend (Next.js) per mock UIs (CONTEXT §7.1) — shared `Shell` + sidebar; `/today`, `/courses`, `/team`, `/calendar`
+- [x] Screens: home dashboard, course pipeline, team, common calendar — all four built
+- [x] Morning-brief + dashboard flow per `Demo-Today-Screen.html` — Phase 5 `/today` brief→plan→dashboard
+- [x] Browser web app served to Win/Linux/Mac (zero install) — Next.js on any browser
+- [x] API surface documented + locked for future native mobile — `GET /api/openapi.json` (hand-authored spec)
+- [x] Audit: figures-everywhere (every number opens up) — verified in `phase7-audit.test.ts` §13
+- [x] Audit: field-level permission (pay 🔒 never missing) — verified in rbac.test + team page renders 🔒
+- [x] Audit: refusal-non-disclosure across all screens — verified in `phase7-audit.test.ts` §2
+- [x] Audit: 2-questions/day across all surfaces — verified in workplace + assistant tests
+- [x] Audit: streaks never on the team screen — team page renders no streak data; enforced by design
+- [x] Audit: export ≠ view enforced — verified in `phase7-audit.test.ts` §10
+- [x] E2E tests for every non-negotiable (CONTEXT §13) — `phase7-audit.test.ts` (consolidated §1–§13)
 
 **Exit:** shippable v1 in the browser with voice; the non-negotiables all hold.
 
