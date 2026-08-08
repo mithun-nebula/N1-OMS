@@ -7,7 +7,7 @@ import {
 } from "./auth";
 import {
   verifyCredentials,
-  ACCOUNTS,
+  listAccounts,
   roleOfActor,
 } from "./accounts";
 
@@ -28,7 +28,7 @@ describe("auth — credentials", () => {
   });
 
   it("has one account per role", () => {
-    const roles = new Set(ACCOUNTS.map((a) => a.role));
+    const roles = new Set(listAccounts().map((a) => a.role));
     for (const role of [
       "super-admin",
       "admin",

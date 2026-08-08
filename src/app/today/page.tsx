@@ -23,7 +23,6 @@ export default async function TodayPage() {
   return (
     <Shell>
       <TodayClient
-        user={{ id: user.id, displayName: user.displayName, role: user.role }}
         date={date}
         initial={{ open: start.open, prompt: start.prompt, briefItem, dashboard, plan, news }}
       />

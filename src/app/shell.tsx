@@ -12,10 +12,13 @@ const NAV = [
   { href: "/team", label: "Team" },
 ];
 
+const ADMIN_ROLES = new Set(["super-admin", "admin"]);
+
 export function Shell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
   const [user, setUser] = useState<{ displayName: string; role: string } | null>(null);
+  const navItems = user && ADMIN_ROLES.has(user.role) ? [...NAV, { href: "/admin", label: "Admin" }] : NAV;
 
   useEffect(() => {
     fetch("/api/me")
@@ -38,7 +41,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
           </div>
         </div>
         <nav className="flex-1 space-y-1 px-3">
-          {NAV.map((item) => {
+          {navItems.map((item) => {
             const active = pathname === item.href;
             return (
               <Link
@@ -73,7 +76,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
             <button onClick={logout} className="text-xs text-zinc-500">Sign out</button>
           </div>
           <div className="mt-2 flex gap-3">
-            {NAV.map((item) => (
+            {navItems.map((item) => (
               <Link
                 key={item.href}
                 href={item.href}

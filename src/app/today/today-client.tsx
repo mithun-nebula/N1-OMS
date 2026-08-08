@@ -3,12 +3,6 @@
 import { useState, useRef } from "react";
 import type { DayPlan } from "@/domains/assistant/day-plan/store";
 
-interface User {
-  id: string;
-  displayName: string;
-  role: string;
-}
-
 interface BriefItem {
   text: string;
   replies: string[];
@@ -49,12 +43,17 @@ export function TodayClient({
   date,
   initial,
 }: {
-  user: User;
   date: string;
   initial: Initial;
 }) {
   const [mode, setMode] = useState<"brief" | "planning" | "dashboard" | "resume">(
-    initial.open === "dashboard" ? "dashboard" : initial.open === "resume" ? "resume" : "brief",
+    initial.open === "dashboard"
+      ? "dashboard"
+      : initial.open === "resume"
+        ? "resume"
+        : initial.briefItem
+          ? "brief"
+          : "planning",
   );
   const [briefItem, setBriefItem] = useState<BriefItem | null>(initial.briefItem);
   const [plan, setPlan] = useState<DayPlan | null>(initial.plan);
