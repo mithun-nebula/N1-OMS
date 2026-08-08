@@ -1,7 +1,8 @@
 import { InMemoryActivityLog } from "@/spine/activity-log/log";
 import { PublishBus } from "@/spine/bus";
 import { InMemoryFigureStore } from "@/spine/figures/store";
-import { SupervisedAutonomyPolicy } from "@/spine/gate/autonomy";
+import { GraduatingAutonomyPolicy } from "@/spine/gate/autonomy";
+import { AutonomyStore } from "@/domains/autonomy/store";
 import { OperationRegistry } from "@/spine/operation/registry";
 import type { ActorId } from "@/spine/operation/types";
 import { InMemoryRecordStore } from "@/spine/record/graph";
@@ -15,6 +16,7 @@ export interface DemoWorld {
   spine: Spine;
   deps: SpineDeps;
   registry: OperationRegistry;
+  autonomy: AutonomyStore;
   people: Record<string, { name: string; role: string; team?: string }>;
 }
 
@@ -44,7 +46,8 @@ export function buildDemoWorld(): DemoWorld {
   }
 
   const permissions = buildDemoPermissionPolicy(owners, teams);
-  const autonomy = new SupervisedAutonomyPolicy();
+  const autonomyStore = new AutonomyStore();
+  const autonomy = new GraduatingAutonomyPolicy(autonomyStore);
 
   const deps: SpineDeps = {
     operations: registry,
@@ -57,5 +60,5 @@ export function buildDemoWorld(): DemoWorld {
   };
   const spine = new Spine(deps);
 
-  return { spine, deps, registry, people: DEMO_PEOPLE };
+  return { spine, deps, registry, autonomy: autonomyStore, people: DEMO_PEOPLE };
 }

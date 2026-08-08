@@ -44,6 +44,7 @@ export interface SubmissionResult {
   pendingId?: string;
   prompt?: string;
   reason?: ConfirmationReason;
+  graduationOffer?: { ruleId: string; cleanCount: number };
   activityEntry?: ActivityEntry;
   result?: OperationResult;
 }
@@ -100,14 +101,41 @@ export class Spine {
   async confirm(
     pendingId: string,
     confirmer: ActorId,
+    opts?: { editedArgs?: Record<string, unknown> },
   ): Promise<SubmissionResult> {
     const pending = this.pending.get(pendingId);
     if (!pending) return { status: "not-found" };
     this.pending.delete(pendingId);
-    return this.executeAndRecord(pending.preparedOperation, {
+    const operation = pending.preparedOperation;
+    const edited = Boolean(opts?.editedArgs);
+    const runOperation = edited
+      ? { ...operation, args: { ...operation.args, ...opts!.editedArgs } }
+      : operation;
+    const result = await this.executeAndRecord(runOperation, {
       approvedBy: confirmer,
       confirmationReason: pending.reason,
     });
+    if (operation.authority.kind === "delegated" && result.status === "ran") {
+      const handler = this.deps.operations.require(operation.name);
+      const ruleId = operation.authority.ruleId;
+      const author = operation.authority.ruleAuthor;
+      this.deps.autonomy.recordOutcome(ruleId, operation.name, {
+        approved: true,
+        edited,
+        category: handler.category,
+        author,
+      });
+      const offer = this.deps.autonomy.offerGraduation(ruleId, operation.name);
+      if (offer.due) {
+        this.deps.bus.publish({
+          kind: "actor",
+          actor: author,
+          message: `Rule "${ruleId}" has been approved unchanged ${offer.cleanCount} times — shall I run it on my own from now on?`,
+        });
+        result.graduationOffer = { ruleId, cleanCount: offer.cleanCount };
+      }
+    }
+    return result;
   }
 
   listPending(): PendingConfirmation[] {

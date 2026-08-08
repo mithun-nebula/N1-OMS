@@ -187,9 +187,9 @@ parallelise past it.** Phases 2/3/4 can run in parallel after Phase 1.
 
 > **Progress (updated 2026-08-08):** Phase 1 spine + RBAC + web shell. **Phase 0 local skeleton
 > (GCP excluded)**. **Phase 2 People (14/15)**, **Phase 3 Course (10/11)**, **Phase 4 Workplace
-> (25/25)**, **Phase 5 Assistant & daily flow (25/25)** — coordinator/specialists (permission-bound,
-> appendix-D), daily briefing, the full daily-commitments engine (every A1–A9 rule), news, global
-> 2/day limiter, and a polished chat-first `/today` (rings/drag/FAB). Phases 6–8 not started.
+> (25/25)**, **Phase 5 Assistant & daily flow (25/25)**, **Phase 6 Autonomy (14/14)** — real
+> graduating policy wired into gate + spine; standing-rule compiler + tick engine + amber loop +
+> routine watcher + auto-suspend. Phases 7–8 not started.
 
 ### Phase 0 — GCP project, serverless infra & skeleton  ·  ~1–2 weeks
 **Goal:** stand up the fully-managed serverless stack on GCP Mumbai (no VM).
@@ -464,20 +464,25 @@ assistant never comments on the person or compares people.
   the seven starts as new operations.
 
 **Build checklist:**
-- [ ] Standing-instruction: plain-language rule → scheduled-check compiler
-- [ ] Supervised-action scaffold (prepare → ask every time)
-- [ ] Clean-approval counter (10 unchanged approvals; any edit resets)
-- [ ] Graduation offer (offered, never assumed)
-- [ ] One-tap revoke to supervised (by anyone permitted)
-- [ ] Never-graduate hard rules: money / people / leaving-org
-- [ ] Authority cap (runs under author's current permissions)
-- [ ] Auto-suspend on author role-change / departure (hooks Phase 2 separation date)
-- [ ] Routine watcher: detect hand-repeated routines (Cloud Run Job)
-- [ ] Suggestion offer (never auto)
-- [ ] Question-at-right-moment delivery
-- [ ] Background execution via Cloud Run Jobs (standing rules, routine watcher, question scheduler)
-- [ ] Amber loop: a change → new operation re-enters at the seven starts
-- [ ] Tests: graduation counts; never-graduate categories; auto-suspend on departure
+> Status: **all features built in-memory**. The real `GraduatingAutonomyPolicy` replaces the
+> Phase-1 stub, wired into the gate (check 5) and `Spine.confirm` (records clean approvals).
+> Standing-rule compiler + tick engine + amber loop + routine watcher + auto-suspend all landed.
+> **Cloud Scheduler / Cloud Run Job** execution is abstracted as `tick(asOf)` + `/api/autonomy/tick`.
+
+- [x] Standing-instruction: plain-language rule → scheduled-check compiler — `src/domains/autonomy/compiler.ts` (heuristic keyword parse + LLM seam)
+- [x] Supervised-action scaffold (prepare → ask every time) — gate check 5 awaiting-confirmation (existing)
+- [x] Clean-approval counter (10 unchanged approvals; any edit resets) — `GraduatingAutonomyPolicy.recordOutcome`
+- [x] Graduation offer (offered, never assumed) — `offerGraduation` + `acceptGraduation` (author must agree)
+- [x] One-tap revoke to supervised (by anyone permitted) — `AutonomyEngine.revoke`
+- [x] Never-graduate hard rules: money / people / leaving-org — `neverGraduates` in gate + policy
+- [x] Authority cap (runs under author's current permissions) — graduated rules run under the author's *live* role via `effectiveActor` + the permission policy
+- [x] Auto-suspend on author role-change / departure (hooks Phase 2 separation date) — `suspendSeparated` + `suspendAuthor`
+- [x] Routine watcher: detect hand-repeated routines — `AutonomyEngine.detectRoutines` (activity-log scan, ≥3 repeats)
+- [x] Suggestion offer (never auto) — `RoutineSuggestion.status = "offered"`; `acceptSuggestion` required
+- [x] Question-at-right-moment delivery — reuses the global 2/day `QuestionLimiter` (Phase 5)
+- [x] Background execution via Cloud Run Jobs (standing rules, routine watcher, question scheduler) — `tick(asOf)` + `POST /api/autonomy/tick` (Cloud Scheduler calls this in prod)
+- [x] Amber loop: a change → new operation re-enters at the seven starts — `PublishBus.subscribe` → `engine.tick` → `spine.submit` (fromStandingRule adapter)
+- [x] Tests: graduation counts; never-graduate categories; auto-suspend on departure — `src/domains/autonomy/autonomy.test.ts` (9 tests)
 
 **Exit:** a supervised rule correctly graduates after 10 clean approvals; a money-touching
 variant is refused graduation; the graduated rule auto-suspends when its author's role is

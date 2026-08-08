@@ -3,6 +3,8 @@ import { ask } from "@/domains/assistant/coordinator";
 import { DayPlanService } from "@/domains/assistant/day-plan/service";
 import { DayPlanStore } from "@/domains/assistant/day-plan/store";
 import { getNews } from "@/domains/assistant/news";
+import { AutonomyEngine } from "@/domains/autonomy/engine";
+import { compileRule } from "@/domains/autonomy/compiler";
 import { CourseService } from "@/domains/course/service";
 import { OrgMemoryService } from "@/domains/org-memory/service";
 import { PeopleRecordService } from "@/domains/people/service";
@@ -68,3 +70,21 @@ export function assistantAsk(actor: string, message: string) {
 }
 
 export { getNews };
+
+let autonomyEngine: AutonomyEngine | undefined;
+
+export function getAutonomyEngine(): AutonomyEngine {
+  if (!autonomyEngine) {
+    const world = getWorld();
+    autonomyEngine = new AutonomyEngine(
+      world.autonomy,
+      world.spine,
+      world.deps.graph,
+      world.deps.log,
+      world.deps.bus,
+    );
+    const rule = compileRule("if a course sits in review more than 8 days, tell me", "james", "overdue-review");
+    if (rule) autonomyEngine.registerRule(rule);
+  }
+  return autonomyEngine;
+}

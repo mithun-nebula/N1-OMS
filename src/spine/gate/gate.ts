@@ -55,6 +55,13 @@ export class GateEngine {
 
     const delegated = operation.authority.kind === "delegated";
 
+    if (delegated) {
+      const ruleId = operation.authority.kind === "delegated" ? operation.authority.ruleId : "";
+      if (this.autonomy.isSuspended(ruleId)) {
+        return { status: "forbidden" };
+      }
+    }
+
     if (handler.involvesMoneyOrPeople(operation.args) && delegated) {
       return awaiting(operation, "money-or-people", moneyOrPeoplePrompt(operation));
     }
