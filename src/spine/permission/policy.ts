@@ -8,13 +8,22 @@ import type {
   RoleProvider,
 } from "./types";
 
+const OPEN_ACTIONS = new Set(["view", "create", "edit"]);
+
 export class PermissionPolicy {
   constructor(
     private readonly rules: PermissionRule[],
     private readonly roles: RoleProvider,
+    private readonly openNodeTypes: ReadonlySet<string> = new Set(),
   ) {}
 
   can(input: PermissionCheckInput): PermissionDecision {
+    if (
+      this.openNodeTypes.has(input.nodeType) &&
+      OPEN_ACTIONS.has(input.action)
+    ) {
+      return { allowed: true };
+    }
     const matching = this.matchingRules(input);
     if (matching.length === 0) {
       return { allowed: false };
@@ -51,6 +60,9 @@ export class PermissionPolicy {
   }
 
   effectiveFieldPolicy(actor: ActorId, nodeType: string): FieldPolicy {
+    if (this.openNodeTypes.has(nodeType)) {
+      return { kind: "all-visible" };
+    }
     const actorRoles = new Set(this.roles.rolesFor(actor));
     const applicable = this.rules.filter(
       (r) => actorRoles.has(r.role) && r.nodeType === nodeType,

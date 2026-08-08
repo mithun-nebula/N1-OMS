@@ -34,7 +34,7 @@ src/
   domains/      per-phase operations, figures & seed data
     people/     Phase 2 — leave.request, employee directory
     course/     Phase 3 — course.updateStage, completion figure
-    workplace/  Phase 4 — announcements (rooms/meetings/calendar to come)
+    workplace/  Phase 4 — rooms, meetings, open calendar (appendix E), events, equipment, documents, announcements
     assistant/  Phase 5 — coordinator + specialists + daily flow
     autonomy/   Phase 6 — standing rules, earning-the-right
     shared/     cross-domain demo roster

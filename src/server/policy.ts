@@ -28,6 +28,13 @@ const MANAGED_NODE_TYPES = [
   "onboarding",
   "offboarding",
   "org-memory",
+  "room",
+  "booking",
+  "meeting",
+  "calendar-entry",
+  "event",
+  "document",
+  "announcement",
 ];
 
 function superAdminRules(): PermissionRule[] {
@@ -224,6 +231,20 @@ export class DemoRoleProvider implements RoleProvider {
   }
 }
 
+export const OPEN_NODE_TYPES = new Set([
+  "room",
+  "booking",
+  "meeting",
+  "calendar-entry",
+  "meeting-decision",
+  "event",
+  "event-task",
+  "document",
+  "announcement",
+  "utility-capture",
+  "fault",
+]);
+
 export function buildDemoPermissionPolicy(
   owners: Map<string, ActorId>,
   teams: Map<ActorId, string>,
@@ -231,5 +252,6 @@ export function buildDemoPermissionPolicy(
   return new PermissionPolicy(
     DEMO_PERMISSION_RULES,
     new DemoRoleProvider(owners, teams),
+    OPEN_NODE_TYPES,
   );
 }
