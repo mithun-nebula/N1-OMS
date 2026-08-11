@@ -33,13 +33,13 @@ export interface GraphQuery {
 }
 
 export interface RecordStore {
-  putNode(type: NodeType, id: NodeId, data: RecordData): RecordNode;
-  getNode(type: NodeType, id: NodeId): RecordNode | undefined;
-  patchNode(type: NodeType, id: NodeId, patch: RecordData): RecordNode | undefined;
-  removeNode(type: NodeType, id: NodeId): boolean;
-  addEdge(edge: RecordEdge): void;
-  removeEdge(from: NodeId, to: NodeId, type: EdgeType): boolean;
-  edgesOf(nodeId: NodeId, direction?: TraversalDirection): RecordEdge[];
-  traverse(query: GraphQuery): RecordNode[];
-  find(type: NodeType, predicate: (node: RecordNode) => boolean): RecordNode[];
+  putNode(type: NodeType, id: NodeId, data: RecordData): Promise<RecordNode>;
+  getNode(type: NodeType, id: NodeId): Promise<RecordNode | undefined>;
+  patchNode(type: NodeType, id: NodeId, patch: RecordData): Promise<RecordNode | undefined>;
+  removeNode(type: NodeType, id: NodeId): Promise<boolean>;
+  addEdge(edge: RecordEdge): Promise<void>;
+  removeEdge(from: NodeId, to: NodeId, type: EdgeType): Promise<boolean>;
+  edgesOf(nodeId: NodeId, direction?: TraversalDirection): Promise<RecordEdge[]>;
+  traverse(query: GraphQuery): Promise<RecordNode[]>;
+  find(type: NodeType, predicate: (node: RecordNode) => boolean): Promise<RecordNode[]>;
 }

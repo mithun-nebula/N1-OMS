@@ -26,7 +26,7 @@ export function utilityCaptureHandler(
     },
     permission: () => ({ action: "create", nodeType: "utility-capture" }),
     involvesMoneyOrPeople: () => false,
-    execute: (args, ctx) => {
+    execute: async (args, ctx) => {
       if (!limiter.tryConsume(ctx.actor, ctx.now().slice(0, 10))) {
         return {
           changes: [],
@@ -43,7 +43,7 @@ export function utilityCaptureHandler(
         by: ctx.actor,
         at: ctx.now(),
       };
-      graph.putNode("utility-capture", id, data);
+      await graph.putNode("utility-capture", id, data);
       return {
         changes: [{ nodeType: "utility-capture", nodeId: id, after: data }],
         publishedTo: [{ kind: "broadcast" }],

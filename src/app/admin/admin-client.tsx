@@ -76,6 +76,22 @@ export function AdminClient({
     setAccounts((prev) => prev.map((a) => (a.username === username ? { ...a, role } : a)));
   }
 
+  async function resetPassword(username: string) {
+    const next = window.prompt(`Reset password for ${username}:`, "newpass123");
+    if (!next) return;
+    setBusy(true);
+    const res = await fetch(`/api/admin/accounts/${username}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ password: next }),
+    });
+    setBusy(false);
+    if (!res.ok) {
+      const data = await res.json();
+      setError(data.error ?? "Failed.");
+    }
+  }
+
   async function autonomyAction(action: string, extra: Record<string, unknown> = {}) {
     setBusy(true);
     const res = await fetch("/api/autonomy/rules", {
@@ -132,6 +148,9 @@ export function AdminClient({
                         <option key={r} value={r}>{r}</option>
                       ))}
                     </select>
+                  </td>
+                  <td className="px-4 py-2">
+                    <button onClick={() => resetPassword(a.username)} disabled={busy} className="text-xs text-zinc-400 hover:text-teal-600 disabled:opacity-40">reset pw</button>
                   </td>
                 </tr>
               ))}
@@ -201,6 +220,8 @@ export function AdminClient({
         )}
       </section>
 
+      <ActivityLogViewer />
+
       <section>
         <h2 className="mb-3 text-sm font-medium uppercase tracking-wide text-zinc-500">System status</h2>
         <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
@@ -223,5 +244,57 @@ export function AdminClient({
         </div>
       </section>
     </div>
+  );
+}
+
+interface ActivityEntry {
+  id: string;
+  operationName: string;
+  actor: string;
+  at: string;
+  outcome: string;
+}
+
+function ActivityLogViewer() {
+  const [filters, setFilters] = useState({ actor: "", operation: "" });
+  const [entries, setEntries] = useState<ActivityEntry[]>([]);
+  const [loaded, setLoaded] = useState(false);
+
+  async function load() {
+    const params = new URLSearchParams();
+    if (filters.actor) params.set("actor", filters.actor);
+    if (filters.operation) params.set("operation", filters.operation);
+    params.set("limit", "50");
+    const res = await fetch(`/api/activity?${params.toString()}`);
+    if (res.ok) {
+      const data = await res.json();
+      setEntries(data.entries ?? []);
+    }
+    setLoaded(true);
+  }
+
+  return (
+    <section>
+      <h2 className="mb-3 text-sm font-medium uppercase tracking-wide text-zinc-500">Activity log</h2>
+      <div className="mb-3 flex flex-wrap gap-2">
+        <input value={filters.actor} onChange={(e) => setFilters({ ...filters, actor: e.target.value })} placeholder="Filter by actor" className="rounded-lg border border-black/[.12] px-3 py-1.5 text-xs dark:border-white/[.2] dark:bg-black dark:text-zinc-50" />
+        <input value={filters.operation} onChange={(e) => setFilters({ ...filters, operation: e.target.value })} placeholder="Filter by operation (e.g. leave)" className="rounded-lg border border-black/[.12] px-3 py-1.5 text-xs dark:border-white/[.2] dark:bg-black dark:text-zinc-50" />
+        <button onClick={load} className="rounded-lg bg-black px-3 py-1.5 text-xs font-medium text-white dark:bg-white dark:text-black">Load</button>
+      </div>
+      {!loaded ? (
+        <p className="text-xs text-zinc-400">Click Load to fetch the recent activity log.</p>
+      ) : entries.length === 0 ? (
+        <p className="text-xs text-zinc-400">No entries match.</p>
+      ) : (
+        <div className="max-h-80 overflow-y-auto rounded-xl border border-black/[.06] dark:border-white/[.08]">
+          {entries.map((e) => (
+            <div key={e.id} className="flex items-center justify-between border-b border-black/[.04] px-3 py-1.5 text-xs last:border-0 dark:border-white/[.04]">
+              <span className="text-zinc-600 dark:text-zinc-300"><span className="font-mono text-zinc-400">{e.operationName}</span> · {e.actor}</span>
+              <span className="text-zinc-400">{new Date(e.at).toLocaleString()}</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </section>
   );
 }

@@ -18,7 +18,7 @@ export class InMemoryRecordStore implements RecordStore {
   private inEdges = new Map<string, RecordEdge[]>();
   private clock = 0;
 
-  putNode(type: NodeType, id: NodeId, data: RecordData): RecordNode {
+  async putNode(type: NodeType, id: NodeId, data: RecordData): Promise<RecordNode> {
     const key = nodeKey(type, id);
     const existing = this.nodes.get(key);
     const node: RecordNode = {
@@ -33,22 +33,22 @@ export class InMemoryRecordStore implements RecordStore {
     return node;
   }
 
-  getNode(type: NodeType, id: NodeId): RecordNode | undefined {
+  async getNode(type: NodeType, id: NodeId): Promise<RecordNode | undefined> {
     return this.nodes.get(nodeKey(type, id));
   }
 
-  patchNode(
+  async patchNode(
     type: NodeType,
     id: NodeId,
     patch: RecordData,
-  ): RecordNode | undefined {
+  ): Promise<RecordNode | undefined> {
     const existing = this.nodes.get(nodeKey(type, id));
     if (!existing) return undefined;
     const merged = { ...existing.data, ...patch };
     return this.putNode(type, id, merged);
   }
 
-  removeNode(type: NodeType, id: NodeId): boolean {
+  async removeNode(type: NodeType, id: NodeId): Promise<boolean> {
     const key = nodeKey(type, id);
     const existed = this.nodes.delete(key);
     if (existed) {
@@ -59,7 +59,7 @@ export class InMemoryRecordStore implements RecordStore {
     return existed;
   }
 
-  addEdge(edge: RecordEdge): void {
+  async addEdge(edge: RecordEdge): Promise<void> {
     const out = this.outEdges.get(edge.from) ?? [];
     out.push(edge);
     this.outEdges.set(edge.from, out);
@@ -68,7 +68,7 @@ export class InMemoryRecordStore implements RecordStore {
     this.inEdges.set(edge.to, inc);
   }
 
-  removeEdge(from: NodeId, to: NodeId, type: EdgeType): boolean {
+  async removeEdge(from: NodeId, to: NodeId, type: EdgeType): Promise<boolean> {
     const out = this.outEdges.get(from) ?? [];
     const idx = out.findIndex((e) => e.to === to && e.type === type);
     if (idx === -1) return false;
@@ -79,7 +79,7 @@ export class InMemoryRecordStore implements RecordStore {
     return true;
   }
 
-  edgesOf(nodeId: NodeId, direction: TraversalDirection = "out"): RecordEdge[] {
+  async edgesOf(nodeId: NodeId, direction: TraversalDirection = "out"): Promise<RecordEdge[]> {
     const result: RecordEdge[] = [];
     if (direction === "out" || direction === "both") {
       result.push(...(this.outEdges.get(nodeId) ?? []));
@@ -90,11 +90,11 @@ export class InMemoryRecordStore implements RecordStore {
     return result;
   }
 
-  traverse(query: GraphQuery): RecordNode[] {
+  async traverse(query: GraphQuery): Promise<RecordNode[]> {
     const starts = Array.isArray(query.start) ? query.start : [query.start];
     let frontier = new Set<NodeId>(starts);
     for (const step of query.steps) {
-      frontier = this.advance(frontier, step);
+      frontier = await this.advance(frontier, step);
     }
     const result: RecordNode[] = [];
     const seen = new Set<string>();
@@ -108,10 +108,10 @@ export class InMemoryRecordStore implements RecordStore {
     return result;
   }
 
-  find(
+  async find(
     type: NodeType,
     predicate: (node: RecordNode) => boolean,
-  ): RecordNode[] {
+  ): Promise<RecordNode[]> {
     const result: RecordNode[] = [];
     for (const node of this.nodes.values()) {
       if (node.type === type && predicate(node)) {
@@ -121,13 +121,13 @@ export class InMemoryRecordStore implements RecordStore {
     return result;
   }
 
-  private advance(frontier: Set<NodeId>, step: TraversalStep): Set<NodeId> {
+  private async advance(frontier: Set<NodeId>, step: TraversalStep): Promise<Set<NodeId>> {
     const next = new Set<NodeId>();
     const allowed = step.edgeType
       ? new Set(Array.isArray(step.edgeType) ? step.edgeType : [step.edgeType])
       : undefined;
     for (const nodeId of frontier) {
-      const edges = this.edgesOf(nodeId, step.direction ?? "out");
+      const edges = await this.edgesOf(nodeId, step.direction ?? "out");
       for (const edge of edges) {
         if (allowed && !allowed.has(edge.type)) continue;
         const target = this.resolveTarget(nodeId, edge, step.direction ?? "out");

@@ -6,7 +6,7 @@ export class InMemoryFigureStore implements FigureStore {
   private byRecord = new Map<string, Figure[]>();
   private seq = 0;
 
-  put(figure: Figure): void {
+  async put(figure: Figure): Promise<void> {
     this.byId.set(figure.id, figure);
     const key = recordKey(figure.sourceNodeType, figure.sourceNodeId);
     const list = this.byRecord.get(key) ?? [];
@@ -18,7 +18,7 @@ export class InMemoryFigureStore implements FigureStore {
     this.byRecord.set(key, list);
   }
 
-  replace(figure: Figure): void {
+  async replace(figure: Figure): Promise<void> {
     const key = recordKey(figure.sourceNodeType, figure.sourceNodeId);
     const existing = this.byRecord.get(key) ?? [];
     for (const old of existing) {
@@ -30,20 +30,20 @@ export class InMemoryFigureStore implements FigureStore {
       (f) => !(f.label === figure.label && f.id !== figure.id),
     );
     this.byRecord.set(key, kept);
-    this.put(figure);
+    await this.put(figure);
   }
 
-  get(id: string): Figure | undefined {
+  async get(id: string): Promise<Figure | undefined> {
     return this.byId.get(id);
   }
 
-  forRecord(nodeType: string, nodeId: NodeId, label?: string): Figure[] {
+  async forRecord(nodeType: string, nodeId: NodeId, label?: string): Promise<Figure[]> {
     const list = this.byRecord.get(recordKey(nodeType, nodeId)) ?? [];
     if (label) return list.filter((f) => f.label === label);
     return [...list];
   }
 
-  breakdown(id: string): { figure: Figure; parts: FigurePart[] } | undefined {
+  async breakdown(id: string): Promise<{ figure: Figure; parts: FigurePart[] } | undefined> {
     const figure = this.byId.get(id);
     if (!figure) return undefined;
     return { figure, parts: figure.computedFrom };

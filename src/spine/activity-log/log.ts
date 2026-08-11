@@ -11,7 +11,7 @@ export class InMemoryActivityLog implements ActivityLog {
   private byRecord = new Map<string, ActivityEntry[]>();
   private seq = 0;
 
-  append(entry: ActivityEntry): void {
+  async append(entry: ActivityEntry): Promise<void> {
     if (this.byId.has(entry.id)) {
       throw new Error(`Activity entry already exists: ${entry.id}`);
     }
@@ -25,11 +25,11 @@ export class InMemoryActivityLog implements ActivityLog {
     }
   }
 
-  get(id: string): ActivityEntry | undefined {
+  async get(id: string): Promise<ActivityEntry | undefined> {
     return this.byId.get(id);
   }
 
-  query(q: ActivityQuery = {}): ActivityEntry[] {
+  async query(q: ActivityQuery = {}): Promise<ActivityEntry[]> {
     let result = this.entries;
     if (q.operationName) {
       result = result.filter((e) => e.operationName === q.operationName);
@@ -49,17 +49,18 @@ export class InMemoryActivityLog implements ActivityLog {
     return result.slice(-limit);
   }
 
-  forRecord(nodeType: string, nodeId: string): ActivityEntry[] {
+  async forRecord(nodeType: string, nodeId: string): Promise<ActivityEntry[]> {
     return [...(this.byRecord.get(recordKey(nodeType, nodeId)) ?? [])];
   }
 
-  markUndone(entryId: string, byUndoEntryId: string): void {
+  async markUndone(entryId: string, byUndoEntryId: string): Promise<void> {
     const entry = this.byId.get(entryId);
     if (!entry) return;
     entry.outcome = "undone";
     entry.undoneBy = byUndoEntryId;
   }
-  nextId(): string {
+
+  async nextId(): Promise<string> {
     this.seq += 1;
     return `act_${this.seq.toString(36)}`;
   }

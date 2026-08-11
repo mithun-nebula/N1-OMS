@@ -12,11 +12,11 @@ export default async function AdminPage() {
   if (user.role !== "super-admin" && user.role !== "admin") redirect("/today");
 
   const accounts = listAccounts();
-  const engine = getAutonomyEngine();
+  const engine = await getAutonomyEngine();
   const rules = engine.listRules();
   const suggestions = engine.listSuggestions();
   const modes = providerModes();
-  const operations = getWorld().registry.list();
+  const operations = (await getWorld()).registry.list();
 
   return (
     <Shell>

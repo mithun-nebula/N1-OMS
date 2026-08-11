@@ -15,11 +15,11 @@ export function versionIdFor(courseId: string, version: number): NodeId {
   return `${courseId}#v${version}`;
 }
 
-export function readVersions(
+export async function readVersions(
   graph: RecordStore,
   courseId: string,
-): CourseVersion[] {
-  const versions = graph.find(
+): Promise<CourseVersion[]> {
+  const versions = await graph.find(
     "course-version",
     (n) => (n.data as { courseId?: string }).courseId === courseId,
   );
@@ -28,15 +28,15 @@ export function readVersions(
     .sort((a, b) => a.version - b.version);
 }
 
-export function snapshotCourse(
+export async function snapshotCourse(
   graph: RecordStore,
   courseId: string,
   by: string,
   reason?: string,
-): CourseVersion | undefined {
-  const node = graph.getNode("course", courseId);
+): Promise<CourseVersion | undefined> {
+  const node = await graph.getNode("course", courseId);
   if (!node) return undefined;
-  const existing = readVersions(graph, courseId);
+  const existing = await readVersions(graph, courseId);
   const version = existing.length === 0 ? 1 : existing[existing.length - 1].version + 1;
   const snapshot: CourseVersion = {
     courseId,
@@ -46,16 +46,16 @@ export function snapshotCourse(
     reason,
     snapshot: { ...node.data },
   };
-  graph.putNode("course-version", versionIdFor(courseId, version), snapshot as unknown as Record<string, unknown>);
+  await graph.putNode("course-version", versionIdFor(courseId, version), snapshot as unknown as Record<string, unknown>);
   return snapshot;
 }
 
-export function getVersion(
+export async function getVersion(
   graph: RecordStore,
   courseId: string,
   version: number,
-): CourseVersion | undefined {
-  const node = graph.getNode("course-version", versionIdFor(courseId, version));
+): Promise<CourseVersion | undefined> {
+  const node = await graph.getNode("course-version", versionIdFor(courseId, version));
   return node ? (node.data as unknown as CourseVersion) : undefined;
 }
 
@@ -67,14 +67,14 @@ export interface StaleCourse {
   daysWaiting: number;
 }
 
-export function findStaleCourses(
+export async function findStaleCourses(
   graph: RecordStore,
   asOf: string,
   thresholds: Partial<Record<Stage, number>> = STAGE_THRESHOLD_DAYS,
-): StaleCourse[] {
+): Promise<StaleCourse[]> {
   const stale: StaleCourse[] = [];
   const asOfMs = new Date(asOf).getTime();
-  const courses = graph.find("course", () => true) as RecordNode[];
+  const courses = (await graph.find("course", () => true)) as RecordNode[];
   for (const course of courses) {
     const data = course.data as {
       stage?: string;

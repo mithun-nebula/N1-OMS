@@ -13,7 +13,7 @@ function world() {
 
 describe("room.booking — clash is resolved, not refused", () => {
   it("proposes alternatives when a room clashes", async () => {
-    const { spine } = world();
+    const { spine } = await world();
     await spine.submit(
       adapters.fromForm({
         actor: "james",
@@ -34,7 +34,7 @@ describe("room.booking — clash is resolved, not refused", () => {
   });
 
   it("displaces the existing booking when asked", async () => {
-    const { spine } = world();
+    const { spine } = await world();
     await spine.submit(
       adapters.fromForm({
         actor: "james",
@@ -56,7 +56,7 @@ describe("room.booking — clash is resolved, not refused", () => {
 
 describe("meetings — immutable link + late-add auto-send", () => {
   it("creates a link that survives a move and reaches a late attendee", async () => {
-    const { spine, deps } = world();
+    const { spine, deps } = await world();
     const created = await spine.submit(
       adapters.fromForm({
         actor: "james",
@@ -72,7 +72,7 @@ describe("meetings — immutable link + late-add auto-send", () => {
     );
     expect(created.status).toBe("ran");
     const meetingId = (created.result?.response as { meetingId: string }).meetingId;
-    const link = (deps.graph.getNode("meeting", meetingId)?.data as { link?: string }).link;
+    const link = ((await deps.graph.getNode("meeting", meetingId))?.data as { link?: string }).link;
     expect(link).toBeTruthy();
 
     const moved = await spine.submit(
@@ -83,7 +83,7 @@ describe("meetings — immutable link + late-add auto-send", () => {
       }),
     );
     expect(moved.status).toBe("ran");
-    expect((deps.graph.getNode("meeting", meetingId)?.data as { link?: string }).link).toBe(link);
+    expect(((await deps.graph.getNode("meeting", meetingId))?.data as { link?: string }).link).toBe(link);
 
     const added = await spine.submit(
       adapters.fromForm({
@@ -98,7 +98,7 @@ describe("meetings — immutable link + late-add auto-send", () => {
 
 describe("common calendar — notify + record + undo are atomic", () => {
   it("every calendar op returns notify + undo (and is recorded)", async () => {
-    const { spine, deps } = world();
+    const { spine, deps } = await world();
     const created = await spine.submit(
       adapters.fromForm({
         actor: "james",
@@ -111,7 +111,7 @@ describe("common calendar — notify + record + undo are atomic", () => {
     expect((created.result?.response as { picks: string[] }).picks.length).toBeGreaterThan(0);
     expect(created.result?.publishedTo?.length).toBeGreaterThan(0);
     expect(created.result?.undo).toBeTruthy();
-    expect(deps.log.query({ operationName: "calendar.create" }).length).toBe(1);
+    expect((await deps.log.query({ operationName: "calendar.create" })).length).toBe(1);
 
     const edited = await spine.submit(
       adapters.fromForm({ actor: "arun", name: "calendar.edit", args: { entryId, title: "Sprint review (edited)" } }),
@@ -137,7 +137,7 @@ describe("common calendar — notify + record + undo are atomic", () => {
   });
 
   it("undo is offered to anyone (not just the creator)", async () => {
-    const { spine } = world();
+    const { spine } = await world();
     const created = await spine.submit(
       adapters.fromForm({ actor: "james", name: "calendar.create", args: { title: "x", kind: "meeting", date: "2026-08-13" } }),
     );
@@ -147,11 +147,11 @@ describe("common calendar — notify + record + undo are atomic", () => {
   });
 
   it("renders a month-only density view", async () => {
-    const { spine, deps } = world();
+    const { spine, deps } = await world();
     await spine.submit(
       adapters.fromForm({ actor: "james", name: "calendar.create", args: { title: "Quick sync", kind: "meeting", date: "2026-08-15" } }),
     );
-    const cells = monthView(deps.graph, 2026, 8);
+    const cells = await monthView(deps.graph, 2026, 8);
     expect(cells.length).toBe(31);
     expect(cells[14].meetings).toBe(1);
     expect(cells[17].events.find((e) => e.title === "SHOWCASE")).toBeTruthy();
@@ -160,7 +160,7 @@ describe("common calendar — notify + record + undo are atomic", () => {
 
 describe("equipment — repeat-fault detection", () => {
   it("counts three faults on the same equipment in a month", async () => {
-    const { spine, deps } = world();
+    const { spine, deps } = await world();
     for (let i = 0; i < 3; i++) {
       await spine.submit(
         adapters.fromVoice({
@@ -171,13 +171,13 @@ describe("equipment — repeat-fault detection", () => {
         }),
       );
     }
-    expect(repeatFaults(deps.graph, "projector-hall-1", "2026-08").length).toBe(3);
+    expect((await repeatFaults(deps.graph, "projector-hall-1", "2026-08")).length).toBe(3);
   });
 });
 
 describe("utilities — two-questions-per-day limit", () => {
   it("allows two captures then refuses the third", async () => {
-    const { spine } = world();
+    const { spine } = await world();
     const a = await spine.submit(adapters.fromForm({ actor: "arun", name: "utility.capture", args: { subject: "Hall 1 AC", detail: "on 9-6" } }));
     const b = await spine.submit(adapters.fromForm({ actor: "arun", name: "utility.capture", args: { subject: "Hall 2 AC", detail: "on 9-6" } }));
     const c = await spine.submit(adapters.fromForm({ actor: "arun", name: "utility.capture", args: { subject: "Small Room AC", detail: "on 9-6" } }));
@@ -189,49 +189,49 @@ describe("utilities — two-questions-per-day limit", () => {
 
 describe("documents — required-vs-supplied + expiry", () => {
   it("tracks a required doc and flags expiry", async () => {
-    const { spine, deps } = world();
+    const { spine, deps } = await world();
     await spine.submit(
       adapters.fromForm({ actor: "shruti", name: "document.require", args: { nodeType: "course", nodeId: "ai-basics", name: "Insurance certificate" } }),
     );
-    expect(requiredVsSupplied(deps.graph, "course", "ai-basics").missing).toContain("Insurance certificate");
+    expect((await requiredVsSupplied(deps.graph, "course", "ai-basics")).missing).toContain("Insurance certificate");
     await spine.submit(
       adapters.fromForm({ actor: "shruti", name: "document.store", args: { name: "Insurance certificate", nodeType: "course", nodeId: "ai-basics", expiresOn: "2026-09-02" } }),
     );
-    expect(requiredVsSupplied(deps.graph, "course", "ai-basics").missing).not.toContain("Insurance certificate");
-    const expiring = findExpiringDocuments(deps.graph, "2026-08-08", 30);
+    expect((await requiredVsSupplied(deps.graph, "course", "ai-basics")).missing).not.toContain("Insurance certificate");
+    const expiring = await findExpiringDocuments(deps.graph, "2026-08-08", 30);
     expect(expiring.find((d) => d.name === "Insurance certificate")).toBeTruthy();
   });
 });
 
 describe("events — registration pacing + overdue tasks", () => {
   it("registers attendees and paces against a target", async () => {
-    const { spine, deps } = world();
+    const { spine, deps } = await world();
     const created = await spine.submit(
       adapters.fromForm({ actor: "james", name: "event.create", args: { title: "Demo Day", date: "2026-09-20", capacity: 100 } }),
     );
     const eventId = (created.result?.response as { eventId: string }).eventId;
     await spine.submit(adapters.fromForm({ actor: "james", name: "event.register", args: { eventId, attendee: "priya" } }));
-    expect(registrationPacing(deps.graph, eventId, 10)).toBe("behind");
+    expect(await registrationPacing(deps.graph, eventId, 10)).toBe("behind");
     for (const a of ["arun", "karthik", "divya", "meena", "ravi", "naveen", "shruti"]) {
       await spine.submit(adapters.fromForm({ actor: "james", name: "event.register", args: { eventId, attendee: a } }));
     }
-    expect(registrationPacing(deps.graph, eventId, 5)).toBe("ahead");
+    expect(await registrationPacing(deps.graph, eventId, 5)).toBe("ahead");
 
     await spine.submit(
       adapters.fromForm({ actor: "james", name: "event.addTask", args: { eventId, text: "Book caterer", owner: "shruti", due: "2020-01-01" } }),
     );
-    expect(findOverdueEventTasks(deps.graph, "2026-08-08").length).toBeGreaterThan(0);
+    expect((await findOverdueEventTasks(deps.graph, "2026-08-08")).length).toBeGreaterThan(0);
   });
 });
 
 describe("announcements — per-person acknowledgement", () => {
   it("tracks who has/hasn't acknowledged", async () => {
-    const { spine, deps } = world();
+    const { spine, deps } = await world();
     const sent = await spine.submit(
       adapters.fromForm({ actor: "james", name: "announcement.send", args: { message: "New policy", to: ["priya", "arun", "ravi"], policy: true } }),
     );
     const id = (sent.result?.response as { announcementId: string }).announcementId;
     await spine.submit(adapters.fromForm({ actor: "priya", name: "announcement.ack", args: { announcementId: id } }));
-    expect(nonAcknowledgers(deps.graph, id)).toEqual(["arun", "ravi"]);
+    expect(await nonAcknowledgers(deps.graph, id)).toEqual(["arun", "ravi"]);
   });
 });

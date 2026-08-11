@@ -15,6 +15,14 @@
 > **Reading order of this file:** what it is → the core idea → the rules → every feature
 > → the appendix rules (A–E, the real detail) → the screens → the flow → open decisions →
 > build-vs-buy → discrepancies & gotchas.
+>
+> **BUILD STATUS (2026-08-10):** This is the **design spec** (provider-agnostic).
+> The **build state** is in `docs/HANDOFF.md` (start there for a new session) and
+> `docs/STATUS.md`. Summary: the full spine is built (async stores, 6 Postgres tables,
+> gate stays sync), all 26 UI pages are live, 150/161 N1 DocTypes mapped with full CRUD
+> at `/records`, data persists to Supabase Postgres. 6 team-workflow features planned
+> (standup, calendar deadlines, reminders, team assignment, workload, morning flow).
+> See `docs/HANDOFF.md` for the complete picture.
 
 ---
 
@@ -28,7 +36,9 @@ It is **not a generic HRMS**. The differentiator is an **assistant-first, operat
 design: almost everything happens through a conversational assistant that funnels every
 action — typed, spoken, or from a form — through **one gate**, records it, and publishes it.
 
-The deliverables in this folder are **design/spec artefacts only**. There is no code yet.
+The deliverables in this folder were originally **design/spec artefacts only**.
+**As of 2026-08-10 the full application is built** — see `docs/HANDOFF.md` and
+`docs/STATUS.md` for the build state.
 
 **The spec itself stays provider-agnostic** — nothing in sections 1–8, 10 or 13 depends on a
 language, framework or vendor. The **build/implementation decisions** (stack, hosting, OSS
@@ -568,10 +578,14 @@ The spec deliberately left implementation choices open (none changes the shape).
 now been **resolved** in `BUILD-PLAN.md`; a few remain open.
 
 ### ✅ RESOLVED (build decisions — see `BUILD-PLAN.md` for detail)
-- **Programming language & framework** → **Next.js (TypeScript)** for the spine + web app.
+- **Programming language & framework** → **Next.js 16 (TypeScript)** for the spine + web app.
 - **Hosting** → **Google Cloud Platform**, fully serverless in **asia-south1 (Mumbai)**:
   **Cloud Run** (scale-to-zero) for compute, **Supabase** Postgres (+ Auth / Storage / Realtime)
-  for data, **Upstash** Redis, **Cloud Storage** for files. **No VM.**
+  for data, **Upstash** Redis, **Cloud Storage** for files. **No VM.** *(GCP deploy deferred
+  to a separate session — user switching systems.)*
+- **Database** → **Supabase Postgres** via pooler (transaction-mode, port 6543). **6 tables**
+  (`orga_nodes`, `orga_edges`, `orga_activity`, `orga_figures`, `orga_accounts`,
+  `orga_autonomy_rules`). Async store interfaces; gate stays synchronous.
 - **Whether an off-the-shelf system supplies staff records underneath** → **Yes: N1,
   forked (our source)**, run headless on Cloud Run with its always-on scheduler/workers
   externalized to **Cloud Scheduler + Cloud Run Jobs**. Sits below the record layer; nothing
@@ -579,12 +593,15 @@ now been **resolved** in `BUILD-PLAN.md`; a few remain open.
 - **Payroll / statutory compliance** → **in scope** (justifies N1's maintained compliance).
 - **Desktop delivery** → browser web app (Win/Linux/Mac, zero install). **Mobile** → deferred;
   spine stays API-first so any native tech works later.
+- **Persistence** → **6 Postgres tables, durable**. Seed guard on first boot. Accounts +
+  autonomy graduation state persist. Permission owners/teams maps hydrated on boot.
 
 ### ⬜ STILL OPEN (abstracted behind adapters — do not block the build)
 - **Video provider** — Google Meet is the likely candidate and the user's stated expectation,
-  behind a provider-agnostic adapter (appendix E7).
+  behind a provider-agnostic adapter (appendix E7). *Stub URLs for now.*
 - **LLM / reasoning provider** for the assistant, document generation, and standing-rule
-  interpretation — provider-agnostic client.
+  interpretation — provider-agnostic client. *User chose to defer the provider decision.
+  Assistant works heuristically (no LLM). Deck generation throws without `ORG_LLM_PROVIDER=dev`.*
 - **Exact headcount** — affects only Cloud Run sizing/concurrency, not the architecture.
 - **Whether a manager sees the reason given for a miss** (appendix A8) — recommendation: they do not.
 
@@ -592,6 +609,7 @@ now been **resolved** in `BUILD-PLAN.md`; a few remain open.
 - [x] Production deployment vs portfolio/learning project → **production**.
 - [x] Use as-is, fork-and-extend, or just study the architecture → **fork-and-extend (N1)**.
 - [x] Country / payroll compliance requirements → **Indian statutory in scope** (N1 first-class).
+- [x] 150 of 161 N1 DocTypes mapped (8 categories, generic + specific mappers).
 - [ ] Headcount (10 vs 500) — sizes infra only.
 - [ ] Will it ever be offered as a hosted service? (decides the GPL-3.0 question.)
 - [ ] Verify N1's Indian statutory compliance against the org's actual requirements.

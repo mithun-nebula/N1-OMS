@@ -26,12 +26,13 @@ function nextMeetingId(): string {
   return `meeting_${Date.now().toString(36)}_${meetingSeq}`;
 }
 
-function readMeeting(graph: RecordStore, id: string): MeetingData | undefined {
-  return graph.getNode("meeting", id)?.data as MeetingData | undefined;
+async function readMeeting(graph: RecordStore, id: string): Promise<MeetingData | undefined> {
+  const node = await graph.getNode("meeting", id);
+  return node?.data as MeetingData | undefined;
 }
 
-function busyAt(graph: RecordStore, actor: string, from: string, to: string): boolean {
-  const meetings = graph.find(
+async function busyAt(graph: RecordStore, actor: string, from: string, to: string): Promise<boolean> {
+  const meetings = await graph.find(
     "meeting",
     (n) => (n.data as { cancelled?: boolean }).cancelled !== true,
   );
@@ -72,7 +73,10 @@ export function meetingCreateHandler(
     permission: () => ({ action: "create", nodeType: "meeting" }),
     involvesMoneyOrPeople: () => false,
     execute: async (args, ctx) => {
-      const busy = args.attendees.filter((a) => busyAt(graph, a, args.from, args.to));
+      const busy: string[] = [];
+      for (const a of args.attendees) {
+        if (await busyAt(graph, a, args.from, args.to)) busy.push(a);
+      }
       const id = nextMeetingId();
       const linkId = `link_${id}`;
       let link: string | undefined;
@@ -95,7 +99,7 @@ export function meetingCreateHandler(
         attendees: args.attendees,
         externals: args.externals ?? [],
       };
-      graph.putNode("meeting", id, data);
+      await graph.putNode("meeting", id, data);
       const publishTo = args.attendees.map((actor) => ({
         kind: "actor" as const,
         actor,
@@ -104,7 +108,7 @@ export function meetingCreateHandler(
         changes: [{ nodeType: "meeting", nodeId: id, after: { ...data, busy } }],
         undo: {
           description: `Cancel meeting ${id}.`,
-          revert: () => { graph.removeNode("meeting", id); },
+          revert: async () => { await graph.removeNode("meeting", id); },
         },
         publishedTo: publishTo,
         response: { meetingId: id, linkId, link, busyAttendees: busy },
@@ -134,8 +138,8 @@ export function meetingUpdateHandler(
       recordNodeIds: [args.meetingId],
     }),
     involvesMoneyOrPeople: () => false,
-    execute: (args) => {
-      const before = readMeeting(graph, args.meetingId);
+    execute: async (args) => {
+      const before = await readMeeting(graph, args.meetingId);
       if (!before) throw new Error(`No meeting ${args.meetingId}`);
       const updated: MeetingData = {
         ...before,
@@ -143,7 +147,7 @@ export function meetingUpdateHandler(
         from: args.from ?? before.from,
         to: args.to ?? before.to,
       };
-      graph.putNode("meeting", args.meetingId, updated);
+      await graph.putNode("meeting", args.meetingId, updated);
       return {
         changes: [
           {
@@ -155,7 +159,7 @@ export function meetingUpdateHandler(
         ],
         undo: {
           description: `Revert meeting ${args.meetingId}.`,
-          revert: () => { graph.putNode("meeting", args.meetingId, before); },
+          revert: async () => { await graph.putNode("meeting", args.meetingId, before); },
         },
         publishedTo: before.attendees.map((actor) => ({ kind: "actor" as const, actor })),
       };
@@ -182,13 +186,13 @@ export function meetingAddAttendeeHandler(
       recordNodeIds: [args.meetingId],
     }),
     involvesMoneyOrPeople: () => false,
-    execute: (args) => {
-      const before = readMeeting(graph, args.meetingId);
+    execute: async (args) => {
+      const before = await readMeeting(graph, args.meetingId);
       if (!before) throw new Error(`No meeting ${args.meetingId}`);
       const attendees = before.attendees.includes(args.attendee)
         ? before.attendees
         : [...before.attendees, args.attendee];
-      graph.putNode("meeting", args.meetingId, { ...before, attendees });
+      await graph.putNode("meeting", args.meetingId, { ...before, attendees });
       return {
         changes: [{ nodeType: "meeting", nodeId: args.meetingId, after: { added: args.attendee } }],
         publishedTo: [{ kind: "actor", actor: args.attendee }],
@@ -214,9 +218,9 @@ export function meetingCancelHandler(
     }),
     involvesMoneyOrPeople: () => false,
     execute: async (args) => {
-      const before = readMeeting(graph, args.meetingId);
+      const before = await readMeeting(graph, args.meetingId);
       if (!before) throw new Error(`No meeting ${args.meetingId}`);
-      graph.putNode("meeting", args.meetingId, { ...before, cancelled: true });
+      await graph.putNode("meeting", args.meetingId, { ...before, cancelled: true });
       try {
         await providers().video.cancelMeeting(before.linkId);
       } catch {
@@ -226,7 +230,7 @@ export function meetingCancelHandler(
         changes: [{ nodeType: "meeting", nodeId: args.meetingId, after: { cancelled: true, linkEnded: true } }],
         undo: {
           description: `Un-cancel meeting ${args.meetingId}.`,
-          revert: () => { graph.putNode("meeting", args.meetingId, before); },
+          revert: async () => { await graph.putNode("meeting", args.meetingId, before); },
         },
         publishedTo: before.attendees.map((actor) => ({ kind: "actor" as const, actor })),
       };

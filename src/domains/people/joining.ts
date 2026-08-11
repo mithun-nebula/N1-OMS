@@ -25,11 +25,11 @@ export function onboardingIdFor(employeeId: string): NodeId {
   return `onboarding:${employeeId}`;
 }
 
-function readOnboarding(
+async function readOnboarding(
   graph: RecordStore,
   employeeId: string,
-): OnboardingData | undefined {
-  const node = graph.getNode("onboarding", onboardingIdFor(employeeId));
+): Promise<OnboardingData | undefined> {
+  const node = await graph.getNode("onboarding", onboardingIdFor(employeeId));
   return node ? (node.data as OnboardingData) : undefined;
 }
 
@@ -84,7 +84,7 @@ export function joiningStartHandler(
       recordNodeIds: [onboardingIdFor(args.employeeId)],
     }),
     involvesMoneyOrPeople: () => true,
-    execute: (args, ctx) => {
+    execute: async (args, ctx) => {
       const now = ctx.now();
       const lead = teamLeadOf(args.employeeId);
       const steps: OnboardingStep[] =
@@ -103,7 +103,7 @@ export function joiningStartHandler(
         status: "active",
         steps,
       };
-      graph.putNode("onboarding", onboardingIdFor(args.employeeId), data);
+      await graph.putNode("onboarding", onboardingIdFor(args.employeeId), data);
       const owners = new Set(steps.map((s) => s.owner));
       const result: OperationResult = {
         changes: [
@@ -135,8 +135,8 @@ export function joiningCompleteStepHandler(
         ? { ok: true }
         : { ok: false, missing, detail: "Employee id and step id are required." };
     },
-    permission: (args) => {
-      const onboarding = readOnboarding(graph, args.employeeId);
+    permission: async (args) => {
+      const onboarding = await readOnboarding(graph, args.employeeId);
       const step = onboarding?.steps.find((s) => s.id === args.stepId);
       return {
         action: "edit",
@@ -146,8 +146,8 @@ export function joiningCompleteStepHandler(
       };
     },
     involvesMoneyOrPeople: () => true,
-    execute: (args, ctx) => {
-      const before = readOnboarding(graph, args.employeeId);
+    execute: async (args, ctx) => {
+      const before = await readOnboarding(graph, args.employeeId);
       if (!before) {
         throw new Error(`No onboarding found for ${args.employeeId}`);
       }
@@ -166,7 +166,7 @@ export function joiningCompleteStepHandler(
         steps,
         status: steps.every((s) => s.status === "done") ? "complete" : "active",
       };
-      graph.putNode("onboarding", onboardingIdFor(args.employeeId), updated);
+      await graph.putNode("onboarding", onboardingIdFor(args.employeeId), updated);
       const result: OperationResult = {
         changes: [
           {
@@ -178,8 +178,8 @@ export function joiningCompleteStepHandler(
         ],
         undo: {
           description: `Reopen onboarding step ${args.stepId}.`,
-          revert: () => {
-            graph.putNode("onboarding", onboardingIdFor(args.employeeId), before);
+          revert: async () => {
+            await graph.putNode("onboarding", onboardingIdFor(args.employeeId), before);
           },
         },
         publishedTo: [{ kind: "actor", actor: before.employeeId }],
@@ -189,12 +189,12 @@ export function joiningCompleteStepHandler(
   };
 }
 
-export function findOverdueSteps(
+export async function findOverdueSteps(
   graph: RecordStore,
   asOf: string,
-): Array<{ employeeId: string; step: OnboardingStep }> {
+): Promise<Array<{ employeeId: string; step: OnboardingStep }>> {
   const overdue: Array<{ employeeId: string; step: OnboardingStep }> = [];
-  const onboardings = graph.find("onboarding", () => true) as RecordNode[];
+  const onboardings = (await graph.find("onboarding", () => true)) as RecordNode[];
   for (const node of onboardings) {
     const data = node.data as OnboardingData;
     if (data.status === "complete") continue;

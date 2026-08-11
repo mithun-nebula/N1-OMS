@@ -13,7 +13,8 @@ export async function GET(
     return NextResponse.json({ error: "Not authenticated." }, { status: 401 });
   }
   const { type, id } = await params;
-  const figures = getWorld().deps.figures.forRecord(type, id);
+  const { deps } = await getWorld();
+  const figures = await deps.figures.forRecord(type, id);
   return NextResponse.json({
     nodeType: type,
     nodeId: id,

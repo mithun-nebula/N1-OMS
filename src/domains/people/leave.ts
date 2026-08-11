@@ -10,14 +10,14 @@ export interface LeaveClash {
   status?: string;
 }
 
-export function findLeaveClashes(
+export async function findLeaveClashes(
   graph: RecordStore,
   employeeId: string,
   fromDate: string,
   toDate: string,
-): LeaveClash[] {
+): Promise<LeaveClash[]> {
   const clashes: LeaveClash[] = [];
-  const leaves = graph.find("leave", (n) => {
+  const leaves = await graph.find("leave", (n) => {
     const d = n.data as { employeeId?: string; status?: string };
     return (
       d.employeeId === employeeId &&
@@ -36,7 +36,7 @@ export function findLeaveClashes(
       });
     }
   }
-  const attendance = graph.find("attendance", (n) => {
+  const attendance = await graph.find("attendance", (n) => {
     const d = n.data as { employee?: string };
     return d.employee === employeeId;
   });

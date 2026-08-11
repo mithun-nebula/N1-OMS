@@ -50,7 +50,7 @@ export interface OperationContext {
   actor: ActorId;
   now: () => string;
   graph: {
-    get: (nodeType: string, nodeId: NodeId) => unknown | undefined;
+    get: (nodeType: string, nodeId: NodeId) => Promise<unknown | undefined>;
   };
 }
 
@@ -60,8 +60,8 @@ export interface OperationHandler<
 > {
   name: string;
   category?: OperationCategory;
-  validate: (args: TArgs) => ValidationResult;
-  permission: (args: TArgs) => PermissionRequirement | PermissionRequirement[];
+  validate: (args: TArgs) => Promise<ValidationResult> | ValidationResult;
+  permission: (args: TArgs) => Promise<PermissionRequirement | PermissionRequirement[]> | PermissionRequirement | PermissionRequirement[];
   involvesMoneyOrPeople: (args: TArgs) => boolean;
   execute: (args: TArgs, ctx: OperationContext) => Promise<TResult> | TResult;
 }

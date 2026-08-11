@@ -21,21 +21,21 @@ export class CourseService {
     private readonly figures: FigureStore,
   ) {}
 
-  getCourse(courseId: string): RecordNode | undefined {
+  getCourse(courseId: string): Promise<RecordNode | undefined> {
     return this.graph.getNode("course", courseId);
   }
 
-  listProgress(asOf: string = new Date().toISOString()): CourseProgress[] {
-    const stale = findStaleCourses(this.graph, asOf);
+  async listProgress(asOf: string = new Date().toISOString()): Promise<CourseProgress[]> {
+    const stale = await findStaleCourses(this.graph, asOf);
     const staleMap = new Map(stale.map((s) => [s.courseId, s]));
-    const courses = this.graph.find("course", () => true);
-    return courses.map((c) => this.toProgress(c, staleMap));
+    const courses = await this.graph.find("course", () => true);
+    return Promise.all(courses.map((c) => this.toProgress(c, staleMap)));
   }
 
-  getProgress(courseId: string, asOf: string = new Date().toISOString()): CourseProgress | undefined {
-    const node = this.graph.getNode("course", courseId);
+  async getProgress(courseId: string, asOf: string = new Date().toISOString()): Promise<CourseProgress | undefined> {
+    const node = await this.graph.getNode("course", courseId);
     if (!node) return undefined;
-    const stale = findStaleCourses(this.graph, asOf);
+    const stale = await findStaleCourses(this.graph, asOf);
     const staleMap = new Map(stale.map((s) => [s.courseId, s]));
     return this.toProgress(node, staleMap);
   }
@@ -47,7 +47,7 @@ export class CourseService {
     renderer: string;
     source: "llm" | "heuristic";
   }> {
-    const node = input.courseId ? this.graph.getNode("course", input.courseId) : undefined;
+    const node = input.courseId ? await this.graph.getNode("course", input.courseId) : undefined;
     const data = node?.data as { title?: string; modules?: Array<{ name: string }> } | undefined;
     const topic = input.topic ?? data?.title ?? "Untitled";
     const system =
@@ -67,7 +67,7 @@ export class CourseService {
     return { topic, slides, format: "org-outline", renderer: "docx-pdf-deferred", source };
   }
 
-  private toProgress(node: RecordNode, staleMap: Map<string, { daysWaiting: number }>): CourseProgress {
+  private async toProgress(node: RecordNode, staleMap: Map<string, { daysWaiting: number }>): Promise<CourseProgress> {
     const data = node.data as {
       title?: string;
       stage?: string;
@@ -76,7 +76,7 @@ export class CourseService {
       progressNote?: { text: string; at: string; by: string };
       modules?: unknown[];
     };
-    const figs = this.figures.forRecord("course", node.id, "Course completion");
+    const figs = await this.figures.forRecord("course", node.id, "Course completion");
     const figure = figs[figs.length - 1];
     const stale = staleMap.get(node.id);
     return {

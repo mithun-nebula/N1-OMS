@@ -11,13 +11,15 @@ export async function GET() {
   if (!user) {
     return NextResponse.json({ error: "Not authenticated." }, { status: 401 });
   }
-  const announcements = getWorld().deps.graph
-    .find("announcement", () => true)
-    .map((n) => ({
+  const { deps } = await getWorld();
+  const nodes = await deps.graph.find("announcement", () => true);
+  const announcements = await Promise.all(
+    nodes.map(async (n) => ({
       id: n.id,
       message: (n.data as { message?: string }).message,
-      outstanding: nonAcknowledgers(getWorld().deps.graph, n.id).length,
-    }));
+      outstanding: (await nonAcknowledgers(deps.graph, n.id)).length,
+    })),
+  );
   return NextResponse.json({ announcements });
 }
 
@@ -32,7 +34,7 @@ export async function POST(request: Request) {
   } catch {
     return NextResponse.json({ error: "Invalid JSON body." }, { status: 400 });
   }
-  const res = await getWorld().spine.submit(
+  const res = await (await getWorld()).spine.submit(
     adapters.fromForm({
       actor: user.id,
       name: "announcement.send",

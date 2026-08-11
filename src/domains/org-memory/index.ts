@@ -8,7 +8,7 @@ export const orgMemoryDomain: DomainModule = {
   register(ctx: DomainContext) {
     ctx.registry.register(orgMemoryRecordHandler(ctx.graph));
   },
-  seed(ctx: DomainContext) {
-    seedOrgMemory(ctx);
+  async seed(ctx: DomainContext) {
+    await seedOrgMemory(ctx);
   },
 };

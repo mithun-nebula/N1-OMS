@@ -14,12 +14,13 @@ export async function GET(
     return NextResponse.json({ error: "Not authenticated." }, { status: 401 });
   }
   const { id } = await params;
-  const node = getWorld().deps.graph.getNode("announcement", id);
+  const { deps } = await getWorld();
+  const node = await deps.graph.getNode("announcement", id);
   if (!node) {
     return NextResponse.json({ error: "That announcement is not available." }, { status: 404 });
   }
   return NextResponse.json({
     announcement: { id, ...node.data },
-    nonAcknowledgers: nonAcknowledgers(getWorld().deps.graph, id),
+    nonAcknowledgers: await nonAcknowledgers(deps.graph, id),
   });
 }

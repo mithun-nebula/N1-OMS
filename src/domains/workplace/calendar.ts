@@ -22,8 +22,9 @@ function nextEntryId(): string {
   return `cal_${Date.now().toString(36)}_${entrySeq}`;
 }
 
-function readEntry(graph: RecordStore, id: string): CalendarEntry | undefined {
-  return graph.getNode("calendar-entry", id)?.data as CalendarEntry | undefined;
+async function readEntry(graph: RecordStore, id: string): Promise<CalendarEntry | undefined> {
+  const node = await graph.getNode("calendar-entry", id);
+  return node?.data as CalendarEntry | undefined;
 }
 
 export function calendarCreateHandler(
@@ -50,7 +51,7 @@ export function calendarCreateHandler(
     },
     permission: () => ({ action: "create", nodeType: "calendar-entry" }),
     involvesMoneyOrPeople: () => false,
-    execute: (args, ctx) => {
+    execute: async (args, ctx) => {
       const id = nextEntryId();
       const { picks } = resolvePeople(args.people);
       const data: CalendarEntry = {
@@ -62,13 +63,13 @@ export function calendarCreateHandler(
         detail: args.detail,
         people: picks,
       };
-      graph.putNode("calendar-entry", id, data);
+      await graph.putNode("calendar-entry", id, data);
       return calendarResult({
         changes: [{ nodeType: "calendar-entry", nodeId: id, after: data }],
         notify: [{ kind: "actor", actor: ctx.actor }, ...picks.map((a) => ({ kind: "actor" as const, actor: a }))],
         undo: {
           description: `Cancel calendar entry ${id}.`,
-          revert: () => { graph.removeNode("calendar-entry", id); },
+          revert: async () => { await graph.removeNode("calendar-entry", id); },
         },
         response: { entryId: id, picks },
       });
@@ -98,8 +99,8 @@ export function calendarEditHandler(
       recordNodeIds: [args.entryId],
     }),
     involvesMoneyOrPeople: () => false,
-    execute: (args, ctx) => {
-      const before = readEntry(graph, args.entryId);
+    execute: async (args, ctx) => {
+      const before = await readEntry(graph, args.entryId);
       if (!before) throw new Error(`No calendar entry ${args.entryId}`);
       const updated: CalendarEntry = {
         ...before,
@@ -109,7 +110,7 @@ export function calendarEditHandler(
         to: args.to ?? before.to,
         detail: args.detail ?? before.detail,
       };
-      graph.putNode("calendar-entry", args.entryId, updated);
+      await graph.putNode("calendar-entry", args.entryId, updated);
       return calendarResult({
         changes: [
           {
@@ -122,7 +123,7 @@ export function calendarEditHandler(
         notify: before.people.map((a) => ({ kind: "actor" as const, actor: a })),
         undo: {
           description: `Revert calendar entry ${args.entryId}.`,
-          revert: () => { graph.putNode("calendar-entry", args.entryId, before); },
+          revert: async () => { await graph.putNode("calendar-entry", args.entryId, before); },
         },
       });
     },
@@ -148,19 +149,19 @@ export function calendarAddPeopleHandler(
       recordNodeIds: [args.entryId],
     }),
     involvesMoneyOrPeople: () => false,
-    execute: (args, ctx) => {
-      const before = readEntry(graph, args.entryId);
+    execute: async (args, ctx) => {
+      const before = await readEntry(graph, args.entryId);
       if (!before) throw new Error(`No calendar entry ${args.entryId}`);
       const { picks, note } = resolvePeople(args.people);
       const added = picks.filter((p) => !before.people.includes(p));
       const people = [...before.people, ...added];
-      graph.putNode("calendar-entry", args.entryId, { ...before, people });
+      await graph.putNode("calendar-entry", args.entryId, { ...before, people });
       return calendarResult({
         changes: [{ nodeType: "calendar-entry", nodeId: args.entryId, after: { added } }],
         notify: added.map((a) => ({ kind: "actor" as const, actor: a })),
         undo: {
           description: `Remove added people from ${args.entryId}.`,
-          revert: () => { graph.putNode("calendar-entry", args.entryId, before); },
+          revert: async () => { await graph.putNode("calendar-entry", args.entryId, before); },
         },
         response: { picks: added, resolvedFrom: note, addedBy: ctx.actor },
       });
@@ -187,12 +188,12 @@ export function calendarRemovePeopleHandler(
       recordNodeIds: [args.entryId],
     }),
     involvesMoneyOrPeople: () => false,
-    execute: (args, ctx) => {
-      const before = readEntry(graph, args.entryId);
+    execute: async (args, ctx) => {
+      const before = await readEntry(graph, args.entryId);
       if (!before) throw new Error(`No calendar entry ${args.entryId}`);
       const removed = before.people.filter((p) => args.people.includes(p));
       const people = before.people.filter((p) => !args.people.includes(p));
-      graph.putNode("calendar-entry", args.entryId, { ...before, people });
+      await graph.putNode("calendar-entry", args.entryId, { ...before, people });
       return calendarResult({
         changes: [{ nodeType: "calendar-entry", nodeId: args.entryId, after: { removed } }],
         notify: removed.map((a) => ({
@@ -201,7 +202,7 @@ export function calendarRemovePeopleHandler(
         })),
         undo: {
           description: `Restore removed people to ${args.entryId}.`,
-          revert: () => { graph.putNode("calendar-entry", args.entryId, before); },
+          revert: async () => { await graph.putNode("calendar-entry", args.entryId, before); },
         },
         response: { removed, removedBy: ctx.actor },
       });
@@ -224,16 +225,16 @@ export function calendarCancelHandler(
       recordNodeIds: [args.entryId],
     }),
     involvesMoneyOrPeople: () => false,
-    execute: (args, ctx) => {
-      const before = readEntry(graph, args.entryId);
+    execute: async (args, ctx) => {
+      const before = await readEntry(graph, args.entryId);
       if (!before) throw new Error(`No calendar entry ${args.entryId}`);
-      graph.putNode("calendar-entry", args.entryId, { ...before, cancelled: true });
+      await graph.putNode("calendar-entry", args.entryId, { ...before, cancelled: true });
       return calendarResult({
         changes: [{ nodeType: "calendar-entry", nodeId: args.entryId, after: { cancelled: true, cancelledBy: ctx.actor } }],
         notify: before.people.map((a) => ({ kind: "actor" as const, actor: a })),
         undo: {
           description: `Un-cancel ${args.entryId}.`,
-          revert: () => { graph.putNode("calendar-entry", args.entryId, before); },
+          revert: async () => { await graph.putNode("calendar-entry", args.entryId, before); },
         },
       });
     },
@@ -246,7 +247,7 @@ export interface CalendarCell {
   events: Array<{ id: NodeId; title: string }>;
 }
 
-export function monthView(graph: RecordStore, year: number, month: number): CalendarCell[] {
+export async function monthView(graph: RecordStore, year: number, month: number): Promise<CalendarCell[]> {
   const prefix = `${year}-${String(month).padStart(2, "0")}`;
   const days = new Date(year, month, 0).getDate();
   const cells: CalendarCell[] = Array.from({ length: days }, (_, i) => ({
@@ -254,7 +255,8 @@ export function monthView(graph: RecordStore, year: number, month: number): Cale
     meetings: 0,
     events: [],
   }));
-  for (const node of graph.find("calendar-entry", () => true)) {
+  const entries = await graph.find("calendar-entry", () => true);
+  for (const node of entries) {
     const d = node.data as CalendarEntry;
     if (d.cancelled || !d.date.startsWith(prefix)) continue;
     const day = Number(d.date.slice(8, 10));

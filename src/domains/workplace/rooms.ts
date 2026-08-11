@@ -23,8 +23,9 @@ function nextBookingId(): string {
   return `booking_${Date.now().toString(36)}_${bookingSeq}`;
 }
 
-function readRoom(graph: RecordStore, roomId: string): RoomData | undefined {
-  return graph.getNode("room", roomId)?.data as RoomData | undefined;
+async function readRoom(graph: RecordStore, roomId: string): Promise<RoomData | undefined> {
+  const node = await graph.getNode("room", roomId);
+  return node?.data as RoomData | undefined;
 }
 
 function overlapping(aFrom: string, aTo: string, bFrom?: string, bTo?: string): boolean {
@@ -32,31 +33,32 @@ function overlapping(aFrom: string, aTo: string, bFrom?: string, bTo?: string): 
   return aFrom < bTo && bFrom < aTo;
 }
 
-function bookingsFor(
+async function bookingsFor(
   graph: RecordStore,
   roomId: string,
-): Array<{ id: string; roomId: string; title: string; by: string; from: string; to: string }> {
-  return graph
-    .find("booking", (n) => (n.data as { roomId?: string }).roomId === roomId)
-    .map((n) => {
-      const d = n.data as BookingData;
-      return {
-        id: n.id,
-        roomId: d.roomId,
-        title: d.title,
-        by: d.by,
-        from: d.from,
-        to: d.to,
-      };
-    });
+): Promise<Array<{ id: string; roomId: string; title: string; by: string; from: string; to: string }>> {
+  const nodes = await graph.find("booking", (n) => (n.data as { roomId?: string }).roomId === roomId);
+  return nodes.map((n) => {
+    const d = n.data as BookingData;
+    return {
+      id: n.id,
+      roomId: d.roomId,
+      title: d.title,
+      by: d.by,
+      from: d.from,
+      to: d.to,
+    };
+  });
 }
 
-function findClash(graph: RecordStore, roomId: string, from: string, to: string) {
-  return bookingsFor(graph, roomId).find((b) => overlapping(from, to, b.from, b.to));
+async function findClash(graph: RecordStore, roomId: string, from: string, to: string) {
+  const bookings = await bookingsFor(graph, roomId);
+  return bookings.find((b) => overlapping(from, to, b.from, b.to));
 }
 
-function suitableRooms(graph: RecordStore, capacity?: number, equipment?: string[]) {
-  return graph.find("room", () => true).filter((r) => {
+async function suitableRooms(graph: RecordStore, capacity?: number, equipment?: string[]) {
+  const rooms = await graph.find("room", () => true);
+  return rooms.filter((r) => {
     const data = r.data as RoomData;
     if (capacity && data.capacity < capacity) return false;
     if (equipment && !equipment.every((e) => data.equipment.includes(e))) return false;
@@ -92,12 +94,17 @@ export function roomBookHandler(
       recordNodeIds: args.roomId ? [args.roomId] : undefined,
     }),
     involvesMoneyOrPeople: () => false,
-    execute: (args, ctx) => {
+    execute: async (args, ctx) => {
       let roomId = args.roomId;
       if (!roomId) {
-        const match = suitableRooms(graph, args.capacity, args.equipment).find(
-          (r) => !findClash(graph, r.id, args.from, args.to),
-        );
+        const candidates = await suitableRooms(graph, args.capacity, args.equipment);
+        let match: { id: string } | undefined;
+        for (const r of candidates) {
+          if (!(await findClash(graph, r.id, args.from, args.to))) {
+            match = r;
+            break;
+          }
+        }
         if (!match) {
           return {
             changes: [],
@@ -107,7 +114,7 @@ export function roomBookHandler(
         }
         roomId = match.id;
       } else {
-        const room = readRoom(graph, roomId);
+        const room = await readRoom(graph, roomId);
         if (args.capacity && room && room.capacity < args.capacity) {
           return {
             changes: [],
@@ -120,15 +127,19 @@ export function roomBookHandler(
         }
       }
 
-      const clash = findClash(graph, roomId, args.from, args.to);
+      const clash = await findClash(graph, roomId, args.from, args.to);
       if (clash) {
-        const alternatives = suitableRooms(graph, args.capacity, args.equipment)
-          .filter((r) => r.id !== roomId && !findClash(graph, r.id, args.from, args.to))
-          .map((r) => r.id);
+        const candidates = await suitableRooms(graph, args.capacity, args.equipment);
+        const alternatives: string[] = [];
+        for (const r of candidates) {
+          if (r.id !== roomId && !(await findClash(graph, r.id, args.from, args.to))) {
+            alternatives.push(r.id);
+          }
+        }
         if (args.displaceClash && alternatives.length > 0) {
           const movedTo = alternatives[0];
-          graph.putNode("booking", clash.id, { ...clash, roomId: movedTo });
-          const booking = createBooking(graph, roomId, args.title, ctx.actor, args.from, args.to);
+          await graph.putNode("booking", clash.id, { ...clash, roomId: movedTo });
+          const booking = await createBooking(graph, roomId, args.title, ctx.actor, args.from, args.to);
           return {
             changes: [
               { nodeType: "booking", nodeId: booking.id, after: booking },
@@ -153,7 +164,7 @@ export function roomBookHandler(
         };
       }
 
-      const booking = createBooking(graph, roomId, args.title, ctx.actor, args.from, args.to);
+      const booking = await createBooking(graph, roomId, args.title, ctx.actor, args.from, args.to);
       const result: OperationResult = {
         changes: [{ nodeType: "booking", nodeId: booking.id, after: booking }],
         publishedTo: [{ kind: "record", nodeType: "room", nodeId: roomId }],
@@ -164,17 +175,17 @@ export function roomBookHandler(
   };
 }
 
-function createBooking(
+async function createBooking(
   graph: RecordStore,
   roomId: string,
   title: string,
   by: string,
   from: string,
   to: string,
-): BookingData & { id: string } {
+): Promise<BookingData & { id: string }> {
   const id = nextBookingId();
   const data: BookingData = { roomId, title, by, from, to };
-  graph.putNode("booking", id, data);
+  await graph.putNode("booking", id, data);
   return { id, ...data };
 }
 
@@ -189,15 +200,16 @@ export function roomCancelHandler(
         : { ok: false, missing: ["bookingId"], detail: "A booking id is required." },
     permission: () => ({ action: "edit", nodeType: "booking" }),
     involvesMoneyOrPeople: () => false,
-    execute: (args) => {
-      const before = graph.getNode("booking", args.bookingId)?.data as BookingData | undefined;
-      graph.removeNode("booking", args.bookingId);
+    execute: async (args) => {
+      const node = await graph.getNode("booking", args.bookingId);
+      const before = node?.data as BookingData | undefined;
+      await graph.removeNode("booking", args.bookingId);
       return {
         changes: [{ nodeType: "booking", nodeId: args.bookingId, before, after: { cancelled: true } }],
         undo: {
           description: `Restore booking ${args.bookingId}.`,
-          revert: () => {
-            if (before) graph.putNode("booking", args.bookingId, before);
+          revert: async () => {
+            if (before) await graph.putNode("booking", args.bookingId, before);
           },
         },
         publishedTo: before ? [{ kind: "record", nodeType: "room", nodeId: before.roomId }] : [],

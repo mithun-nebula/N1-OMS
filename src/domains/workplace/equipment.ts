@@ -24,7 +24,7 @@ export function equipmentReportFaultHandler(
     },
     permission: () => ({ action: "create", nodeType: "fault" }),
     involvesMoneyOrPeople: () => false,
-    execute: (args, ctx) => {
+    execute: async (args, ctx) => {
       const id = `fault_${Date.now().toString(36)}`;
       const data: FaultData = {
         equipmentId: args.equipmentId,
@@ -32,9 +32,9 @@ export function equipmentReportFaultHandler(
         by: ctx.actor,
         at: ctx.now(),
       };
-      graph.putNode("fault", id, data);
-      graph.addEdge({ from: args.equipmentId, to: id, type: "reported-fault" });
-      const repeats = repeatFaults(graph, args.equipmentId, ctx.now().slice(0, 7));
+      await graph.putNode("fault", id, data);
+      await graph.addEdge({ from: args.equipmentId, to: id, type: "reported-fault" });
+      const repeats = await repeatFaults(graph, args.equipmentId, ctx.now().slice(0, 7));
       return {
         changes: [{ nodeType: "fault", nodeId: id, after: data }],
         publishedTo: [{ kind: "actor", actor: "shruti" }],
@@ -44,16 +44,19 @@ export function equipmentReportFaultHandler(
   };
 }
 
-export function repeatFaults(
+export async function repeatFaults(
   graph: RecordStore,
   equipmentId: NodeId,
   yearMonth: string,
-): FaultData[] {
-  const faultIds = graph
-    .edgesOf(equipmentId, "out")
+): Promise<FaultData[]> {
+  const faultIds = (await graph.edgesOf(equipmentId, "out"))
     .filter((e) => e.type === "reported-fault")
     .map((e) => e.to);
-  return faultIds
-    .map((fid) => graph.getNode("fault", fid)?.data as FaultData | undefined)
-    .filter((f): f is FaultData => f !== undefined && f.at.slice(0, 7) === yearMonth);
+  const out: FaultData[] = [];
+  for (const fid of faultIds) {
+    const node = await graph.getNode("fault", fid);
+    const f = node?.data as FaultData | undefined;
+    if (f && f.at.slice(0, 7) === yearMonth) out.push(f);
+  }
+  return out;
 }

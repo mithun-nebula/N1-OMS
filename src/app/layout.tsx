@@ -17,6 +17,8 @@ export const metadata: Metadata = {
   description: "Assistant-first, operation-based work application",
 };
 
+const themeScript = `(function(){try{var t=localStorage.getItem('theme');var m=matchMedia('(prefers-color-scheme: dark)').matches;var d=t==='dark'||(t!=='light'&&m);var e=document.documentElement;if(d)e.classList.add('dark');if(t)e.classList.add(t);}catch(e){}})();`;
+
 export default function RootLayout({
   children,
 }: {
@@ -26,8 +28,12 @@ export default function RootLayout({
     <html
       lang="en"
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
+      suppressHydrationWarning
     >
-      <body className="min-h-full flex flex-col">{children}</body>
+      <body className="min-h-full flex flex-col">
+        <script dangerouslySetInnerHTML={{ __html: themeScript }} />
+        {children}
+      </body>
     </html>
   );
 }

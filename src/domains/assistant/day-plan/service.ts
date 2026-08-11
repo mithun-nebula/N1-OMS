@@ -19,14 +19,14 @@ export interface DayPlanDeps {
   actorLookup: (actor: ActorId) => { spine: import("@/spine/spine").Spine };
 }
 
-function loadMeetings(graph: RecordStore, actor: string, date: string): MeetingItem[] {
-  return graph
-    .find(
-      "meeting",
-      (n) =>
-        (n.data as { cancelled?: boolean }).cancelled !== true &&
-        ((n.data as { attendees?: string[] }).attendees ?? []).includes(actor),
-    )
+async function loadMeetings(graph: RecordStore, actor: string, date: string): Promise<MeetingItem[]> {
+  const nodes = await graph.find(
+    "meeting",
+    (n) =>
+      (n.data as { cancelled?: boolean }).cancelled !== true &&
+      ((n.data as { attendees?: string[] }).attendees ?? []).includes(actor),
+  );
+  return nodes
     .filter((n) => String((n.data as { from?: string }).from ?? "").slice(0, 10) === date)
     .map((n) => {
       const d = n.data as { title?: string; from?: string; to?: string };
@@ -45,7 +45,7 @@ export class DayPlanService {
     private readonly deps: DayPlanDeps,
   ) {}
 
-  startDay(actor: ActorId, date: string): { open: "brief" | "dashboard" | "resume"; plan?: DayPlan; prompt?: string } {
+  async startDay(actor: ActorId, date: string): Promise<{ open: "brief" | "dashboard" | "resume"; plan?: DayPlan; prompt?: string }> {
     const existing = this.store.get(actor, date);
     if (existing?.phase === "planned") {
       return { open: "dashboard", plan: existing };
@@ -57,7 +57,7 @@ export class DayPlanService {
       return { open: "brief", plan: existing };
     }
     const spine = this.deps.actorLookup(actor).spine;
-    const brief = generateBrief({ actor, spine, graph: this.deps.graph, asOf: `${date}T23:59:59Z` });
+    const brief = await generateBrief({ actor, spine, graph: this.deps.graph, asOf: `${date}T23:59:59Z` });
     const plan: DayPlan = {
       actor,
       date,
@@ -65,7 +65,7 @@ export class DayPlanService {
       brief,
       briefStep: 0,
       plan: [],
-      meetings: loadMeetings(this.deps.graph, actor, date),
+      meetings: await loadMeetings(this.deps.graph, actor, date),
       streak: this.store.streakFor(actor),
     };
     this.store.put(plan);
@@ -174,12 +174,12 @@ export class DayPlanService {
     return plan;
   }
 
-  tick(
+  async tick(
     actor: ActorId,
     date: string,
     itemId: string,
     input: { actualMinutes?: number; at?: string },
-  ): { item?: PlanItem; miss?: PlanItem["miss"]; offerNow?: boolean } {
+  ): Promise<{ item?: PlanItem; miss?: PlanItem["miss"]; offerNow?: boolean }> {
     const plan = this.require(actor, date);
     const item = plan.plan.find((p) => p.id === itemId);
     if (!item) return {};
@@ -187,7 +187,7 @@ export class DayPlanService {
     item.doneAt = input.at ?? new Date().toISOString();
     item.actualMinutes = input.actualMinutes;
     if (item.actualMinutes && item.actualMinutes > item.estimateMinutes) {
-      const live = loadMeetings(this.deps.graph, actor, date);
+      const live = await loadMeetings(this.deps.graph, actor, date);
       const byId = new Map<string, MeetingItem>();
       for (const m of [...plan.meetings, ...live]) byId.set(m.id, m);
       const classification = classifyMiss(item, [...byId.values()]);

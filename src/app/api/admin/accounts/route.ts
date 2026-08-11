@@ -53,7 +53,7 @@ export async function POST(request: Request) {
     ? (body.role as RbacRole)
     : "intern";
 
-  const result = addAccount({
+  const result = await addAccount({
     username: body.username,
     password: body.password,
     displayName: body.displayName,

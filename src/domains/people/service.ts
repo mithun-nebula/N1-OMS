@@ -15,7 +15,7 @@ export class PeopleRecordService {
       const rec = await this.n1.get("Employee", id);
       if (rec) {
         const mapped = mapEmployee(rec);
-        this.graph.putNode("employee", mapped.nodeId, mapped.data);
+        await this.graph.putNode("employee", mapped.nodeId, mapped.data);
       }
     }
     return this.graph.getNode("employee", id);
@@ -26,7 +26,7 @@ export class PeopleRecordService {
       const recs = await this.n1.list("Employee");
       for (const rec of recs) {
         const mapped = mapEmployee(rec);
-        this.graph.putNode("employee", mapped.nodeId, mapped.data);
+        await this.graph.putNode("employee", mapped.nodeId, mapped.data);
       }
     }
     return this.graph.find("employee", () => true);
@@ -42,7 +42,7 @@ export class PeopleRecordService {
       const recs = await this.n1.list("Attendance", { employee: employeeId });
       for (const rec of recs) {
         const mapped = mapAttendance(rec);
-        this.graph.putNode("attendance", mapped.nodeId, mapped.data);
+        await this.graph.putNode("attendance", mapped.nodeId, mapped.data);
       }
     }
     return this.graph.find(
@@ -56,7 +56,7 @@ export class PeopleRecordService {
       const recs = await this.n1.list("Salary Slip", { employee: employeeId });
       for (const rec of recs) {
         const id = rec.name;
-        this.graph.putNode("payslip", id, { employeeId, ...(rec.data as object) });
+        await this.graph.putNode("payslip", id, { employeeId, ...(rec.data as object) });
       }
     }
     return this.graph.find(

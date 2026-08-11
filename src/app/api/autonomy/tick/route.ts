@@ -19,6 +19,6 @@ export async function POST(request: Request) {
     body = {};
   }
   const asOf = body.asOf ?? new Date().toISOString();
-  const result = await getAutonomyEngine().tick(asOf);
+  const result = await (await getAutonomyEngine()).tick(asOf);
   return NextResponse.json({ tickedAt: asOf, ...result });
 }

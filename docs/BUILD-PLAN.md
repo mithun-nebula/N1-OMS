@@ -185,12 +185,33 @@ guided process on top.
 Effort estimates assume a small team (2–4) and are rough. **Phase 1 is load-bearing — do not
 parallelise past it.** Phases 2/3/4 can run in parallel after Phase 1.
 
-> **Progress (updated 2026-08-08):** Phase 1 spine + RBAC + web shell. **Phase 0 local skeleton
+> **Progress (updated 2026-08-09):** Phase 1 spine + RBAC + web shell. **Phase 0 local skeleton
 > (GCP excluded)**. **Phase 2 People (14/15)**, **Phase 3 Course (10/11)**, **Phase 4 Workplace
 > (25/25)**, **Phase 5 Assistant & daily flow (25/25)**, **Phase 6 Autonomy (14/14)**, **Phase 7
 > Voice & web surfaces (16/16)** — STT + read-back, shared sidebar, courses/team/calendar pages,
 > equivalence audit, non-negotiable E2E suite, OpenAPI spec. Only Phase 8 (hardening/deploy = GCP)
 > remains.
+>
+> **Persistence landed (2026-08-09):** the spine's record/activity/figure stores are now **async**,
+> with a **Postgres** implementation (`src/server/store-pg-*.ts`) selected when `DATABASE_URL` is
+> set — every node, edge, activity entry and figure survives restarts; a seed guard keeps real data.
+> Unset → async in-memory. The gate stays synchronous. `leave.approve` now decrements the employee's
+> leave balance (undo restores it). Six Postgres tables: `orga_nodes`, `orga_edges`, `orga_activity`,
+> `orga_figures`, `orga_accounts`, `orga_autonomy_rules`.
+>
+> **Roadmap — team workflow (2026-08-10, planned):** `/standup` (3-line daily check-in), task deadlines
+> on `/calendar`, deadline reminders (PublishBus), team/role task assignment, team workload view on
+> `/team`, and `/today` (restore appendix-A morning-brief → day-plan → streak). Engine built + tested;
+> see `docs/TODO.md` § "Roadmap — Team workflow features".
+>
+> **UI note (2026-08-09):** the chat-first `/today` page was superseded by a `/dashboard` plus a
+> full page set (`/leave`, `/me`, `/documents`, `/announcements`, `/events`, `/equipment`, `/hr`,
+> `/decisions`, `/utilities`, `/settings`) — see `docs/STATUS.md`. The assistant *engine*
+> (coordinator, specialists, briefing, appendix-D) and the day-plan module remain in
+> `src/domains/assistant/` and are still exercised by tests + the `/api/assistant/ask` route + the
+> voice FAB; only the standalone `/today` screen and its three helper routes (`/api/brief`,
+> `/api/day`, `/api/news`) were removed. The appendix-A morning-brief/streak UI is parked, not
+> dropped — it can return as a `/today` overlay without touching the gate.
 
 ### Phase 0 — GCP project, serverless infra & skeleton  ·  ~1–2 weeks
 **Goal:** stand up the fully-managed serverless stack on GCP Mumbai (no VM).
@@ -214,7 +235,7 @@ parallelise past it.** Phases 2/3/4 can run in parallel after Phase 1.
 - [ ] Upstash Redis (serverless) — closest region to Mumbai; note the REST/UPSTASH endpoints
 - [ ] Cloud Storage bucket for N1 files + Supabase Storage bucket for spine docs (versioning on)
 - [ ] Next.js (TypeScript) repo; deploy to Cloud Run via buildpacks (no Dockerfile); `/health` endpoint
-- [x] Fork N1 to your Git; vendor via submodule tracking upstream version branch — vendored at `vendor/n1` (upstream `frappe/hrms` `version-16`, v16.15.0); repoint `.gitmodules` to your fork
+- [x] Fork N1 to your Git; clone separately when deploying — upstream `frappe/hrms` `version-16`; customization layer in `apps/n1-custom/`
 - [ ] N1 container built from official `frappe-docker` base → Artifact Registry
 - [ ] Deploy N1 web to Cloud Run (min-instances=0); mount Cloud Storage bucket as a volume
 - [ ] N1 DB provisioned on Supabase Postgres (N1 in Postgres mode); `bench migrate`
@@ -252,7 +273,9 @@ and monitoring verified; no N1 UI is user-facing.
 Surface in this phase: **headless JSON API only** (no UI yet).
 
 **Build checklist:**
-> Status: **complete (in-memory)** + RBAC auth + web shell. 33 tests passing. Supabase-backed stores swap in via the `RecordStore`/`ActivityLog`/`FigureStore` interfaces.
+> Status: **complete (async, durable-capable)** + RBAC auth + web shell. The store interfaces are
+> async; a **Postgres** implementation landed (`src/server/store-pg-*.ts`, active when `DATABASE_URL`
+> is set), so the spine persists across restarts. Unset → async in-memory. Gate stays synchronous.
 
 - [x] `Operation` type/schema: `{name, args, startedBy, authority, runsUnder}` — `src/spine/operation/types.ts`
 - [x] Seven-start adapters (form / typed / schedule / record-change / standing-rule / noticed-routine) all emit one Operation (voice adapter stubbed till Phase 7) — `src/spine/adapters/`
@@ -422,6 +445,12 @@ by voice; store a versioned doc against a course with role access.
 > full daily-commitments engine (every A1–A9 rule), news, and the global 2/day limiter; plus a
 > polished chat-first `/today` (brief modal, drag/tick day plan, streak rings, news, FAB
 > assistant). Day-plan state is in-memory (resets on restart; persistence swaps in later).
+>
+> **Update (2026-08-09):** the standalone `/today` screen is **superseded** by `/dashboard`
+> + the expanded page set (see `docs/STATUS.md`). The assistant engine + day-plan module stay
+> in `src/domains/assistant/` (still tested + drive `/api/assistant/ask` and the voice FAB); the
+> three `/today` helper routes (`/api/brief`, `/api/day`, `/api/news`) were removed. The appendix-A
+> brief/streak UI is parked, not dropped.
 
 - [x] Coordinator + specialist-assistant architecture — `src/domains/assistant/coordinator.ts`
 - [x] Specialist modules: people / courses / rooms / documents (+ extensible) — `specialists.ts`
@@ -511,9 +540,9 @@ downgraded in N1.
 - [x] Read-back-before-save confirmation — read-back modal: transcript → interpreted op → [Save] [Cancel]; Cancel ⇒ "Nothing is saved"
 - [x] Shared-room detection → restricted info on-screen-only, not read aloud — shared-room toggle in the read-back modal
 - [x] Form / typed / voice equivalence audit (same operation, approval, record) — `phase7-audit.test.ts`
-- [x] Web frontend (Next.js) per mock UIs (CONTEXT §7.1) — shared `Shell` + sidebar; `/today`, `/courses`, `/team`, `/calendar`
-- [x] Screens: home dashboard, course pipeline, team, common calendar — all four built
-- [x] Morning-brief + dashboard flow per `Demo-Today-Screen.html` — Phase 5 `/today` brief→plan→dashboard
+- [x] Web frontend (Next.js) per mock UIs (CONTEXT §7.1) — shared `Shell` + sidebar; `/dashboard` (supersedes `/today`), `/courses`, `/team`, `/calendar`, plus `/leave`, `/me`, `/documents`, `/announcements`, `/events`, `/equipment`, `/hr`, `/decisions`, `/utilities`, `/settings`
+- [x] Screens: home dashboard, course pipeline, team, common calendar — all four built (and extended to the full page set above)
+- [x] Morning-brief + dashboard flow per `Demo-Today-Screen.html` — engine built in Phase 5; the `/today` overlay UI is parked (dashboard replaced it). See `docs/STATUS.md`.
 - [x] Browser web app served to Win/Linux/Mac (zero install) — Next.js on any browser
 - [x] API surface documented + locked for future native mobile — `GET /api/openapi.json` (hand-authored spec)
 - [x] Audit: figures-everywhere (every number opens up) — verified in `phase7-audit.test.ts` §13

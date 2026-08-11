@@ -17,9 +17,9 @@ export interface AssistantAnswer {
   blocked?: string;
 }
 
-export function ask(query: string, ctx: AssistantCtx): AssistantAnswer {
+export async function ask(query: string, ctx: AssistantCtx): Promise<AssistantAnswer> {
   const chosen = pickSpecialists(query);
-  const parts = chosen.map((s) => s.answer(query, ctx));
+  const parts = await Promise.all(chosen.map((s) => s.answer(query, ctx)));
   const merged = parts.join(" ");
   const clean = sanitizeForAppendixD(merged);
   return {

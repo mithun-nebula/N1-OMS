@@ -35,11 +35,11 @@ export function courseCompletionFigure(
   };
 }
 
-export function recomputeCompletion(
+export async function recomputeCompletion(
   store: FigureStore,
   course: { id: NodeId; title: string; modules: CourseModule[] },
-): Figure {
+): Promise<Figure> {
   const figure = courseCompletionFigure(store, course);
-  store.replace(figure);
+  await store.replace(figure);
   return figure;
 }

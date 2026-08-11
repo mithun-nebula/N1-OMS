@@ -48,7 +48,7 @@ export function orgMemoryRecordHandler(
     },
     permission: () => ({ action: "create", nodeType: "org-memory" }),
     involvesMoneyOrPeople: () => false,
-    execute: (args, ctx) => {
+    execute: async (args, ctx) => {
       const id = nextMemoryId();
       const linked = args.linkedRecords ?? [];
       const data: OrgMemoryData = {
@@ -59,9 +59,9 @@ export function orgMemoryRecordHandler(
         decidedAt: ctx.now(),
         linkedRecords: linked,
       };
-      graph.putNode("org-memory", id, data);
+      await graph.putNode("org-memory", id, data);
       for (const link of linked) {
-        graph.addEdge({ from: id, to: link.nodeId, type: "references" });
+        await graph.addEdge({ from: id, to: link.nodeId, type: "references" });
       }
       const result: OperationResult = {
         changes: [{ nodeType: "org-memory", nodeId: id, after: data }],

@@ -10,7 +10,7 @@ function world() {
 
 describe("course.updateStage — state machine", () => {
   it("allows a valid forward transition (outline → draft)", async () => {
-    const { spine } = world();
+    const { spine } = await world();
     const res = await spine.submit(
       adapters.fromForm({
         actor: "james",
@@ -22,7 +22,7 @@ describe("course.updateStage — state machine", () => {
   });
 
   it("allows rework (review → draft)", async () => {
-    const { spine } = world();
+    const { spine } = await world();
     const res = await spine.submit(
       adapters.fromForm({
         actor: "james",
@@ -34,7 +34,7 @@ describe("course.updateStage — state machine", () => {
   });
 
   it("rejects an invalid transition (outline → published) with a reason", async () => {
-    const { spine } = world();
+    const { spine } = await world();
     const res = await spine.submit(
       adapters.fromForm({
         actor: "james",
@@ -49,8 +49,8 @@ describe("course.updateStage — state machine", () => {
 
 describe("course.setModuleState — progress derived from the work itself", () => {
   it("updates a module and recomputes the completion figure", async () => {
-    const { spine, deps } = world();
-    const before = deps.figures.forRecord("course", "ai-data-analysis", "Course completion")[0];
+    const { spine, deps } = await world();
+    const before = (await deps.figures.forRecord("course", "ai-data-analysis", "Course completion"))[0];
     expect(before?.value).toBe(33);
     const res = await spine.submit(
       adapters.fromForm({
@@ -60,7 +60,7 @@ describe("course.setModuleState — progress derived from the work itself", () =
       }),
     );
     expect(res.status).toBe("ran");
-    const after = deps.figures.forRecord("course", "ai-data-analysis", "Course completion")[0];
+    const after = (await deps.figures.forRecord("course", "ai-data-analysis", "Course completion"))[0];
     expect(after?.value).toBe(67);
     expect((res.result?.response as { completion?: number }).completion).toBe(67);
   });
@@ -68,7 +68,7 @@ describe("course.setModuleState — progress derived from the work itself", () =
 
 describe("course.setProgressNote + assignStageOwner", () => {
   it("stores a free-text progress note", async () => {
-    const { spine, deps } = world();
+    const { spine, deps } = await world();
     const res = await spine.submit(
       adapters.fromTyped({
         actor: "priya",
@@ -78,12 +78,12 @@ describe("course.setProgressNote + assignStageOwner", () => {
     );
     expect(res.status).toBe("ran");
     expect(
-      (deps.graph.getNode("course", "ai-data-analysis")?.data as { progressNote?: { text?: string } }).progressNote?.text,
+      ((await deps.graph.getNode("course", "ai-data-analysis"))?.data as { progressNote?: { text?: string } }).progressNote?.text,
     ).toContain("almost done");
   });
 
   it("names a stage owner (reviewer)", async () => {
-    const { spine, deps } = world();
+    const { spine, deps } = await world();
     const res = await spine.submit(
       adapters.fromForm({
         actor: "james",
@@ -92,14 +92,14 @@ describe("course.setProgressNote + assignStageOwner", () => {
       }),
     );
     expect(res.status).toBe("ran");
-    const stageOwners = (deps.graph.getNode("course", "ai-presentations")?.data as { stageOwners?: Record<string, string> }).stageOwners;
+    const stageOwners = ((await deps.graph.getNode("course", "ai-presentations"))?.data as { stageOwners?: Record<string, string> }).stageOwners;
     expect(stageOwners?.review).toBe("meena");
   });
 });
 
 describe("course version history — append-only, restorable", () => {
   it("snapshots on stage + module change and restores a prior version", async () => {
-    const { spine, deps } = world();
+    const { spine, deps } = await world();
     await spine.submit(
       adapters.fromForm({
         actor: "james",
@@ -114,7 +114,7 @@ describe("course version history — append-only, restorable", () => {
         args: { courseId: "ai-data-analysis", moduleIndex: 0, state: "not-started" },
       }),
     );
-    const versions = readVersions(deps.graph, "ai-data-analysis");
+    const versions = await readVersions(deps.graph, "ai-data-analysis");
     expect(versions.length).toBeGreaterThanOrEqual(2);
 
     const restore = await spine.submit(
@@ -125,12 +125,12 @@ describe("course version history — append-only, restorable", () => {
       }),
     );
     expect(restore.status).toBe("ran");
-    const restoredStage = (deps.graph.getNode("course", "ai-data-analysis")?.data as { stage?: string }).stage;
+    const restoredStage = ((await deps.graph.getNode("course", "ai-data-analysis"))?.data as { stage?: string }).stage;
     expect(restoredStage).toBe("review");
   });
 
   it("an employee cannot restore a version (approve-only)", async () => {
-    const { spine } = world();
+    const { spine } = await world();
     const res = await spine.submit(
       adapters.fromForm({
         actor: "arun",
@@ -143,9 +143,9 @@ describe("course version history — append-only, restorable", () => {
 });
 
 describe("findStaleCourses — 'waiting 8 days' detector", () => {
-  it("flags ai-presentations (in review past the threshold)", () => {
-    const { deps } = world();
-    const stale = findStaleCourses(deps.graph, "2026-08-07");
+  it("flags ai-presentations (in review past the threshold)", async () => {
+    const { deps } = await world();
+    const stale = await findStaleCourses(deps.graph, "2026-08-07");
     const ids = stale.map((s) => s.courseId);
     expect(ids).toContain("ai-presentations");
     const flagged = stale.find((s) => s.courseId === "ai-presentations");
@@ -155,10 +155,10 @@ describe("findStaleCourses — 'waiting 8 days' detector", () => {
 });
 
 describe("CourseService — team-progress aggregate + deck", () => {
-  it("lists every course with completion + stale flag", () => {
-    const { deps } = world();
+  it("lists every course with completion + stale flag", async () => {
+    const { deps } = await world();
     const service = new CourseService(deps.graph, deps.figures);
-    const progress = service.listProgress("2026-08-07");
+    const progress = await service.listProgress("2026-08-07");
     expect(progress.length).toBe(4);
     const aiPres = progress.find((p) => p.id === "ai-presentations");
     expect(aiPres?.stale).toBe(true);
@@ -166,7 +166,7 @@ describe("CourseService — team-progress aggregate + deck", () => {
   });
 
   it("generates a deck outline (heuristic fallback when no LLM)", async () => {
-    const { deps } = world();
+    const { deps } = await world();
     const service = new CourseService(deps.graph, deps.figures);
     const deck = await service.generateDeck({ courseId: "ai-basics" });
     expect(deck.slides.length).toBeGreaterThan(0);

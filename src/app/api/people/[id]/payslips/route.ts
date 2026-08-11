@@ -23,7 +23,7 @@ export async function GET(
       { status: 403 },
     );
   }
-  const payslips = await getPeopleService().listPaySlips(id);
+  const payslips = await (await getPeopleService()).listPaySlips(id);
   return NextResponse.json({
     employeeId: id,
     payslips: payslips.map((p) => ({ id: p.id, ...p.data })),

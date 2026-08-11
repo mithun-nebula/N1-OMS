@@ -3,6 +3,7 @@ import type { PermissionAction } from "@/spine/operation/registry";
 import { PermissionPolicy } from "@/spine/permission/policy";
 import type { PermissionRule, RoleProvider } from "@/spine/permission/types";
 import { DEMO_PEOPLE, DEMO_TEAM_LEADS } from "@/domains/shared/people-roster";
+import { SUPPORTED_DOCTYPES } from "@/domains/people/n1-doctypes";
 import { roleOfActor } from "./accounts";
 
 const ALL_ACTIONS: PermissionAction[] = [
@@ -57,9 +58,70 @@ function adminRules(): PermissionRule[] {
   }));
 }
 
+/**
+ * Permission rules generated from the N1 DocType registry.
+ * - Sensitive node types (payroll/payslip/appraisal/tax…): hr/admin/super-admin view+export.
+ * - Non-sensitive node types: all six roles view; hr/admin/super-admin edit.
+ * Employees still reach their own pay/payslips via the dedicated PeopleRecordService
+ * (self-scoped API), not via a generic graph rule.
+ */
+function n1GeneratedRules(): PermissionRule[] {
+  const rules: PermissionRule[] = [];
+  for (const m of SUPPORTED_DOCTYPES) {
+    if (m.sensitive) {
+      for (const role of ["hr", "admin", "super-admin"] as const) {
+        rules.push({
+          role,
+          nodeType: m.nodeType,
+          actions:
+            role === "hr"
+              ? ["view", "export"]
+              : role === "super-admin"
+                ? ["view", "create", "edit", "delete", "export", "approve"]
+                : ["view", "create", "edit", "export", "approve"],
+          recordScope: { kind: "all" },
+          fields: { kind: "all-visible" },
+        });
+      }
+    } else {
+      for (const role of ["super-admin", "admin", "hr", "manager", "employee", "intern"] as const) {
+        const canManage = role === "super-admin" || role === "admin" || role === "hr";
+        const canDelete = role === "super-admin" || role === "admin";
+        rules.push({
+          role,
+          nodeType: m.nodeType,
+          actions: canManage
+            ? canDelete
+              ? ["view", "create", "edit", "delete", "export"]
+              : ["view", "create", "edit", "export"]
+            : ["view"],
+          recordScope: { kind: "all" },
+          fields: { kind: "all-visible" },
+        });
+      }
+    }
+  }
+  return rules;
+}
+
 export const DEMO_PERMISSION_RULES: PermissionRule[] = [
   ...superAdminRules(),
   ...adminRules(),
+  ...n1GeneratedRules(),
+  {
+    role: "super-admin",
+    nodeType: "task",
+    actions: ["delete", "export"],
+    recordScope: { kind: "all" },
+    fields: { kind: "all-visible" },
+  },
+  {
+    role: "admin",
+    nodeType: "task",
+    actions: ["delete", "export"],
+    recordScope: { kind: "all" },
+    fields: { kind: "all-visible" },
+  },
   {
     role: "hr",
     nodeType: "employee",
@@ -204,7 +266,11 @@ export class DemoRoleProvider implements RoleProvider {
   constructor(
     private readonly owners: Map<string, ActorId>,
     private readonly teams: Map<ActorId, string>,
-  ) {}
+  ) {
+    for (const [id, p] of Object.entries(DEMO_PEOPLE)) {
+      if (!teams.has(id)) teams.set(id, p.team);
+    }
+  }
 
   rolesFor(actor: ActorId): string[] {
     const role = roleOfActor(actor);

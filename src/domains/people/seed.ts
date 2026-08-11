@@ -1,10 +1,10 @@
 import type { DomainContext } from "../types";
 import { DEMO_PEOPLE } from "../shared/people-roster";
 
-export function seedPeople(ctx: DomainContext): void {
+export async function seedPeople(ctx: DomainContext): Promise<void> {
   for (const [id, person] of Object.entries(DEMO_PEOPLE)) {
     ctx.teams.set(id, person.team);
-    ctx.graph.putNode("employee", id, {
+    await ctx.graph.putNode("employee", id, {
       name: person.name,
       role: person.role,
       contact: `${id}@orga.example`,
@@ -13,21 +13,21 @@ export function seedPeople(ctx: DomainContext): void {
       leaveBalance: 18,
     });
   }
-  seedEquipment(ctx);
+  await seedEquipment(ctx);
 }
 
-function seedEquipment(ctx: DomainContext): void {
+async function seedEquipment(ctx: DomainContext): Promise<void> {
   const assets: Array<{ id: string; name: string; assignee: string }> = [
     { id: "laptop-1", name: "MacBook Pro 14", assignee: "meena" },
     { id: "laptop-2", name: "MacBook Air", assignee: "meena" },
   ];
   for (const a of assets) {
-    ctx.graph.putNode("equipment", a.id, {
+    await ctx.graph.putNode("equipment", a.id, {
       name: a.name,
       assignee: a.assignee,
       status: "assigned",
     });
-    ctx.graph.addEdge({ from: a.assignee, to: a.id, type: "holds" });
+    await ctx.graph.addEdge({ from: a.assignee, to: a.id, type: "holds" });
   }
 }
 

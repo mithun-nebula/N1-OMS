@@ -13,11 +13,11 @@ export async function GET(
     return NextResponse.json({ error: "Not authenticated." }, { status: 401 });
   }
   const { id } = await params;
-  const read = getSpine().read({ actor: user.id, nodeType: "course", nodeId: id });
+  const read = await (await getSpine()).read({ actor: user.id, nodeType: "course", nodeId: id });
   if (!read.found) {
     return NextResponse.json({ error: "That course is not available." }, { status: 404 });
   }
-  const progress = getCourseService().getProgress(id);
+  const progress = await (await getCourseService()).getProgress(id);
   return NextResponse.json({
     nodeType: "course",
     nodeId: id,

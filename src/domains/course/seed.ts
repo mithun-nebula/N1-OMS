@@ -58,10 +58,10 @@ const SEED_COURSES: SeedCourse[] = [
   },
 ];
 
-export function seedCourse(ctx: DomainContext): void {
+export async function seedCourse(ctx: DomainContext): Promise<void> {
   for (const course of SEED_COURSES) {
     ctx.owners.set(`course:${course.id}`, course.owner);
-    ctx.graph.putNode("course", course.id, {
+    await ctx.graph.putNode("course", course.id, {
       title: course.title,
       stage: course.stage,
       stageEnteredAt: course.stageEnteredAt,
@@ -69,8 +69,8 @@ export function seedCourse(ctx: DomainContext): void {
       stageOwners: {},
       modules: course.modules,
     });
-    ctx.graph.addEdge({ from: course.owner, to: course.id, type: "writes" });
-    ctx.graph.addEdge({ from: course.owner, to: course.id, type: "owns" });
-    ctx.figures.put(courseCompletionFigure(ctx.figures, course));
+    await ctx.graph.addEdge({ from: course.owner, to: course.id, type: "writes" });
+    await ctx.graph.addEdge({ from: course.owner, to: course.id, type: "owns" });
+    await ctx.figures.put(courseCompletionFigure(ctx.figures, course));
   }
 }

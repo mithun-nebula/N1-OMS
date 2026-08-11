@@ -7,16 +7,16 @@ import { BookingClient } from "./booking-client";
 export default async function BookingPage() {
   const user = await getSessionUser();
   if (!user) redirect("/login");
-  const { deps } = getWorld();
+  const { deps } = await getWorld();
 
-  const rooms = deps.graph.find("room", () => true).map((n) => ({
+  const rooms = (await deps.graph.find("room", () => true)).map((n) => ({
     id: n.id,
     name: (n.data as { name?: string }).name ?? n.id,
     capacity: (n.data as { capacity?: number }).capacity ?? 0,
     equipment: (n.data as { equipment?: string[] }).equipment ?? [],
   }));
 
-  const bookings = deps.graph.find("booking", () => true).map((n) => ({
+  const bookings = (await deps.graph.find("booking", () => true)).map((n) => ({
     id: n.id,
     roomId: (n.data as { roomId?: string }).roomId ?? "",
     title: (n.data as { title?: string }).title ?? "",

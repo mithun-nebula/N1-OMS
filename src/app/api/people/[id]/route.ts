@@ -14,8 +14,8 @@ export async function GET(
     return NextResponse.json({ error: "Not authenticated." }, { status: 401 });
   }
   const { id } = await params;
-  await getPeopleService().getEmployee(id);
-  const read = getSpine().read({ actor: user.id, nodeType: "employee", nodeId: id });
+  await (await getPeopleService()).getEmployee(id);
+  const read = await (await getSpine()).read({ actor: user.id, nodeType: "employee", nodeId: id });
   if (!read.found) {
     return NextResponse.json(
       { error: "That record is not available." },

@@ -23,10 +23,10 @@ export class GateEngine {
     private readonly autonomy: AutonomyPolicy,
   ) {}
 
-  evaluate(operation: Operation): GateOutcome {
+  async evaluate(operation: Operation): Promise<GateOutcome> {
     const handler = this.operations.require(operation.name);
 
-    const validation = handler.validate(operation.args);
+    const validation = await handler.validate(operation.args);
     if (!validation.ok) {
       return {
         status: "rejected",
@@ -36,7 +36,7 @@ export class GateEngine {
     }
 
     const actor = effectiveActor(operation.authority);
-    const requirements = flattenRequirements(handler.permission(operation.args));
+    const requirements = flattenRequirements(await handler.permission(operation.args));
     const allowed = requirements.every((req) => {
       if (req.allowedActors?.includes(actor)) return true;
       return this.permissions

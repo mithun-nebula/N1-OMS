@@ -28,10 +28,9 @@ function decisionIdFor(meetingId: string): string {
   return `decisions:${meetingId}`;
 }
 
-function readSet(graph: RecordStore, meetingId: string): DecisionSet | undefined {
-  return graph.getNode("meeting-decision", decisionIdFor(meetingId))?.data as
-    | DecisionSet
-    | undefined;
+async function readSet(graph: RecordStore, meetingId: string): Promise<DecisionSet | undefined> {
+  const node = await graph.getNode("meeting-decision", decisionIdFor(meetingId));
+  return node?.data as DecisionSet | undefined;
 }
 
 export function meetingRecordDecisionsHandler(
@@ -49,8 +48,8 @@ export function meetingRecordDecisionsHandler(
         : { ok: false, missing: ["meetingId"], detail: "A meeting id is required." },
     permission: () => ({ action: "create", nodeType: "meeting-decision" }),
     involvesMoneyOrPeople: () => false,
-    execute: (args) => {
-      const before = readSet(graph, args.meetingId);
+    execute: async (args) => {
+      const before = await readSet(graph, args.meetingId);
       const decisions = [
         ...(before?.decisions ?? []),
         ...(args.decisions ?? []).map((d, i) => ({
@@ -69,7 +68,7 @@ export function meetingRecordDecisionsHandler(
         })),
       ];
       const data: DecisionSet = { meetingId: args.meetingId, decisions, actions };
-      graph.putNode("meeting-decision", decisionIdFor(args.meetingId), data);
+      await graph.putNode("meeting-decision", decisionIdFor(args.meetingId), data);
       const owners = new Set(actions.map((a) => a.owner));
       const result: OperationResult = {
         changes: [{ nodeType: "meeting-decision", nodeId: decisionIdFor(args.meetingId), after: data }],
@@ -100,15 +99,15 @@ export function meetingCompleteActionHandler(
       recordNodeIds: [decisionIdFor(args.meetingId)],
     }),
     involvesMoneyOrPeople: () => false,
-    execute: (args, ctx) => {
-      const before = readSet(graph, args.meetingId);
+    execute: async (args, ctx) => {
+      const before = await readSet(graph, args.meetingId);
       if (!before) throw new Error(`No decisions for ${args.meetingId}`);
       const actions = before.actions.map((a) =>
         a.id === args.actionId
           ? { ...a, done: true, completedAt: ctx.now() }
           : a,
       );
-      graph.putNode("meeting-decision", decisionIdFor(args.meetingId), { ...before, actions });
+      await graph.putNode("meeting-decision", decisionIdFor(args.meetingId), { ...before, actions });
       return {
         changes: [{ nodeType: "meeting-decision", nodeId: decisionIdFor(args.meetingId), after: { action: args.actionId, done: true } }],
         publishedTo: [{ kind: "actor", actor: ctx.actor }],

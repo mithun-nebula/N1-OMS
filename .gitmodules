@@ -1,4 +1,0 @@
-[submodule "vendor/n1"]
-	path = vendor/n1
-	url = https://github.com/frappe/hrms.git
-	branch = version-16

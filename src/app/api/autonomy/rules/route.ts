@@ -9,7 +9,7 @@ export async function GET() {
   if (!user) {
     return NextResponse.json({ error: "Not authenticated." }, { status: 401 });
   }
-  const engine = getAutonomyEngine();
+  const engine = await getAutonomyEngine();
   return NextResponse.json({
     rules: engine.listRules(),
     suggestions: engine.listSuggestions(),
@@ -27,7 +27,7 @@ export async function POST(request: Request) {
   } catch {
     return NextResponse.json({ error: "Invalid JSON body." }, { status: 400 });
   }
-  const engine = getAutonomyEngine();
+  const engine = await getAutonomyEngine();
   switch (body.action) {
     case "accept-graduation":
       return NextResponse.json({ ok: engine.acceptGraduation(body.ruleId!, user.id) });

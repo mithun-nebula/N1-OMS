@@ -18,7 +18,7 @@ export const courseDomain: DomainModule = {
     ctx.registry.register(courseAssignStageOwnerHandler(ctx.graph));
     ctx.registry.register(courseRestoreVersionHandler(ctx.graph));
   },
-  seed(ctx: DomainContext) {
-    seedCourse(ctx);
+  async seed(ctx: DomainContext) {
+    await seedCourse(ctx);
   },
 };

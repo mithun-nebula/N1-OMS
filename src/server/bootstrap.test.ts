@@ -9,7 +9,7 @@ function world() {
 
 describe("gate — run path", () => {
   it("runs a course stage update for a course-lead (own hand)", async () => {
-    const { spine } = world();
+    const { spine } = await world();
     const op = adapters.fromForm({
       actor: "james",
       name: "course.updateStage",
@@ -25,7 +25,7 @@ describe("gate — run path", () => {
 
 describe("gate — refusal does not disclose existence (non-negotiable #2)", () => {
   it("returns an opaque forbidden with no record-existence hint", async () => {
-    const { spine } = world();
+    const { spine } = await world();
     const op = adapters.fromForm({
       actor: "ravi",
       name: "course.updateStage",
@@ -38,7 +38,7 @@ describe("gate — refusal does not disclose existence (non-negotiable #2)", () 
   });
 
   it("forbidden looks identical whether or not the record exists", async () => {
-    const { spine } = world();
+    const { spine } = await world();
     const existing = await spine.submit(
       adapters.fromForm({
         actor: "ravi",
@@ -60,7 +60,7 @@ describe("gate — refusal does not disclose existence (non-negotiable #2)", () 
 
 describe("gate — money/people always ask (non-negotiable #3)", () => {
   it("runs when a person requests their own leave (own hand)", async () => {
-    const { spine } = world();
+    const { spine } = await world();
     const op = adapters.fromTyped({
       actor: "priya",
       name: "leave.request",
@@ -71,7 +71,7 @@ describe("gate — money/people always ask (non-negotiable #3)", () => {
   });
 
   it("forces confirmation when a standing rule tries a people action", async () => {
-    const { spine } = world();
+    const { spine } = await world();
     const op = adapters.fromStandingRule({
       ruleId: "auto-leave",
       ruleAuthor: "james",
@@ -85,7 +85,7 @@ describe("gate — money/people always ask (non-negotiable #3)", () => {
   });
 
   it("runs only after a person confirms the money/people action", async () => {
-    const { spine } = world();
+    const { spine } = await world();
     const res = await spine.submit(
       adapters.fromStandingRule({
         ruleId: "auto-leave",
@@ -104,7 +104,7 @@ describe("gate — money/people always ask (non-negotiable #3)", () => {
 
 describe("gate — autonomy is earned, never assumed (appendix B)", () => {
   it("holds a supervised standing-rule action until approved", async () => {
-    const { spine } = world();
+    const { spine } = await world();
     const op = adapters.fromStandingRule({
       ruleId: "overdue-list",
       ruleAuthor: "james",
@@ -121,7 +121,7 @@ describe("gate — autonomy is earned, never assumed (appendix B)", () => {
 
 describe("gate — validation tells you exactly what is missing", () => {
   it("lists missing arguments (this is not a permission refusal)", async () => {
-    const { spine } = world();
+    const { spine } = await world();
     const res = await spine.submit(
       adapters.fromForm({
         actor: "james",
@@ -135,9 +135,9 @@ describe("gate — validation tells you exactly what is missing", () => {
 });
 
 describe("field permission — pay is restricted, never silently missing (appendix C)", () => {
-  it("shows pay as a Restricted marker to a course-writer", () => {
-    const { spine } = world();
-    const read = spine.read({
+  it("shows pay as a Restricted marker to a course-writer", async () => {
+    const { spine } = await world();
+    const read = await spine.read({
       actor: "arun",
       nodeType: "employee",
       nodeId: "priya",
@@ -150,9 +150,9 @@ describe("field permission — pay is restricted, never silently missing (append
     }
   });
 
-  it("shows pay in full to hr (role permits it)", () => {
-    const { spine } = world();
-    const read = spine.read({
+  it("shows pay in full to hr (role permits it)", async () => {
+    const { spine } = await world();
+    const read = await spine.read({
       actor: "shruti",
       nodeType: "employee",
       nodeId: "priya",
@@ -164,8 +164,8 @@ describe("field permission — pay is restricted, never silently missing (append
     }
   });
 
-  it("export is not the same as view (non-negotiable #10)", () => {
-    const { spine } = world();
+  it("export is not the same as view (non-negotiable #10)", async () => {
+    const { spine } = await world();
     expect(spine.canExport("arun", "employee")).toBe(false);
     expect(spine.canExport("shruti", "employee")).toBe(true);
   });
@@ -173,8 +173,8 @@ describe("field permission — pay is restricted, never silently missing (append
 
 describe("activity log + undo (feature 05)", () => {
   it("records who/authority/changes and supports undo", async () => {
-    const { spine, deps } = world();
-    const before = deps.graph.getNode("course", "ai-presentations")?.data;
+    const { spine, deps } = await world();
+    const before = (await deps.graph.getNode("course", "ai-presentations"))?.data;
     expect((before as { stage: string }).stage).toBe("review");
     const res = await spine.submit(
       adapters.fromForm({
@@ -185,26 +185,26 @@ describe("activity log + undo (feature 05)", () => {
     );
     expect(res.status).toBe("ran");
     const entryId = res.activityEntry!.id;
-    const after = deps.graph.getNode("course", "ai-presentations")?.data;
+    const after = (await deps.graph.getNode("course", "ai-presentations"))?.data;
     expect((after as { stage: string }).stage).toBe("published");
 
     const undone = await spine.undo(entryId, "james");
     expect(undone.status).toBe("undone");
-    const restored = deps.graph.getNode("course", "ai-presentations")?.data;
+    const restored = (await deps.graph.getNode("course", "ai-presentations"))?.data;
     expect((restored as { stage: string }).stage).toBe("review");
-    const original = deps.log.get(entryId);
+    const original = await deps.log.get(entryId);
     expect(original?.outcome).toBe("undone");
   });
 });
 
 describe("figures you can question (feature 06)", () => {
-  it("opens a figure into the parts it was computed from", () => {
-    const { deps } = world();
-    const figs = deps.figures.forRecord("course", "ai-presentations");
+  it("opens a figure into the parts it was computed from", async () => {
+    const { deps } = await world();
+    const figs = await deps.figures.forRecord("course", "ai-presentations");
     expect(figs.length).toBeGreaterThan(0);
     const completion = figs.find((f) => f.label === "Course completion")!;
     expect(completion.value).toBe(60);
-    const breakdown = deps.figures.breakdown(completion.id)!;
+    const breakdown = (await deps.figures.breakdown(completion.id))!;
     expect(breakdown.parts.find((p) => p.label === "Modules finished")?.value).toBe(3);
     expect(breakdown.parts.find((p) => p.label === "Modules not started")?.value).toBe(1);
     expect(completion.explainer).toContain("3 of 5");
@@ -212,9 +212,9 @@ describe("figures you can question (feature 06)", () => {
 });
 
 describe("connected record — cross-record query (feature 02)", () => {
-  it("answers which courses Priya wrote in one query", () => {
-    const { deps } = world();
-    const result = deps.graph.traverse({
+  it("answers which courses Priya wrote in one query", async () => {
+    const { deps } = await world();
+    const result = await deps.graph.traverse({
       start: "priya",
       steps: [{ edgeType: "writes", direction: "out", toNodeType: "course" }],
     });

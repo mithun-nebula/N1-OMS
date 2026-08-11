@@ -19,5 +19,5 @@ export interface DomainModule {
   readonly id: string;
   readonly phase: number;
   register(ctx: DomainContext): void;
-  seed?(ctx: DomainContext): void;
+  seed?(ctx: DomainContext): Promise<void> | void;
 }

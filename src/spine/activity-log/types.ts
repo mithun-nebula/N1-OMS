@@ -33,10 +33,10 @@ export interface ActivityQuery {
 }
 
 export interface ActivityLog {
-  append(entry: ActivityEntry): void;
-  get(id: string): ActivityEntry | undefined;
-  query(q?: ActivityQuery): ActivityEntry[];
-  markUndone(entryId: string, byUndoEntryId: string): void;
-  forRecord(nodeType: string, nodeId: string): ActivityEntry[];
-  nextId(): string;
+  append(entry: ActivityEntry): Promise<void>;
+  get(id: string): Promise<ActivityEntry | undefined>;
+  query(q?: ActivityQuery): Promise<ActivityEntry[]>;
+  markUndone(entryId: string, byUndoEntryId: string): Promise<void>;
+  forRecord(nodeType: string, nodeId: string): Promise<ActivityEntry[]>;
+  nextId(): Promise<string>;
 }

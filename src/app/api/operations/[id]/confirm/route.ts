@@ -13,7 +13,7 @@ export async function POST(
     return NextResponse.json({ error: "Not authenticated." }, { status: 401 });
   }
   const { id } = await params;
-  const result = await getSpine().confirm(id, user.id);
+  const result = await (await getSpine()).confirm(id, user.id);
   const status =
     result.status === "ran" ? 200 : result.status === "not-found" ? 404 : 400;
   return NextResponse.json(result, { status });

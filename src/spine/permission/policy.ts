@@ -15,6 +15,7 @@ export class PermissionPolicy {
     private readonly rules: PermissionRule[],
     private readonly roles: RoleProvider,
     private readonly openNodeTypes: ReadonlySet<string> = new Set(),
+    private readonly readOnlyRoles: ReadonlySet<string> = new Set(["intern"]),
   ) {}
 
   can(input: PermissionCheckInput): PermissionDecision {
@@ -22,6 +23,15 @@ export class PermissionPolicy {
       this.openNodeTypes.has(input.nodeType) &&
       OPEN_ACTIONS.has(input.action)
     ) {
+      if (input.action !== "view") {
+        const actorRoles = new Set(this.roles.rolesFor(input.actor));
+        const isReadOnly = [...this.readOnlyRoles].some((r) =>
+          actorRoles.has(r),
+        );
+        if (isReadOnly) {
+          return { allowed: false };
+        }
+      }
       return { allowed: true };
     }
     const matching = this.matchingRules(input);

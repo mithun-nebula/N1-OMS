@@ -7,8 +7,8 @@ import { compileRule } from "./compiler";
 let world: DemoWorld;
 let engine: AutonomyEngine;
 
-beforeEach(() => {
-  world = buildDemoWorld();
+beforeEach(async () => {
+  world = await buildDemoWorld();
   engine = new AutonomyEngine(
     world.autonomy,
     world.spine,
@@ -102,8 +102,8 @@ describe("auto-suspend on departure", () => {
   it("a graduated rule is suspended + forbidden when the author separates", async () => {
     await confirmTimes("rule-f", 10);
     engine.acceptGraduation("rule-f", "james");
-    world.deps.graph.patchNode("employee", "james", { status: "separated" });
-    engine.suspendSeparated();
+    await world.deps.graph.patchNode("employee", "james", { status: "separated" });
+    await engine.suspendSeparated();
     expect(world.autonomy.get("rule-f")?.status).toBe("suspended");
     const res = await world.spine.submit(standingAnnouncement("rule-f"));
     expect(res.status).toBe("forbidden");
@@ -131,7 +131,7 @@ describe("routine watcher (10) — offers, never auto", () => {
         }),
       );
     }
-    const suggestions = engine.detectRoutines();
+    const suggestions = await engine.detectRoutines();
     const found = suggestions.find((s) => s.actor === "priya" && s.opName === "announcement.send");
     expect(found).toBeTruthy();
     expect(found?.status).toBe("offered");

@@ -8,22 +8,24 @@ import { compileRule } from "@/domains/autonomy/compiler";
 import { CourseService } from "@/domains/course/service";
 import { OrgMemoryService } from "@/domains/org-memory/service";
 import { PeopleRecordService } from "@/domains/people/service";
+import { N1ReadThroughService } from "./n1-readthrough";
 import { getQuestionLimiter } from "./limiter";
 import { buildDemoWorld, type DemoWorld } from "./bootstrap";
+import type { Spine } from "@/spine/spine";
 
 const globalForSpine = globalThis as unknown as {
-  __orgSpineWorld?: DemoWorld;
+  __orgSpineWorld?: Promise<DemoWorld>;
 };
 
-export function getWorld(): DemoWorld {
+export function getWorld(): Promise<DemoWorld> {
   if (!globalForSpine.__orgSpineWorld) {
     globalForSpine.__orgSpineWorld = buildDemoWorld();
   }
   return globalForSpine.__orgSpineWorld;
 }
 
-export function getSpine() {
-  return getWorld().spine;
+export async function getSpine(): Promise<Spine> {
+  return (await getWorld()).spine;
 }
 
 let peopleService: PeopleRecordService | undefined;
@@ -31,36 +33,55 @@ let courseService: CourseService | undefined;
 let orgMemoryService: OrgMemoryService | undefined;
 let dayPlanStore: DayPlanStore | undefined;
 let dayPlanService: DayPlanService | undefined;
+let n1ReadThrough: N1ReadThroughService | undefined;
 
-export function getPeopleService(): PeopleRecordService {
-  peopleService ??= new PeopleRecordService(getWorld().deps.graph, providers().n1);
+export async function getPeopleService(): Promise<PeopleRecordService> {
+  if (!peopleService) {
+    const { deps } = await getWorld();
+    peopleService = new PeopleRecordService(deps.graph, providers().n1);
+  }
   return peopleService;
 }
 
-export function getCourseService(): CourseService {
-  courseService ??= new CourseService(getWorld().deps.graph, getWorld().deps.figures);
+export async function getN1ReadThrough(): Promise<N1ReadThroughService> {
+  if (!n1ReadThrough) {
+    const { deps } = await getWorld();
+    n1ReadThrough = new N1ReadThroughService(deps.graph);
+  }
+  return n1ReadThrough;
+}
+
+export async function getCourseService(): Promise<CourseService> {
+  if (!courseService) {
+    const { deps } = await getWorld();
+    courseService = new CourseService(deps.graph, deps.figures);
+  }
   return courseService;
 }
 
-export function getOrgMemoryService(): OrgMemoryService {
-  orgMemoryService ??= new OrgMemoryService(getWorld().deps.graph);
+export async function getOrgMemoryService(): Promise<OrgMemoryService> {
+  if (!orgMemoryService) {
+    const { deps } = await getWorld();
+    orgMemoryService = new OrgMemoryService(deps.graph);
+  }
   return orgMemoryService;
 }
 
-export function getDayPlanService(): DayPlanService {
+export async function getDayPlanService(): Promise<DayPlanService> {
   if (!dayPlanService) {
+    const world = await getWorld();
     dayPlanStore ??= new DayPlanStore();
     dayPlanService = new DayPlanService(dayPlanStore, {
-      graph: getWorld().deps.graph,
+      graph: world.deps.graph,
       limiter: getQuestionLimiter(),
-      actorLookup: () => ({ spine: getWorld().spine }),
+      actorLookup: () => ({ spine: world.spine }),
     });
   }
   return dayPlanService;
 }
 
-export function assistantAsk(actor: string, message: string) {
-  const world = getWorld();
+export async function assistantAsk(actor: string, message: string) {
+  const world = await getWorld();
   return ask(message, {
     actor,
     spine: world.spine,
@@ -73,9 +94,9 @@ export { getNews };
 
 let autonomyEngine: AutonomyEngine | undefined;
 
-export function getAutonomyEngine(): AutonomyEngine {
+export async function getAutonomyEngine(): Promise<AutonomyEngine> {
   if (!autonomyEngine) {
-    const world = getWorld();
+    const world = await getWorld();
     autonomyEngine = new AutonomyEngine(
       world.autonomy,
       world.spine,

@@ -31,7 +31,7 @@ export function announcementSendHandler(
     },
     permission: () => ({ action: "create", nodeType: "announcement" }),
     involvesMoneyOrPeople: () => false,
-    execute: (args, ctx) => {
+    execute: async (args, ctx) => {
       const id = nextAnnouncementId();
       const data: AnnouncementData = {
         message: args.message,
@@ -41,7 +41,7 @@ export function announcementSendHandler(
         audience: args.to,
         acknowledged: [],
       };
-      graph.putNode("announcement", id, data);
+      await graph.putNode("announcement", id, data);
       const result: OperationResult = {
         changes: [{ nodeType: "announcement", nodeId: id, after: data }],
         publishedTo: args.to.map((actor) => ({ kind: "actor" as const, actor })),
@@ -61,13 +61,14 @@ export function announcementAckHandler(
       args.announcementId ? { ok: true } : { ok: false, missing: ["announcementId"], detail: "An announcement id is required." },
     permission: (args) => ({ action: "edit", nodeType: "announcement", recordNodeIds: [args.announcementId] }),
     involvesMoneyOrPeople: () => false,
-    execute: (args, ctx) => {
-      const before = graph.getNode("announcement", args.announcementId)?.data as AnnouncementData | undefined;
+    execute: async (args, ctx) => {
+      const node = await graph.getNode("announcement", args.announcementId);
+      const before = node?.data as AnnouncementData | undefined;
       if (!before) throw new Error(`No announcement ${args.announcementId}`);
       const acknowledged = before.acknowledged.includes(ctx.actor)
         ? before.acknowledged
         : [...before.acknowledged, ctx.actor];
-      graph.putNode("announcement", args.announcementId, { ...before, acknowledged });
+      await graph.putNode("announcement", args.announcementId, { ...before, acknowledged });
       return {
         changes: [{ nodeType: "announcement", nodeId: args.announcementId, after: { ackedBy: ctx.actor, remaining: before.audience.filter((a) => !acknowledged.includes(a)).length } }],
         publishedTo: [{ kind: "actor", actor: before.by }],
@@ -77,8 +78,9 @@ export function announcementAckHandler(
   };
 }
 
-export function nonAcknowledgers(graph: RecordStore, announcementId: string): ActorId[] {
-  const data = graph.getNode("announcement", announcementId)?.data as AnnouncementData | undefined;
+export async function nonAcknowledgers(graph: RecordStore, announcementId: string): Promise<ActorId[]> {
+  const node = await graph.getNode("announcement", announcementId);
+  const data = node?.data as AnnouncementData | undefined;
   if (!data) return [];
   return data.audience.filter((a) => !data.acknowledged.includes(a));
 }

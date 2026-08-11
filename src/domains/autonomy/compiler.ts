@@ -6,7 +6,7 @@ export interface CompiledRule {
   author: string;
   plainLanguage: string;
   category: "routine";
-  evaluate: (graph: RecordStore, asOf: string) => Array<{ opName: string; args: Record<string, unknown> }>;
+  evaluate: (graph: RecordStore, asOf: string) => Promise<Array<{ opName: string; args: Record<string, unknown> }>>;
 }
 
 export function compileRule(plainLanguage: string, author: string, ruleId: string): CompiledRule | null {
@@ -19,16 +19,18 @@ export function compileRule(plainLanguage: string, author: string, ruleId: strin
       author,
       plainLanguage,
       category: "routine",
-      evaluate: (graph, asOf) =>
-        findStaleCourses(graph, asOf, { review: days })
-          .filter((c) => c.stage === "review")
-          .map((c) => ({
-            opName: "announcement.send",
-            args: {
-              message: `${c.title} has been in review for ${c.daysWaiting} days.`,
-              to: [author],
-            },
-          })),
+  evaluate: async (graph, asOf) => {
+    const stale = await findStaleCourses(graph, asOf, { review: days });
+    return stale
+      .filter((c) => c.stage === "review")
+      .map((c) => ({
+        opName: "announcement.send",
+        args: {
+          message: `${c.title} has been in review for ${c.daysWaiting} days.`,
+          to: [author],
+        },
+      }));
+  },
     };
   }
   return null;

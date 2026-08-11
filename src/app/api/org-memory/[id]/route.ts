@@ -13,9 +13,9 @@ export async function GET(
     return NextResponse.json({ error: "Not authenticated." }, { status: 401 });
   }
   const { id } = await params;
-  const spine = getSpine();
-  const memory = getOrgMemoryService().retrieve(id, (nodeType, nodeId) =>
-    spine.read({ actor: user.id, nodeType, nodeId }).found,
+  const spine = await getSpine();
+  const memory = await (await getOrgMemoryService()).retrieve(id, async (nodeType, nodeId) =>
+    (await spine.read({ actor: user.id, nodeType, nodeId })).found,
   );
   if (!memory) {
     return NextResponse.json(

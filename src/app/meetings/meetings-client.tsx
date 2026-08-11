@@ -31,6 +31,10 @@ export function MeetingsClient({
     attendees: [] as string[],
   });
   const [busy, setBusy] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editForm, setEditForm] = useState({ title: "", from: "", to: "" });
+  const [addingTo, setAddingTo] = useState<string | null>(null);
+  const [addAttendee, setAddAttendee] = useState("");
 
   function toggleAttendee(id: string) {
     setForm((f) => ({
@@ -65,6 +69,35 @@ export function MeetingsClient({
       setForm({ title: "", kind: "online", from: "", to: "", attendees: [] });
       router.refresh();
     }
+  }
+
+  async function run(name: string, args: Record<string, unknown>) {
+    setBusy(true);
+    await fetch("/api/operations", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ start: "form", name, args }),
+    });
+    setBusy(false);
+    router.refresh();
+  }
+
+  function startEdit(m: Meeting) {
+    setEditingId(m.id);
+    const fromLocal = m.from ? new Date(m.from).toISOString().slice(0, 16) : "";
+    const toLocal = m.to ? new Date(m.to).toISOString().slice(0, 16) : "";
+    setEditForm({ title: m.title, from: fromLocal, to: toLocal });
+  }
+
+  async function saveEdit() {
+    if (!editingId) return;
+    await run("meeting.update", {
+      meetingId: editingId,
+      title: editForm.title,
+      from: editForm.from ? new Date(editForm.from).toISOString() : undefined,
+      to: editForm.to ? new Date(editForm.to).toISOString() : undefined,
+    });
+    setEditingId(null);
   }
 
   return (
@@ -102,17 +135,52 @@ export function MeetingsClient({
         {meetings.length === 0 && <p className="text-sm text-zinc-400">No meetings scheduled.</p>}
         {meetings.map((m) => (
           <div key={m.id} className="rounded-xl border border-black/[.08] bg-white p-4 dark:border-white/[.12] dark:bg-black">
-            <div className="flex items-center justify-between">
-              <span className="font-medium text-black dark:text-zinc-50">{m.title}</span>
-              <span className="rounded-full bg-teal-700/10 px-2 py-0.5 text-xs text-teal-700">{m.kind}</span>
-            </div>
-            <div className="mt-1 text-xs text-zinc-400">
-              {m.from && new Date(m.from).toLocaleString()} {m.to && `→ ${new Date(m.to).toLocaleTimeString()}`}
-            </div>
-            {m.attendees.length > 0 && (
-              <div className="mt-2 text-xs text-zinc-500">
-                {m.attendees.join(", ")}
+            {editingId === m.id ? (
+              <div className="space-y-2">
+                <input value={editForm.title} onChange={(e) => setEditForm({ ...editForm, title: e.target.value })} className="w-full rounded-lg border border-black/[.12] px-3 py-1.5 text-sm dark:border-white/[.2] dark:bg-black dark:text-zinc-50" />
+                <div className="flex gap-2">
+                  <input type="datetime-local" value={editForm.from} onChange={(e) => setEditForm({ ...editForm, from: e.target.value })} className="rounded-lg border border-black/[.12] px-3 py-1.5 text-xs dark:border-white/[.2] dark:bg-black dark:text-zinc-50" />
+                  <input type="datetime-local" value={editForm.to} onChange={(e) => setEditForm({ ...editForm, to: e.target.value })} className="rounded-lg border border-black/[.12] px-3 py-1.5 text-xs dark:border-white/[.2] dark:bg-black dark:text-zinc-50" />
+                </div>
+                <div className="flex gap-2">
+                  <button onClick={saveEdit} disabled={busy} className="rounded-lg bg-teal-700 px-3 py-1 text-xs font-medium text-white disabled:opacity-40">Save</button>
+                  <button onClick={() => setEditingId(null)} className="text-xs text-zinc-500">Cancel</button>
+                </div>
               </div>
+            ) : (
+              <>
+                <div className="flex items-center justify-between">
+                  <div>
+                    <span className="font-medium text-black dark:text-zinc-50">{m.title}</span>
+                    <span className="ml-2 rounded-full bg-teal-700/10 px-2 py-0.5 text-xs text-teal-700">{m.kind}</span>
+                  </div>
+                  <div className="flex gap-2">
+                    <button onClick={() => startEdit(m)} className="text-xs text-teal-700 dark:text-teal-400">Edit</button>
+                    <button onClick={() => run("meeting.cancel", { meetingId: m.id })} disabled={busy} className="text-xs text-rose-600">Cancel</button>
+                  </div>
+                </div>
+                <div className="mt-1 text-xs text-zinc-400">
+                  {m.from && new Date(m.from).toLocaleString()} {m.to && `→ ${new Date(m.to).toLocaleTimeString()}`}
+                </div>
+                {m.link && <div className="mt-1 text-xs text-teal-600">🔗 link preserved across edits</div>}
+                {m.attendees.length > 0 && (
+                  <div className="mt-2 text-xs text-zinc-500">{m.attendees.join(", ")}</div>
+                )}
+                <div className="mt-2 flex items-center gap-2">
+                  {addingTo === m.id ? (
+                    <>
+                      <select value={addAttendee} onChange={(e) => setAddAttendee(e.target.value)} className="rounded-lg border border-black/[.12] px-2 py-1 text-xs dark:border-white/[.2] dark:bg-black dark:text-zinc-50">
+                        <option value="">Select…</option>
+                        {people.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+                      </select>
+                      <button onClick={() => { if (addAttendee) { run("meeting.addAttendee", { meetingId: m.id, attendee: addAttendee }); setAddingTo(null); setAddAttendee(""); } }} disabled={busy || !addAttendee} className="rounded-lg bg-black px-2 py-1 text-xs font-medium text-white disabled:opacity-40 dark:bg-white dark:text-black">Add</button>
+                      <button onClick={() => setAddingTo(null)} className="text-xs text-zinc-500">Close</button>
+                    </>
+                  ) : (
+                    <button onClick={() => setAddingTo(m.id)} className="text-xs text-teal-700 dark:text-teal-400">+ Add attendee (auto-sends link)</button>
+                  )}
+                </div>
+              </>
             )}
           </div>
         ))}

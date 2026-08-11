@@ -13,20 +13,24 @@ export interface AssistantCtx {
 
 export interface Specialist {
   id: "people" | "courses" | "rooms" | "documents";
-  answer(query: string, ctx: AssistantCtx): string;
+  answer(query: string, ctx: AssistantCtx): Promise<string>;
 }
 
-function canView(ctx: AssistantCtx, nodeType: string, nodeId: string): boolean {
-  return ctx.spine.read({ actor: ctx.actor, nodeType, nodeId }).found;
+async function canView(ctx: AssistantCtx, nodeType: string, nodeId: string): Promise<boolean> {
+  const read = await ctx.spine.read({ actor: ctx.actor, nodeType, nodeId });
+  return read.found;
 }
 
 export const peopleSpecialist: Specialist = {
   id: "people",
-  answer(_query, ctx) {
-    const pending = ctx.graph
-      .find("leave", (n) => (n.data as { status?: string }).status === "Pending")
-      .filter((n) => canView(ctx, "employee", (n.data as { employeeId?: string }).employeeId ?? ""))
-      .map((n) => n.data as { employeeName?: string; fromDate?: string; toDate?: string });
+  async answer(_query, ctx) {
+    const all = await ctx.graph.find("leave", (n) => (n.data as { status?: string }).status === "Pending");
+    const pending: Array<{ employeeName?: string; fromDate?: string; toDate?: string }> = [];
+    for (const n of all) {
+      if (await canView(ctx, "employee", (n.data as { employeeId?: string }).employeeId ?? "")) {
+        pending.push(n.data as { employeeName?: string; fromDate?: string; toDate?: string });
+      }
+    }
     if (pending.length === 0) return "Nothing is waiting on you for approval.";
     return (
       "Waiting on you: " +
@@ -40,10 +44,12 @@ export const peopleSpecialist: Specialist = {
 
 export const coursesSpecialist: Specialist = {
   id: "courses",
-  answer(_query, ctx) {
-    const stale = findStaleCourses(ctx.graph, ctx.asOf).filter((s) =>
-      canView(ctx, "course", s.courseId),
-    );
+  async answer(_query, ctx) {
+    const staleAll = await findStaleCourses(ctx.graph, ctx.asOf);
+    const stale: typeof staleAll = [];
+    for (const s of staleAll) {
+      if (await canView(ctx, "course", s.courseId)) stale.push(s);
+    }
     if (stale.length === 0) return "No courses are behind where they should be.";
     return (
       "At risk: " +
@@ -55,8 +61,8 @@ export const coursesSpecialist: Specialist = {
 
 export const roomsSpecialist: Specialist = {
   id: "rooms",
-  answer(_query, ctx) {
-    const mine = ctx.graph.find("booking", (n) => (n.data as { by?: string }).by === ctx.actor);
+  async answer(_query, ctx) {
+    const mine = await ctx.graph.find("booking", (n) => (n.data as { by?: string }).by === ctx.actor);
     if (mine.length === 0) return "You have no room bookings.";
     return (
       "Your bookings: " +
@@ -73,13 +79,17 @@ export const roomsSpecialist: Specialist = {
 
 export const documentsSpecialist: Specialist = {
   id: "documents",
-  answer(_query, ctx) {
-    const expiring = findExpiringDocuments(ctx.graph, ctx.asOf, 30).filter((d) =>
-      canView(ctx, "document", d.id),
-    );
-    const unacked = ctx.graph
-      .find("announcement", () => true)
-      .filter((n) => nonAcknowledgers(ctx.graph, n.id).includes(ctx.actor));
+  async answer(_query, ctx) {
+    const expiringAll = await findExpiringDocuments(ctx.graph, ctx.asOf, 30);
+    const expiring: typeof expiringAll = [];
+    for (const d of expiringAll) {
+      if (await canView(ctx, "document", d.id)) expiring.push(d);
+    }
+    const announcements = await ctx.graph.find("announcement", () => true);
+    const unacked: typeof announcements = [];
+    for (const n of announcements) {
+      if ((await nonAcknowledgers(ctx.graph, n.id)).includes(ctx.actor)) unacked.push(n);
+    }
     const parts: string[] = [];
     if (expiring.length > 0)
       parts.push(

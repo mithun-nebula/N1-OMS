@@ -1,6 +1,6 @@
 import type { DomainContext } from "../types";
 
-export function seedTasks(ctx: DomainContext): void {
+export async function seedTasks(ctx: DomainContext): Promise<void> {
   const tasks: Array<{
     id: string;
     title: string;
@@ -19,7 +19,7 @@ export function seedTasks(ctx: DomainContext): void {
     { id: "task-6", title: "Prepare Friday showcase deck", assignedTo: "arun", status: "in-progress", priority: "high", dueDate: "2026-08-09" },
   ];
   for (const t of tasks) {
-    ctx.graph.putNode("task", t.id, {
+    await ctx.graph.putNode("task", t.id, {
       title: t.title,
       description: t.description,
       assignedTo: t.assignedTo,
@@ -29,6 +29,6 @@ export function seedTasks(ctx: DomainContext): void {
       projectId: t.projectId,
       createdBy: "james",
     });
-    ctx.graph.addEdge({ from: t.assignedTo, to: t.id, type: "assigned" });
+    await ctx.graph.addEdge({ from: t.assignedTo, to: t.id, type: "assigned" });
   }
 }

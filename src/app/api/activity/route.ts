@@ -17,7 +17,8 @@ export async function GET(request: Request) {
   const limit = params.get("limit")
     ? Number(params.get("limit"))
     : undefined;
-  const entries = getWorld().deps.log.query({
+  const { deps } = await getWorld();
+  const entries = await deps.log.query({
     nodeType,
     nodeId,
     operationName,

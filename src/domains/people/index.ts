@@ -1,5 +1,6 @@
 import type { DomainContext, DomainModule } from "../types";
 import {
+  employeeUpdateContactHandler,
   leaveApproveHandler,
   leaveDeclineHandler,
   leaveRequestHandler,
@@ -22,13 +23,14 @@ export const peopleDomain: DomainModule = {
     ctx.registry.register(leaveRequestHandler(ctx.graph));
     ctx.registry.register(leaveApproveHandler(ctx.graph));
     ctx.registry.register(leaveDeclineHandler(ctx.graph));
+    ctx.registry.register(employeeUpdateContactHandler(ctx.graph));
     ctx.registry.register(joiningStartHandler(ctx.graph));
     ctx.registry.register(joiningCompleteStepHandler(ctx.graph));
     ctx.registry.register(leavingStartHandler(ctx.graph));
     ctx.registry.register(leavingCompleteHandoverHandler(ctx.graph));
     ctx.registry.register(leavingApplySeparationHandler(ctx.graph));
   },
-  seed(ctx: DomainContext) {
-    seedPeople(ctx);
+  async seed(ctx: DomainContext) {
+    await seedPeople(ctx);
   },
 };

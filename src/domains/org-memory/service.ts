@@ -14,8 +14,9 @@ export interface OrgMemoryView {
 export class OrgMemoryService {
   constructor(private readonly graph: RecordStore) {}
 
-  list(): Array<{ id: NodeId; title: string; decidedBy: string; decidedAt: string }> {
-    return this.graph.find("org-memory", () => true).map((n) => {
+  async list(): Promise<Array<{ id: NodeId; title: string; decidedBy: string; decidedAt: string }>> {
+    const nodes = await this.graph.find("org-memory", () => true);
+    return nodes.map((n) => {
       const d = n.data as {
         title?: string;
         decidedBy?: string;
@@ -30,11 +31,11 @@ export class OrgMemoryService {
     });
   }
 
-  retrieve(
+  async retrieve(
     id: NodeId,
-    canView: (nodeType: string, nodeId: NodeId) => boolean,
-  ): OrgMemoryView | undefined {
-    const node = this.graph.getNode("org-memory", id) as RecordNode | undefined;
+    canView: (nodeType: string, nodeId: NodeId) => Promise<boolean>,
+  ): Promise<OrgMemoryView | undefined> {
+    const node = (await this.graph.getNode("org-memory", id)) as RecordNode | undefined;
     if (!node) return undefined;
     const d = node.data as {
       title: string;
@@ -44,11 +45,13 @@ export class OrgMemoryService {
       decidedAt: string;
       linkedRecords?: Array<{ nodeType: string; nodeId: NodeId }>;
     };
-    const linked = (d.linkedRecords ?? []).map((l) => ({
-      nodeType: l.nodeType,
-      nodeId: l.nodeId,
-      available: canView(l.nodeType, l.nodeId),
-    }));
+    const linked = await Promise.all(
+      (d.linkedRecords ?? []).map(async (l) => ({
+        nodeType: l.nodeType,
+        nodeId: l.nodeId,
+        available: await canView(l.nodeType, l.nodeId),
+      })),
+    );
     return {
       id: node.id,
       title: d.title,

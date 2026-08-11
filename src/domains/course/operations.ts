@@ -16,8 +16,8 @@ interface CourseData {
   [key: string]: unknown;
 }
 
-function readCourse(graph: RecordStore, courseId: string): CourseData | undefined {
-  const node = graph.getNode("course", courseId);
+async function readCourse(graph: RecordStore, courseId: string): Promise<CourseData | undefined> {
+  const node = await graph.getNode("course", courseId);
   return node ? (node.data as CourseData) : undefined;
 }
 
@@ -26,7 +26,7 @@ export function courseUpdateStageHandler(
 ): OperationHandler<{ courseId: string; stage: string }> {
   return {
     name: "course.updateStage",
-    validate: (args) => {
+    validate: async (args) => {
       const missing: string[] = [];
       if (!args.courseId) missing.push("courseId");
       const stage = normalizeStage(args.stage ?? "");
@@ -34,7 +34,7 @@ export function courseUpdateStageHandler(
       if (missing.length > 0) {
         return { ok: false, missing, detail: "A course id and a stage are required." };
       }
-      const current = readCourse(graph, args.courseId);
+      const current = await readCourse(graph, args.courseId);
       const from = current ? normalizeStage(current.stage) : "";
       if (from && !isValidTransition(from, stage)) {
         return {
@@ -51,15 +51,15 @@ export function courseUpdateStageHandler(
       recordNodeIds: [args.courseId],
     }),
     involvesMoneyOrPeople: () => false,
-    execute: (args, ctx) => {
-      const before = readCourse(graph, args.courseId);
+    execute: async (args, ctx) => {
+      const before = await readCourse(graph, args.courseId);
       const beforeStage = before?.stage;
       const stage = normalizeStage(args.stage);
-      graph.patchNode("course", args.courseId, {
+      await graph.patchNode("course", args.courseId, {
         stage,
         stageEnteredAt: ctx.now(),
       });
-      snapshotCourse(graph, args.courseId, ctx.actor, `stage → ${stage}`);
+      await snapshotCourse(graph, args.courseId, ctx.actor, `stage → ${stage}`);
       const result: OperationResult = {
         changes: [
           {
@@ -71,8 +71,8 @@ export function courseUpdateStageHandler(
         ],
         undo: {
           description: `Restore course stage to "${beforeStage}".`,
-          revert: () => {
-            if (before) graph.putNode("course", args.courseId, before);
+          revert: async () => {
+            if (before) await graph.putNode("course", args.courseId, before);
           },
         },
         publishedTo: [{ kind: "record", nodeType: "course", nodeId: args.courseId }],
@@ -103,20 +103,20 @@ export function courseSetModuleStateHandler(
       recordNodeIds: [args.courseId],
     }),
     involvesMoneyOrPeople: () => false,
-    execute: (args, ctx) => {
-      const before = readCourse(graph, args.courseId);
+    execute: async (args, ctx) => {
+      const before = await readCourse(graph, args.courseId);
       if (!before) throw new Error(`No course ${args.courseId}`);
       const modules = before.modules.map((m, i) =>
         i === args.moduleIndex ? { ...m, state: args.state } : m,
       );
       const updated: CourseData = { ...before, modules };
-      graph.putNode("course", args.courseId, updated);
-      const figure = recomputeCompletion(figures, {
+      await graph.putNode("course", args.courseId, updated);
+      const figure = await recomputeCompletion(figures, {
         id: args.courseId,
         title: before.title,
         modules,
       });
-      snapshotCourse(graph, args.courseId, ctx.actor, `module[${args.moduleIndex}] → ${args.state}`);
+      await snapshotCourse(graph, args.courseId, ctx.actor, `module[${args.moduleIndex}] → ${args.state}`);
       const result: OperationResult = {
         changes: [
           {
@@ -127,9 +127,9 @@ export function courseSetModuleStateHandler(
         ],
         undo: {
           description: `Restore module ${args.moduleIndex} state.`,
-          revert: () => {
-            graph.putNode("course", args.courseId, before);
-            recomputeCompletion(figures, {
+          revert: async () => {
+            await graph.putNode("course", args.courseId, before);
+            await recomputeCompletion(figures, {
               id: args.courseId,
               title: before.title,
               modules: before.modules,
@@ -163,8 +163,8 @@ export function courseSetProgressNoteHandler(
       recordNodeIds: [args.courseId],
     }),
     involvesMoneyOrPeople: () => false,
-    execute: (args, ctx) => {
-      graph.patchNode("course", args.courseId, {
+    execute: async (args, ctx) => {
+      await graph.patchNode("course", args.courseId, {
         progressNote: { text: args.note, at: ctx.now(), by: ctx.actor },
       });
       return {
@@ -201,10 +201,10 @@ export function courseAssignStageOwnerHandler(
       recordNodeIds: [args.courseId],
     }),
     involvesMoneyOrPeople: () => false,
-    execute: (args) => {
-      const before = readCourse(graph, args.courseId);
+    execute: async (args) => {
+      const before = await readCourse(graph, args.courseId);
       const stageOwners = { ...(before?.stageOwners ?? {}), [normalizeStage(args.stage)]: args.owner };
-      graph.patchNode("course", args.courseId, { stageOwners });
+      await graph.patchNode("course", args.courseId, { stageOwners });
       return {
         changes: [
           {
@@ -238,14 +238,14 @@ export function courseRestoreVersionHandler(
       recordNodeIds: [args.courseId],
     }),
     involvesMoneyOrPeople: () => false,
-    execute: (args, ctx) => {
-      const target = getVersion(graph, args.courseId, args.version);
+    execute: async (args, ctx) => {
+      const target = await getVersion(graph, args.courseId, args.version);
       if (!target) {
         throw new Error(`No version ${args.version} for ${args.courseId}`);
       }
-      const before = readCourse(graph, args.courseId);
-      graph.putNode("course", args.courseId, { ...target.snapshot });
-      snapshotCourse(graph, args.courseId, ctx.actor, `restored v${args.version}`);
+      const before = await readCourse(graph, args.courseId);
+      await graph.putNode("course", args.courseId, { ...target.snapshot });
+      await snapshotCourse(graph, args.courseId, ctx.actor, `restored v${args.version}`);
       return {
         changes: [
           {
@@ -257,8 +257,8 @@ export function courseRestoreVersionHandler(
         ],
         undo: {
           description: `Undo restore of ${args.courseId} from v${args.version}.`,
-          revert: () => {
-            if (before) graph.putNode("course", args.courseId, before);
+          revert: async () => {
+            if (before) await graph.putNode("course", args.courseId, before);
           },
         },
         publishedTo: [{ kind: "record", nodeType: "course", nodeId: args.courseId }],

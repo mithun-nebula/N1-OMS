@@ -8,10 +8,10 @@ import { MeetingsClient } from "./meetings-client";
 export default async function MeetingsPage() {
   const user = await getSessionUser();
   if (!user) redirect("/login");
-  const { deps } = getWorld();
+  const { deps } = await getWorld();
 
-  const meetings = deps.graph
-    .find("meeting", (n) => (n.data as { cancelled?: boolean }).cancelled !== true)
+  const meetings = (await deps.graph
+    .find("meeting", (n) => (n.data as { cancelled?: boolean }).cancelled !== true))
     .map((n) => ({
       id: n.id,
       title: (n.data as { title?: string }).title ?? n.id,
@@ -24,7 +24,7 @@ export default async function MeetingsPage() {
       link: (n.data as { link?: string }).link,
     }));
 
-  const rooms = deps.graph.find("room", () => true).map((n) => ({
+  const rooms = (await deps.graph.find("room", () => true)).map((n) => ({
     id: n.id,
     name: (n.data as { name?: string }).name ?? n.id,
   }));

@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { buildDemoWorld } from "@/server/bootstrap";
+import { buildDemoWorld, type DemoWorld } from "@/server/bootstrap";
 import * as adapters from "@/spine/adapters";
 import { isRestricted } from "@/spine/permission/types";
 import { PeopleRecordService } from "./service";
@@ -11,7 +11,7 @@ function world() {
 }
 
 async function requestLeave(
-  spine: ReturnType<typeof buildDemoWorld>["spine"],
+  spine: DemoWorld["spine"],
   employeeId: string,
   fromDate: string,
   toDate: string,
@@ -38,12 +38,12 @@ function leaveResponse(res: { result?: { response?: unknown } }): LeaveResponse 
 
 describe("leave.request — creates a leave node + resolves approver", () => {
   it("creates a Pending leave node and publishes to the team lead", async () => {
-    const { spine, deps } = world();
+    const { spine, deps } = await world();
     const res = await requestLeave(spine, "priya", "2026-08-10", "2026-08-12");
     expect(res.status).toBe("ran");
     const { leaveId, approver } = leaveResponse(res);
     expect(leaveId).toBeTruthy();
-    const node = deps.graph.getNode("leave", leaveId);
+    const node = await deps.graph.getNode("leave", leaveId);
     expect(node?.data.status).toBe("Pending");
     expect(node?.data.employeeId).toBe("priya");
     expect(approver).toBe("james");
@@ -52,7 +52,7 @@ describe("leave.request — creates a leave node + resolves approver", () => {
 
 describe("leave clash check — flagged to the approver, not blocking", () => {
   it("detects an overlapping pending leave on a second request", async () => {
-    const { spine } = world();
+    const { spine } = await world();
     await requestLeave(spine, "priya", "2026-08-10", "2026-08-12");
     const second = await requestLeave(spine, "priya", "2026-08-11", "2026-08-13");
     expect(second.status).toBe("ran");
@@ -61,7 +61,7 @@ describe("leave clash check — flagged to the approver, not blocking", () => {
   });
 
   it("finds no clash for a non-overlapping window", async () => {
-    const { spine } = world();
+    const { spine } = await world();
     await requestLeave(spine, "priya", "2026-08-01", "2026-08-03");
     const second = await requestLeave(spine, "priya", "2026-08-10", "2026-08-12");
     expect(leaveResponse(second).clashes.length).toBe(0);
@@ -70,7 +70,7 @@ describe("leave clash check — flagged to the approver, not blocking", () => {
 
 describe("leave.approve / leave.decline — recorded, undoable, gated", () => {
   it("a manager approves a team member's leave (recorded + undoable)", async () => {
-    const { spine, deps } = world();
+    const { spine, deps } = await world();
     const req = await requestLeave(spine, "priya", "2026-08-10", "2026-08-12");
     const leaveId = leaveResponse(req).leaveId;
 
@@ -86,15 +86,48 @@ describe("leave.approve / leave.decline — recorded, undoable, gated", () => {
       status: "Approved",
       approvedBy: "james",
     });
-    expect(deps.graph.getNode("leave", leaveId)?.data.status).toBe("Approved");
+    expect((await deps.graph.getNode("leave", leaveId))?.data.status).toBe("Approved");
 
     const undone = await spine.undo(approve.activityEntry!.id, "james");
     expect(undone.status).toBe("undone");
-    expect(deps.graph.getNode("leave", leaveId)?.data.status).toBe("Pending");
+    expect((await deps.graph.getNode("leave", leaveId))?.data.status).toBe("Pending");
+  });
+
+  it("approving leave decrements the employee's balance by the day count", async () => {
+    const { spine, deps } = await world();
+    const before = (await deps.graph.getNode("employee", "priya"))?.data as { leaveBalance: number };
+    const startingBalance = before.leaveBalance;
+
+    const req = await requestLeave(spine, "priya", "2026-08-10", "2026-08-12"); // 3 days
+    const leaveId = leaveResponse(req).leaveId;
+
+    const approve = await spine.submit(
+      adapters.fromForm({ actor: "james", name: "leave.approve", args: { leaveId } }),
+    );
+    expect(approve.status).toBe("ran");
+    const after = (await deps.graph.getNode("employee", "priya"))?.data as { leaveBalance: number };
+    expect(after.leaveBalance).toBe(startingBalance - 3);
+
+    // Undo restores the balance.
+    await spine.undo(approve.activityEntry!.id, "james");
+    const restored = (await deps.graph.getNode("employee", "priya"))?.data as { leaveBalance: number };
+    expect(restored.leaveBalance).toBe(startingBalance);
+  });
+
+  it("declining leave does not change the balance", async () => {
+    const { spine, deps } = await world();
+    const startingBalance = ((await deps.graph.getNode("employee", "priya"))?.data as { leaveBalance: number }).leaveBalance;
+    const req = await requestLeave(spine, "priya", "2026-08-10", "2026-08-12");
+    const leaveId = leaveResponse(req).leaveId;
+    await spine.submit(
+      adapters.fromForm({ actor: "james", name: "leave.decline", args: { leaveId, reason: "No cover." } }),
+    );
+    const after = ((await deps.graph.getNode("employee", "priya"))?.data as { leaveBalance: number }).leaveBalance;
+    expect(after).toBe(startingBalance);
   });
 
   it("a manager declines with a reason", async () => {
-    const { spine, deps } = world();
+    const { spine, deps } = await world();
     const req = await requestLeave(spine, "priya", "2026-08-10", "2026-08-12");
     const leaveId = leaveResponse(req).leaveId;
 
@@ -106,14 +139,14 @@ describe("leave.approve / leave.decline — recorded, undoable, gated", () => {
       }),
     );
     expect(decline.status).toBe("ran");
-    expect(deps.graph.getNode("leave", leaveId)?.data.status).toBe("Declined");
-    expect(deps.graph.getNode("leave", leaveId)?.data.reason).toContain(
+    expect((await deps.graph.getNode("leave", leaveId))?.data.status).toBe("Declined");
+    expect((await deps.graph.getNode("leave", leaveId))?.data.reason).toContain(
       "Too many people",
     );
   });
 
   it("a non-manager cannot approve (forbidden, opaque)", async () => {
-    const { spine } = world();
+    const { spine } = await world();
     const req = await requestLeave(spine, "priya", "2026-08-10", "2026-08-12");
     const leaveId = leaveResponse(req).leaveId;
     const res = await spine.submit(
@@ -175,11 +208,11 @@ describe("PeopleRecordService — N1 read-through (field perms still apply)", ()
   });
 
   it("caches an N1 employee into the graph (hr sees the live pay)", async () => {
-    const { spine, deps } = world();
+    const { spine, deps } = await world();
     const service = new PeopleRecordService(deps.graph, fakeN1);
     await service.getEmployee("priya");
-    expect(deps.graph.getNode("employee", "priya")?.data.pay).toBe(99999);
-    const read = spine.read({
+    expect((await deps.graph.getNode("employee", "priya"))?.data.pay).toBe(99999);
+    const read = await spine.read({
       actor: "shruti",
       nodeType: "employee",
       nodeId: "priya",
@@ -189,10 +222,10 @@ describe("PeopleRecordService — N1 read-through (field perms still apply)", ()
   });
 
   it("still field-restricts pay for an employee viewer after read-through", async () => {
-    const { spine, deps } = world();
+    const { spine, deps } = await world();
     const service = new PeopleRecordService(deps.graph, fakeN1);
     await service.getEmployee("priya");
-    const read = spine.read({
+    const read = await spine.read({
       actor: "arun",
       nodeType: "employee",
       nodeId: "priya",

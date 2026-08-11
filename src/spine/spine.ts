@@ -67,7 +67,7 @@ export class Spine {
   }
 
   async submit(operation: Operation): Promise<SubmissionResult> {
-    const outcome = this.gate.evaluate(operation);
+    const outcome = await this.gate.evaluate(operation);
     switch (outcome.status) {
       case "rejected":
         return {
@@ -146,7 +146,7 @@ export class Spine {
     activityEntryId: string,
     by: ActorId,
   ): Promise<SubmissionResult> {
-    const entry = this.deps.log.get(activityEntryId);
+    const entry = await this.deps.log.get(activityEntryId);
     if (!entry) return { status: "not-found" };
     const undo = this.undos.get(entry.operationId);
     if (!undo) {
@@ -158,7 +158,7 @@ export class Spine {
     const ctx = this.ctx(by);
     await undo.revert(ctx);
     const undoEntry: ActivityEntry = {
-      id: this.deps.log.nextId(),
+      id: await this.deps.log.nextId(),
       operationId: `undo_${entry.operationId}`,
       operationName: `undo:${entry.operationName}`,
       actor: by,
@@ -168,18 +168,19 @@ export class Spine {
       changes: [],
       outcome: "ran",
     };
-    this.deps.log.append(undoEntry);
-    this.deps.log.markUndone(entry.id, undoEntry.id);
+    await this.deps.log.append(undoEntry);
+    await this.deps.log.markUndone(entry.id, undoEntry.id);
     return { status: "undone", activityEntry: undoEntry };
   }
 
-  read(opts: {
+  async read(opts: {
     actor: ActorId;
     nodeType: string;
     nodeId: NodeId;
-  }):
+  }): Promise<
     | { found: true; record: FilteredRecord }
-    | { found: false } {
+    | { found: false }
+  > {
     const { actor, nodeType, nodeId } = opts;
     const decision = this.deps.permissions.can({
       actor,
@@ -190,7 +191,7 @@ export class Spine {
     if (!decision.allowed) {
       return { found: false };
     }
-    const node = this.deps.graph.getNode(nodeType, nodeId);
+    const node = await this.deps.graph.getNode(nodeType, nodeId);
     if (!node) {
       return { found: false };
     }
@@ -217,7 +218,7 @@ export class Spine {
     const ctx = this.ctx(actor);
     const result = await handler.execute(operation.args, ctx);
     const entry: ActivityEntry = {
-      id: this.deps.log.nextId(),
+      id: await this.deps.log.nextId(),
       operationId: operation.id,
       operationName: operation.name,
       actor,
@@ -230,7 +231,7 @@ export class Spine {
       confirmationReason: confirmation?.confirmationReason,
       outcome: "ran",
     };
-    this.deps.log.append(entry);
+    await this.deps.log.append(entry);
     if (result.undo) this.undos.set(operation.id, result.undo);
     this.publishResult(operation, result);
     return { status: "ran", activityEntry: entry, result };
@@ -266,7 +267,7 @@ export class Spine {
       now: () => new Date().toISOString(),
       graph: {
         get: (nodeType: string, nodeId: NodeId) =>
-          this.deps.graph.getNode(nodeType, nodeId)?.data,
+          this.deps.graph.getNode(nodeType, nodeId).then((n) => n?.data),
       },
     };
   }

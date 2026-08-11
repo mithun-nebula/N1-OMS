@@ -9,10 +9,15 @@ export async function GET() {
   if (!user) {
     return NextResponse.json({ error: "Not authenticated." }, { status: 401 });
   }
-  const spine = getSpine();
-  const all = getCourseService().listProgress();
-  const visible = all.filter((c) =>
-    spine.read({ actor: user.id, nodeType: "course", nodeId: c.id }).found,
-  );
+  const spine = await getSpine();
+  const all = await (await getCourseService()).listProgress();
+  const visible = (
+    await Promise.all(
+      all.map(async (c) => {
+        const r = await spine.read({ actor: user.id, nodeType: "course", nodeId: c.id });
+        return r.found ? c : null;
+      }),
+    )
+  ).filter((c): c is NonNullable<typeof c> => c !== null);
   return NextResponse.json({ courses: visible, viewedBy: user.id });
 }

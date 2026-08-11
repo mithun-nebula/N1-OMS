@@ -38,8 +38,8 @@ export function documentStoreHandler(
     },
     permission: () => ({ action: "create", nodeType: "document" }),
     involvesMoneyOrPeople: () => false,
-    execute: (args, ctx) => {
-      const existing = graph.find(
+    execute: async (args, ctx) => {
+      const existing = await graph.find(
         "document",
         (n) =>
           (n.data as { name?: string; nodeId?: string }).name === args.name &&
@@ -61,8 +61,8 @@ export function documentStoreHandler(
         expiresOn: args.expiresOn,
         roleAccess: args.roleAccess ?? ["employee", "manager", "hr"],
       };
-      graph.putNode("document", id, data);
-      graph.addEdge({ from: args.nodeId, to: id, type: "documented-by" });
+      await graph.putNode("document", id, data);
+      await graph.addEdge({ from: args.nodeId, to: id, type: "documented-by" });
       return {
         changes: [{ nodeType: "document", nodeId: id, after: data }],
         publishedTo: [{ kind: "record", nodeType: args.nodeType, nodeId: args.nodeId }],
@@ -85,7 +85,7 @@ export function documentRequireHandler(
     },
     permission: () => ({ action: "create", nodeType: "document" }),
     involvesMoneyOrPeople: () => false,
-    execute: (args) => {
+    execute: async (args) => {
       const id = `req_${Date.now().toString(36)}`;
       const data = {
         name: args.name,
@@ -96,7 +96,7 @@ export function documentRequireHandler(
         version: 0,
         roleAccess: [],
       };
-      graph.putNode("document", id, data);
+      await graph.putNode("document", id, data);
       return {
         changes: [{ nodeType: "document", nodeId: id, after: data }],
         publishedTo: [{ kind: "record", nodeType: args.nodeType, nodeId: args.nodeId }],
@@ -105,14 +105,15 @@ export function documentRequireHandler(
   };
 }
 
-export function findExpiringDocuments(
+export async function findExpiringDocuments(
   graph: RecordStore,
   asOf: string,
   withinDays: number,
-): Array<{ id: NodeId; name: string; expiresOn: string; daysLeft: number }> {
+): Promise<Array<{ id: NodeId; name: string; expiresOn: string; daysLeft: number }>> {
   const out: Array<{ id: NodeId; name: string; expiresOn: string; daysLeft: number }> = [];
   const asOfMs = new Date(asOf).getTime();
-  for (const node of graph.find("document", () => true)) {
+  const docs = await graph.find("document", () => true);
+  for (const node of docs) {
     const d = node.data as { expiresOn?: string; name?: string };
     if (!d.expiresOn) continue;
     const left = Math.ceil((new Date(d.expiresOn).getTime() - asOfMs) / (1000 * 60 * 60 * 24));
@@ -123,14 +124,19 @@ export function findExpiringDocuments(
   return out.sort((a, b) => a.daysLeft - b.daysLeft);
 }
 
-export function requiredVsSupplied(
+export async function requiredVsSupplied(
   graph: RecordStore,
   nodeType: string,
   nodeId: NodeId,
-): { missing: string[]; supplied: string[] } {
-  const docs = graph
-    .find("document", (n) => (n.data as { nodeType?: string; nodeId?: string }).nodeType === nodeType && (n.data as { nodeId?: string }).nodeId === nodeId)
-    .map((n) => n.data as { name?: string; required?: boolean; version?: number });
+): Promise<{ missing: string[]; supplied: string[] }> {
+  const docs = (
+    await graph.find(
+      "document",
+      (n) =>
+        (n.data as { nodeType?: string; nodeId?: string }).nodeType === nodeType &&
+        (n.data as { nodeId?: string }).nodeId === nodeId,
+    )
+  ).map((n) => n.data as { name?: string; required?: boolean; version?: number });
   const required = new Set(
     docs.filter((d) => d.required).map((d) => d.name).filter((n): n is string => !!n),
   );

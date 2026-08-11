@@ -59,8 +59,8 @@ export const workplaceDomain: DomainModule = {
     ctx.registry.register(announcementSendHandler(ctx.graph));
     ctx.registry.register(announcementAckHandler(ctx.graph));
   },
-  seed(ctx: DomainContext) {
-    seedWorkplace(ctx);
+  async seed(ctx: DomainContext) {
+    await seedWorkplace(ctx);
   },
 };
 

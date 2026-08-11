@@ -43,7 +43,7 @@ export async function POST(request: Request) {
       { status: 400 },
     );
   }
-  const result = await getSpine().submit(op);
+  const result = await (await getSpine()).submit(op);
   const status =
     result.status === "ran"
       ? 200

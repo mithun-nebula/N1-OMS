@@ -20,10 +20,10 @@ export interface Figure {
 }
 
 export interface FigureStore {
-  put(figure: Figure): void;
-  replace(figure: Figure): void;
-  get(id: string): Figure | undefined;
-  forRecord(nodeType: string, nodeId: NodeId, label?: string): Figure[];
-  breakdown(id: string): { figure: Figure; parts: FigurePart[] } | undefined;
+  put(figure: Figure): Promise<void>;
+  replace(figure: Figure): Promise<void>;
+  get(id: string): Promise<Figure | undefined>;
+  forRecord(nodeType: string, nodeId: NodeId, label?: string): Promise<Figure[]>;
+  breakdown(id: string): Promise<{ figure: Figure; parts: FigurePart[] } | undefined>;
   nextId(): string;
 }

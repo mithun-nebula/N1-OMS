@@ -43,14 +43,14 @@ export class AutonomyEngine {
     for (const rule of this.rules) {
       const state = this.store.get(rule.id);
       if (state?.status === "suspended") continue;
-      const findings = rule.evaluate(this.graph, asOf);
+      const findings = await rule.evaluate(this.graph, asOf);
       for (const finding of findings) {
         const op = this.buildOp(rule, finding.opName, finding.args);
         const res = await this.spine.submit(op);
         if (res.status === "ran" || res.status === "awaiting-confirmation") emitted += 1;
       }
     }
-    const suspended = this.suspendSeparated();
+    const suspended = await this.suspendSeparated();
     return { emitted, suspended };
   }
 
@@ -63,11 +63,12 @@ export class AutonomyEngine {
     });
   }
 
-  suspendSeparated(): string[] {
+  async suspendSeparated(): Promise<string[]> {
     const suspended: string[] = [];
     for (const state of this.store.list()) {
       if (state.status === "suspended") continue;
-      const employee = this.graph.getNode("employee", state.author)?.data as { status?: string } | undefined;
+      const node = await this.graph.getNode("employee", state.author);
+      const employee = node?.data as { status?: string } | undefined;
       if (employee?.status === "separated") {
         state.status = "suspended";
         state.suspendedReason = "author separated";
@@ -109,8 +110,8 @@ export class AutonomyEngine {
     return true;
   }
 
-  detectRoutines(): RoutineSuggestion[] {
-    const entries = this.log.query({});
+  async detectRoutines(): Promise<RoutineSuggestion[]> {
+    const entries = await this.log.query({});
     const counts = new Map<string, number>();
     for (const e of entries) {
       if (e.startedBy.actor) {

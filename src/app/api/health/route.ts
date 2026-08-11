@@ -5,7 +5,7 @@ import { providerModes } from "@/config/providers";
 export const dynamic = "force-dynamic";
 
 export async function GET() {
-  const world = getWorld();
+  const world = await getWorld();
   return NextResponse.json({
     status: "ok",
     service: "organization-a-spine",

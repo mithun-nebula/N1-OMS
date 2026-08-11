@@ -9,7 +9,7 @@ function world() {
 
 describe("joining.start — named step-owners (not a checklist)", () => {
   it("HR creates an onboarding plan with a named owner per step", async () => {
-    const { spine, deps } = world();
+    const { spine, deps } = await world();
     const res = await spine.submit(
       adapters.fromForm({
         actor: "shruti",
@@ -18,14 +18,14 @@ describe("joining.start — named step-owners (not a checklist)", () => {
       }),
     );
     expect(res.status).toBe("ran");
-    const node = deps.graph.getNode("onboarding", "onboarding:ravi");
+    const node = await deps.graph.getNode("onboarding", "onboarding:ravi");
     const steps = (node?.data as { steps?: Array<{ owner?: string }> }).steps;
     expect(steps?.length).toBeGreaterThan(0);
     expect(steps?.[0].owner).toBeTruthy();
   });
 
   it("a non-HR/non-manager cannot start onboarding (forbidden)", async () => {
-    const { spine } = world();
+    const { spine } = await world();
     const res = await spine.submit(
       adapters.fromForm({
         actor: "arun",
@@ -39,7 +39,7 @@ describe("joining.start — named step-owners (not a checklist)", () => {
 
 describe("joining.completeStep — the named owner can act", () => {
   it("the step's owner completes it (allowedActors grant)", async () => {
-    const { spine, deps } = world();
+    const { spine, deps } = await world();
     await spine.submit(
       adapters.fromForm({
         actor: "shruti",
@@ -55,8 +55,8 @@ describe("joining.completeStep — the named owner can act", () => {
       }),
     );
     expect(res.status).toBe("ran");
-    const node = deps.graph.getNode("onboarding", "onboarding:ravi");
-    const step = (node?.data.steps as Array<{ id: string; status: string; completedBy?: string }>).find(
+    const node = await deps.graph.getNode("onboarding", "onboarding:ravi");
+    const step = ((node?.data.steps as Array<{ id: string; status: string; completedBy?: string }>) ?? []).find(
       (s) => s.id === "policy-ack",
     );
     expect(step?.status).toBe("done");
@@ -64,7 +64,7 @@ describe("joining.completeStep — the named owner can act", () => {
   });
 
   it("someone who is not the step's owner is forbidden", async () => {
-    const { spine } = world();
+    const { spine } = await world();
     await spine.submit(
       adapters.fromForm({
         actor: "shruti",
@@ -85,7 +85,7 @@ describe("joining.completeStep — the named owner can act", () => {
 
 describe("findOverdueSteps — overdue chase", () => {
   it("lists pending steps past their due date", async () => {
-    const { spine, deps } = world();
+    const { spine, deps } = await world();
     await spine.submit(
       adapters.fromForm({
         actor: "shruti",
@@ -96,7 +96,7 @@ describe("findOverdueSteps — overdue chase", () => {
         },
       }),
     );
-    const overdue = findOverdueSteps(deps.graph, "2026-01-01");
+    const overdue = await findOverdueSteps(deps.graph, "2026-01-01");
     expect(overdue.length).toBe(1);
     expect(overdue[0].employeeId).toBe("naveen");
   });
@@ -104,7 +104,7 @@ describe("findOverdueSteps — overdue chase", () => {
 
 describe("leaving.start — outstanding asset + course handover detection", () => {
   it("detects Meena's 2 laptops + 1 owned course (spec example)", async () => {
-    const { spine } = world();
+    const { spine } = await world();
     const res = await spine.submit(
       adapters.fromForm({
         actor: "shruti",
@@ -126,7 +126,7 @@ describe("leaving.start — outstanding asset + course handover detection", () =
 
 describe("leaving.completeHandover — reassigned to the new owner", () => {
   it("the new owner completes a course handover (reassigns ownership)", async () => {
-    const { spine, deps } = world();
+    const { spine, deps } = await world();
     await spine.submit(
       adapters.fromForm({
         actor: "shruti",
@@ -142,17 +142,17 @@ describe("leaving.completeHandover — reassigned to the new owner", () => {
       }),
     );
     expect(res.status).toBe("ran");
-    expect(deps.graph.getNode("course", "ai-basics")?.data.owner).toBe("james");
-    const offboarding = deps.graph.getNode("offboarding", "offboarding:meena");
+    expect((await deps.graph.getNode("course", "ai-basics"))?.data.owner).toBe("james");
+    const offboarding = await deps.graph.getNode("offboarding", "offboarding:meena");
     expect(
-      (offboarding?.data.handovers as Array<{ id: string; status: string }>).find(
+      ((offboarding?.data.handovers as Array<{ id: string; status: string }>) ?? []).find(
         (h) => h.id === "h-course-ai-basics",
       )?.status,
     ).toBe("done");
   });
 
   it("someone who is not the new owner/HR is forbidden", async () => {
-    const { spine } = world();
+    const { spine } = await world();
     await spine.submit(
       adapters.fromForm({
         actor: "shruti",
@@ -173,7 +173,7 @@ describe("leaving.completeHandover — reassigned to the new owner", () => {
 
 describe("leaving.applySeparation — auto-suspend hook (Phase 6 stub)", () => {
   it("marks the employee separated and suspends their rules", async () => {
-    const { spine, deps } = world();
+    const { spine, deps } = await world();
     const res = await spine.submit(
       adapters.fromForm({
         actor: "shruti",
@@ -182,13 +182,13 @@ describe("leaving.applySeparation — auto-suspend hook (Phase 6 stub)", () => {
       }),
     );
     expect(res.status).toBe("ran");
-    const employee = deps.graph.getNode("employee", "meena");
+    const employee = await deps.graph.getNode("employee", "meena");
     expect(employee?.data.status).toBe("separated");
     expect(employee?.data.suspendedRules).toBe(true);
   });
 
   it("a scheduled (app-started) separation never auto-graduates (leaving-org)", async () => {
-    const { spine } = world();
+    const { spine } = await world();
     const res = await spine.submit(
       adapters.fromSchedule({
         scheduleId: "sep-tick",
@@ -205,7 +205,7 @@ describe("leaving.applySeparation — auto-suspend hook (Phase 6 stub)", () => {
 
 describe("payroll — stays in N1, field-restricted", () => {
   it("pay slip read-through returns nothing in stub mode (data lives in N1)", async () => {
-    const { deps } = world();
+    const { deps } = await world();
     const { PeopleRecordService } = await import("./service");
     const service = new PeopleRecordService(deps.graph, {
       id: "stub",

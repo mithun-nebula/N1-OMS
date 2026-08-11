@@ -14,6 +14,6 @@ export async function GET(
     return NextResponse.json({ error: "Not authenticated." }, { status: 401 });
   }
   const { year, month } = await params;
-  const cells = monthView(getWorld().deps.graph, Number(year), Number(month));
+  const cells = await monthView((await getWorld()).deps.graph, Number(year), Number(month));
   return NextResponse.json({ year: Number(year), month: Number(month), cells });
 }

@@ -27,21 +27,21 @@ export function offboardingIdFor(employeeId: string): NodeId {
   return `offboarding:${employeeId}`;
 }
 
-function readOffboarding(
+async function readOffboarding(
   graph: RecordStore,
   employeeId: string,
-): OffboardingData | undefined {
-  const node = graph.getNode("offboarding", offboardingIdFor(employeeId));
+): Promise<OffboardingData | undefined> {
+  const node = await graph.getNode("offboarding", offboardingIdFor(employeeId));
   return node ? (node.data as OffboardingData) : undefined;
 }
 
-function detectOutstanding(
+async function detectOutstanding(
   graph: RecordStore,
   employeeId: string,
   newOwner: string,
-): HandoverItem[] {
+): Promise<HandoverItem[]> {
   const handovers: HandoverItem[] = [];
-  const courses = graph.traverse({
+  const courses = await graph.traverse({
     start: employeeId,
     steps: [{ edgeType: "owns", direction: "out", toNodeType: "course" }],
   });
@@ -56,7 +56,7 @@ function detectOutstanding(
       status: "pending",
     });
   }
-  const assets = graph.find(
+  const assets = await graph.find(
     "equipment",
     (n) => (n.data as { assignee?: string }).assignee === employeeId,
   );
@@ -74,18 +74,18 @@ function detectOutstanding(
   return handovers;
 }
 
-function reassign(
+async function reassign(
   graph: RecordStore,
   item: HandoverItem,
-): void {
+): Promise<void> {
   if (item.type === "course") {
-    graph.removeEdge(item.from, item.nodeId, "owns");
-    graph.addEdge({ from: item.to, to: item.nodeId, type: "owns" });
-    graph.patchNode("course", item.nodeId, { owner: item.to });
+    await graph.removeEdge(item.from, item.nodeId, "owns");
+    await graph.addEdge({ from: item.to, to: item.nodeId, type: "owns" });
+    await graph.patchNode("course", item.nodeId, { owner: item.to });
   } else {
-    graph.removeEdge(item.from, item.nodeId, "holds");
-    graph.addEdge({ from: item.to, to: item.nodeId, type: "holds" });
-    graph.patchNode("equipment", item.nodeId, { assignee: item.to });
+    await graph.removeEdge(item.from, item.nodeId, "holds");
+    await graph.addEdge({ from: item.to, to: item.nodeId, type: "holds" });
+    await graph.patchNode("equipment", item.nodeId, { assignee: item.to });
   }
 }
 
@@ -113,9 +113,9 @@ export function leavingStartHandler(
       recordNodeIds: [offboardingIdFor(args.employeeId)],
     }),
     involvesMoneyOrPeople: () => true,
-    execute: (args) => {
+    execute: async (args) => {
       const newOwner = teamLeadOf(args.employeeId) ?? "shruti";
-      const handovers = detectOutstanding(graph, args.employeeId, newOwner);
+      const handovers = await detectOutstanding(graph, args.employeeId, newOwner);
       const data: OffboardingData = {
         employeeId: args.employeeId,
         separationDate: args.separationDate,
@@ -123,7 +123,7 @@ export function leavingStartHandler(
         handovers,
         separated: false,
       };
-      graph.putNode("offboarding", offboardingIdFor(args.employeeId), data);
+      await graph.putNode("offboarding", offboardingIdFor(args.employeeId), data);
       const result: OperationResult = {
         changes: [
           {
@@ -166,8 +166,8 @@ export function leavingCompleteHandoverHandler(
             detail: "Employee id and handover id are required.",
           };
     },
-    permission: (args) => {
-      const offboarding = readOffboarding(graph, args.employeeId);
+    permission: async (args) => {
+      const offboarding = await readOffboarding(graph, args.employeeId);
       const item = offboarding?.handovers.find((h) => h.id === args.handoverId);
       return {
         action: "edit",
@@ -177,8 +177,8 @@ export function leavingCompleteHandoverHandler(
       };
     },
     involvesMoneyOrPeople: () => true,
-    execute: (args, ctx) => {
-      const before = readOffboarding(graph, args.employeeId);
+    execute: async (args, ctx) => {
+      const before = await readOffboarding(graph, args.employeeId);
       if (!before) {
         throw new Error(`No offboarding found for ${args.employeeId}`);
       }
@@ -191,13 +191,13 @@ export function leavingCompleteHandoverHandler(
           ? { ...h, status: "done" as const, completedAt: ctx.now() }
           : h,
       );
-      reassign(graph, { ...item, status: "done" });
+      await reassign(graph, { ...item, status: "done" });
       const updated: OffboardingData = {
         ...before,
         handovers,
         status: handovers.every((h) => h.status === "done") ? "complete" : "active",
       };
-      graph.putNode("offboarding", offboardingIdFor(args.employeeId), updated);
+      await graph.putNode("offboarding", offboardingIdFor(args.employeeId), updated);
       const result: OperationResult = {
         changes: [
           {
@@ -208,9 +208,9 @@ export function leavingCompleteHandoverHandler(
         ],
         undo: {
           description: `Undo handover ${args.handoverId}.`,
-          revert: () => {
-            reassign(graph, { ...item, to: item.from, status: "pending" });
-            graph.putNode("offboarding", offboardingIdFor(args.employeeId), before);
+          revert: async () => {
+            await reassign(graph, { ...item, to: item.from, status: "pending" });
+            await graph.putNode("offboarding", offboardingIdFor(args.employeeId), before);
           },
         },
         publishedTo: [{ kind: "actor", actor: before.employeeId }],
@@ -236,15 +236,15 @@ export function leavingApplySeparationHandler(
       recordNodeIds: [offboardingIdFor(args.employeeId)],
     }),
     involvesMoneyOrPeople: () => false,
-    execute: (args, ctx) => {
-      const offboarding = readOffboarding(graph, args.employeeId);
+    execute: async (args, ctx) => {
+      const offboarding = await readOffboarding(graph, args.employeeId);
       if (offboarding) {
-        graph.putNode("offboarding", offboardingIdFor(args.employeeId), {
+        await graph.putNode("offboarding", offboardingIdFor(args.employeeId), {
           ...offboarding,
           separated: true,
         });
       }
-      graph.patchNode("employee", args.employeeId, {
+      await graph.patchNode("employee", args.employeeId, {
         status: "separated",
         separatedAt: ctx.now(),
         suspendedRules: true,

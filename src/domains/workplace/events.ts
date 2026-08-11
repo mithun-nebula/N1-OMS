@@ -28,8 +28,9 @@ function nextEventId(): string {
   return `event_${Date.now().toString(36)}_${eventSeq}`;
 }
 
-function readEvent(graph: RecordStore, id: string): EventData | undefined {
-  return graph.getNode("event", id)?.data as EventData | undefined;
+async function readEvent(graph: RecordStore, id: string): Promise<EventData | undefined> {
+  const node = await graph.getNode("event", id);
+  return node?.data as EventData | undefined;
 }
 
 export function eventCreateHandler(
@@ -45,7 +46,7 @@ export function eventCreateHandler(
     },
     permission: () => ({ action: "create", nodeType: "event" }),
     involvesMoneyOrPeople: () => false,
-    execute: (args) => {
+    execute: async (args) => {
       const id = nextEventId();
       const data: EventData = {
         title: args.title,
@@ -56,7 +57,7 @@ export function eventCreateHandler(
         registrations: [],
         budget: { currency: "INR", spent: 0, limit: args.budgetLimit },
       };
-      graph.putNode("event", id, data);
+      await graph.putNode("event", id, data);
       return {
         changes: [{ nodeType: "event", nodeId: id, after: data }],
         publishedTo: [{ kind: "broadcast" }],
@@ -79,11 +80,11 @@ export function eventAddTaskHandler(
     },
     permission: (args) => ({ action: "edit", nodeType: "event", recordNodeIds: [args.eventId] }),
     involvesMoneyOrPeople: () => false,
-    execute: (args) => {
-      const before = readEvent(graph, args.eventId);
+    execute: async (args) => {
+      const before = await readEvent(graph, args.eventId);
       if (!before) throw new Error(`No event ${args.eventId}`);
       const task: EventTask = { id: `t_${Date.now().toString(36)}`, text: args.text, owner: args.owner, due: args.due };
-      graph.putNode("event", args.eventId, { ...before, tasks: [...before.tasks, task] });
+      await graph.putNode("event", args.eventId, { ...before, tasks: [...before.tasks, task] });
       return {
         changes: [{ nodeType: "event", nodeId: args.eventId, after: { task: task.id } }],
         publishedTo: args.owner ? [{ kind: "actor", actor: args.owner }] : [],
@@ -105,13 +106,13 @@ export function eventRegisterHandler(
     },
     permission: (args) => ({ action: "edit", nodeType: "event", recordNodeIds: [args.eventId] }),
     involvesMoneyOrPeople: () => false,
-    execute: (args) => {
-      const before = readEvent(graph, args.eventId);
+    execute: async (args) => {
+      const before = await readEvent(graph, args.eventId);
       if (!before) throw new Error(`No event ${args.eventId}`);
       const registrations = before.registrations.includes(args.attendee)
         ? before.registrations
         : [...before.registrations, args.attendee];
-      graph.putNode("event", args.eventId, { ...before, registrations });
+      await graph.putNode("event", args.eventId, { ...before, registrations });
       return {
         changes: [{ nodeType: "event", nodeId: args.eventId, after: { registered: args.attendee, count: registrations.length } }],
         publishedTo: [{ kind: "actor", actor: args.attendee }],
@@ -134,10 +135,10 @@ export function eventCloseHandler(
     },
     permission: (args) => ({ action: "edit", nodeType: "event", recordNodeIds: [args.eventId] }),
     involvesMoneyOrPeople: () => false,
-    execute: (args) => {
-      const before = readEvent(graph, args.eventId);
+    execute: async (args) => {
+      const before = await readEvent(graph, args.eventId);
       if (!before) throw new Error(`No event ${args.eventId}`);
-      graph.putNode("event", args.eventId, { ...before, status: "closed", report: args.report });
+      await graph.putNode("event", args.eventId, { ...before, status: "closed", report: args.report });
       return {
         changes: [{ nodeType: "event", nodeId: args.eventId, after: { status: "closed" } }],
         publishedTo: [{ kind: "broadcast" }],
@@ -146,9 +147,10 @@ export function eventCloseHandler(
   };
 }
 
-export function findOverdueEventTasks(graph: RecordStore, asOf: string): Array<{ eventId: string; task: EventTask }> {
+export async function findOverdueEventTasks(graph: RecordStore, asOf: string): Promise<Array<{ eventId: string; task: EventTask }>> {
   const out: Array<{ eventId: string; task: EventTask }> = [];
-  for (const node of graph.find("event", (n) => (n.data as { status?: string }).status !== "closed")) {
+  const events = await graph.find("event", (n) => (n.data as { status?: string }).status !== "closed");
+  for (const node of events) {
     const data = node.data as EventData;
     for (const task of data.tasks ?? []) {
       if (!task.done && task.due && task.due < asOf) out.push({ eventId: node.id, task });
@@ -157,8 +159,8 @@ export function findOverdueEventTasks(graph: RecordStore, asOf: string): Array<{
   return out;
 }
 
-export function registrationPacing(graph: RecordStore, eventId: string, compareCount: number): "ahead" | "behind" | "on-track" {
-  const event = readEvent(graph, eventId);
+export async function registrationPacing(graph: RecordStore, eventId: string, compareCount: number): Promise<"ahead" | "behind" | "on-track"> {
+  const event = await readEvent(graph, eventId);
   if (!event) return "behind";
   const count = event.registrations.length;
   if (count >= compareCount) return "ahead";

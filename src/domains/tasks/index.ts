@@ -1,5 +1,11 @@
 import type { DomainContext, DomainModule } from "../types";
-import { taskAssignHandler, taskCompleteHandler, taskCreateHandler } from "./operations";
+import {
+  taskAssignHandler,
+  taskCompleteHandler,
+  taskCreateHandler,
+  taskDeleteHandler,
+  taskEditHandler,
+} from "./operations";
 import { seedTasks } from "./seed";
 
 export const tasksDomain: DomainModule = {
@@ -9,8 +15,10 @@ export const tasksDomain: DomainModule = {
     ctx.registry.register(taskCreateHandler(ctx.graph));
     ctx.registry.register(taskAssignHandler(ctx.graph));
     ctx.registry.register(taskCompleteHandler(ctx.graph));
+    ctx.registry.register(taskEditHandler(ctx.graph));
+    ctx.registry.register(taskDeleteHandler(ctx.graph));
   },
-  seed(ctx: DomainContext) {
-    seedTasks(ctx);
+  async seed(ctx: DomainContext) {
+    await seedTasks(ctx);
   },
 };

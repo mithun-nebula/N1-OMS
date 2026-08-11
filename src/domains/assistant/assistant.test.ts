@@ -23,15 +23,15 @@ function add(
   return res.item!.id;
 }
 
-beforeEach(() => {
-  world = buildDemoWorld();
+beforeEach(async () => {
+  world = await buildDemoWorld();
   store = new DayPlanStore();
   service = new DayPlanService(store, {
     graph: world.deps.graph,
     limiter: createQuestionLimiter(),
     actorLookup: () => ({ spine: world.spine }),
   });
-  service.startDay("james", "2026-08-08");
+  await service.startDay("james", "2026-08-08");
 });
 
 describe("appendix D — comments on work, never the person", () => {
@@ -51,75 +51,75 @@ describe("appendix D — comments on work, never the person", () => {
 });
 
 describe("assistant is permission-bound (cannot leak what you can't open)", () => {
-  it("a manager (own-team) sees a team member's pending leave; an outsider does not", () => {
-    world.deps.graph.putNode("leave", "leave-x", {
+  it("a manager (own-team) sees a team member's pending leave; an outsider does not", async () => {
+    await world.deps.graph.putNode("leave", "leave-x", {
       employeeId: "priya",
       employeeName: "Priya R.",
       status: "Pending",
       fromDate: "2026-08-08",
       toDate: "2026-08-08",
     });
-    expect(peopleSpecialist.answer("", ctx("james"))).toContain("Priya");
-    expect(peopleSpecialist.answer("", ctx("ravi"))).toContain("Nothing is waiting");
+    expect(await peopleSpecialist.answer("", ctx("james"))).toContain("Priya");
+    expect(await peopleSpecialist.answer("", ctx("ravi"))).toContain("Nothing is waiting");
   });
 });
 
 describe("A1 — once-a-day, mandatory time, resume", () => {
-  it("reopening a planned day goes straight to the dashboard", () => {
+  it("reopening a planned day goes straight to the dashboard", async () => {
     add("Review", 60);
     service.commitPlan("james", "2026-08-08");
-    expect(service.startDay("james", "2026-08-08").open).toBe("dashboard");
+    expect((await service.startDay("james", "2026-08-08")).open).toBe("dashboard");
   });
   it("an item without a time is refused", () => {
     expect(service.selectItem("james", "2026-08-08", { label: "X", estimateMinutes: 0 }).error).toBeTruthy();
   });
-  it("an abandoned brief offers to resume", () => {
+  it("an abandoned brief offers to resume", async () => {
     service.abandon("james", "2026-08-08");
-    const resumed = service.startDay("james", "2026-08-08");
+    const resumed = await service.startDay("james", "2026-08-08");
     expect(resumed.open).toBe("resume");
     expect(resumed.prompt).toMatch(/finish/);
   });
 });
 
 describe("A2 — telling the two kinds of miss apart", () => {
-  it("a meeting in the window ⇒ interrupted (it knows, no question)", () => {
-    world.deps.graph.putNode("meeting", "m1", {
+  it("a meeting in the window ⇒ interrupted (it knows, no question)", async () => {
+    await world.deps.graph.putNode("meeting", "m1", {
       title: "Arun review",
       from: "2026-08-08T11:00:00Z",
       to: "2026-08-08T12:00:00Z",
       attendees: ["james"],
     });
     const id = add("Module 4", 60, { start: "2026-08-08T11:00:00Z", end: "2026-08-08T12:00:00Z" });
-    const res = service.tick("james", "2026-08-08", id, { actualMinutes: 120 });
+    const res = await service.tick("james", "2026-08-08", id, { actualMinutes: 120 });
     expect(res.miss?.kind).toBe("interrupted");
     expect(res.miss?.cause).toBe("Arun review");
   });
-  it("no meeting ⇒ ran-over", () => {
+  it("no meeting ⇒ ran-over", async () => {
     const id = add("Module 4", 60, { start: "2026-08-08T11:00:00Z", end: "2026-08-08T12:00:00Z" });
-    const res = service.tick("james", "2026-08-08", id, { actualMinutes: 180 });
+    const res = await service.tick("james", "2026-08-08", id, { actualMinutes: 180 });
     expect(res.miss?.kind).toBe("ran-over");
   });
 });
 
 describe("A3/A4 — interrupted keeps streak; ran-over asks once (2/day)", () => {
-  it("interrupted items don't break the streak", () => {
-    world.deps.graph.putNode("meeting", "m1", {
+  it("interrupted items don't break the streak", async () => {
+    await world.deps.graph.putNode("meeting", "m1", {
       title: "Review",
       from: "2026-08-08T11:00:00Z",
       to: "2026-08-08T12:00:00Z",
       attendees: ["james"],
     });
     const id = add("Work", 60, { start: "2026-08-08T11:00:00Z", end: "2026-08-08T12:00:00Z" });
-    service.tick("james", "2026-08-08", id, { actualMinutes: 120 });
+    await service.tick("james", "2026-08-08", id, { actualMinutes: 120 });
     service.finalizeDay("james", "2026-08-08");
     expect(store.streakFor("james").clean).toBe(1);
   });
 
-  it("ran-over questions respect the two-questions-per-day limit", () => {
+  it("ran-over questions respect the two-questions-per-day limit", async () => {
     const ids: string[] = [];
     for (let i = 1; i <= 3; i++) {
       ids.push(add(`Work ${i}`, 30, { start: `2026-08-08T0${i}:00:00Z`, end: `2026-08-08T0${i}:30:00Z` }));
-      service.tick("james", "2026-08-08", ids[i - 1], { actualMinutes: 90 });
+      await service.tick("james", "2026-08-08", ids[i - 1], { actualMinutes: 90 });
     }
     expect(service.recordMissReason("james", "2026-08-08", ids[0], "underestimated").asked).toBe(true);
     expect(service.recordMissReason("james", "2026-08-08", ids[1], "blocked").asked).toBe(true);
@@ -128,13 +128,13 @@ describe("A3/A4 — interrupted keeps streak; ran-over asks once (2/day)", () =>
 });
 
 describe("A5 — estimate learning", () => {
-  it("records an adjusted estimate after a miss reason", () => {
+  it("records an adjusted estimate after a miss reason", async () => {
     const id = add("Review work", 60, {
       start: "2026-08-08T09:00:00Z",
       end: "2026-08-08T10:00:00Z",
       ref: { nodeType: "course", nodeId: "ai-presentations" },
     });
-    service.tick("james", "2026-08-08", id, { actualMinutes: 180 });
+    await service.tick("james", "2026-08-08", id, { actualMinutes: 180 });
     const res = service.recordMissReason("james", "2026-08-08", id, "review always takes longer");
     expect(res.asked).toBe(true);
     expect(res.learnedEstimate).toBe(180);
@@ -142,22 +142,22 @@ describe("A5 — estimate learning", () => {
 });
 
 describe("A7 — streak: clean vs ran-over", () => {
-  it("a clean day increments the streak", () => {
+  it("a clean day increments the streak", async () => {
     const id = add("A", 60);
-    service.tick("james", "2026-08-08", id, { actualMinutes: 60 });
+    await service.tick("james", "2026-08-08", id, { actualMinutes: 60 });
     service.finalizeDay("james", "2026-08-08");
     expect(store.streakFor("james").clean).toBe(1);
   });
-  it("a ran-over day resets the clean streak", () => {
+  it("a ran-over day resets the clean streak", async () => {
     const id = add("A", 60);
-    service.tick("james", "2026-08-08", id, { actualMinutes: 180 });
+    await service.tick("james", "2026-08-08", id, { actualMinutes: 180 });
     service.finalizeDay("james", "2026-08-08");
     expect(store.streakFor("james").clean).toBe(0);
   });
 });
 
 describe("A8 — manager never sees the streak or miss reasons", () => {
-  it("managerView exposes committed/estimates but not streak or miss", () => {
+  it("managerView exposes committed/estimates but not streak or miss", async () => {
     const plan = store.get("james", "2026-08-08")!;
     void plan;
     const serviceP = new DayPlanService(store, {
@@ -165,9 +165,9 @@ describe("A8 — manager never sees the streak or miss reasons", () => {
       limiter: createQuestionLimiter(),
       actorLookup: () => ({ spine: world.spine }),
     });
-    serviceP.startDay("priya", "2026-08-09");
+    await serviceP.startDay("priya", "2026-08-09");
     const res = serviceP.selectItem("priya", "2026-08-09", { label: "Draft", estimateMinutes: 90 });
-    serviceP.tick("priya", "2026-08-09", res.item!.id, { actualMinutes: 180 });
+    await serviceP.tick("priya", "2026-08-09", res.item!.id, { actualMinutes: 180 });
     const view = serviceP.managerView("james", "priya", "2026-08-09");
     expect(view.streakVisible).toBe(false);
     expect(view.committed.length).toBe(1);

@@ -10,7 +10,7 @@ export async function GET() {
   if (!user) {
     return NextResponse.json({ error: "Not authenticated." }, { status: 401 });
   }
-  const memories = getOrgMemoryService().list();
+  const memories = await (await getOrgMemoryService()).list();
   return NextResponse.json({ memories });
 }
 
@@ -40,7 +40,7 @@ export async function POST(request: Request) {
       linkedRecords: body.linkedRecords ?? [],
     },
   });
-  const res = await getSpine().submit(op);
+  const res = await (await getSpine()).submit(op);
   const status = res.status === "ran" ? 201 : res.status === "forbidden" ? 403 : 422;
   return NextResponse.json(res, { status });
 }

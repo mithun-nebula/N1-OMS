@@ -34,7 +34,7 @@ export function taskCreateHandler(
         : { ok: false, missing: ["title"], detail: "A title is required." },
     permission: () => ({ action: "create", nodeType: "task" }),
     involvesMoneyOrPeople: () => false,
-    execute: (args, ctx) => {
+    execute: async (args, ctx) => {
       taskSeq += 1;
       const id = `task_${Date.now().toString(36)}_${taskSeq}`;
       const data: TaskData = {
@@ -47,9 +47,9 @@ export function taskCreateHandler(
         projectId: args.projectId,
         createdBy: ctx.actor,
       };
-      graph.putNode("task", id, data);
+      await graph.putNode("task", id, data);
       if (args.assignedTo) {
-        graph.addEdge({ from: args.assignedTo, to: id, type: "assigned" });
+        await graph.addEdge({ from: args.assignedTo, to: id, type: "assigned" });
       }
       const result: OperationResult = {
         changes: [{ nodeType: "task", nodeId: id, after: data }],
@@ -76,13 +76,14 @@ export function taskAssignHandler(
     },
     permission: (args) => ({ action: "edit", nodeType: "task", recordNodeIds: [args.taskId] }),
     involvesMoneyOrPeople: () => false,
-    execute: (args) => {
-      const before = graph.getNode("task", args.taskId)?.data as TaskData | undefined;
+    execute: async (args) => {
+      const node = await graph.getNode("task", args.taskId);
+      const before = node?.data as TaskData | undefined;
       if (!before) throw new Error(`No task ${args.taskId}`);
       const updated = { ...before, assignedTo: args.assignedTo };
-      graph.putNode("task", args.taskId, updated);
-      if (before.assignedTo) graph.removeEdge(before.assignedTo, args.taskId, "assigned");
-      graph.addEdge({ from: args.assignedTo, to: args.taskId, type: "assigned" });
+      await graph.putNode("task", args.taskId, updated);
+      if (before.assignedTo) await graph.removeEdge(before.assignedTo, args.taskId, "assigned");
+      await graph.addEdge({ from: args.assignedTo, to: args.taskId, type: "assigned" });
       return {
         changes: [{ nodeType: "task", nodeId: args.taskId, after: { assignedTo: args.assignedTo } }],
         publishedTo: [{ kind: "actor", actor: args.assignedTo }],
@@ -102,15 +103,90 @@ export function taskCompleteHandler(
         : { ok: false, missing: ["taskId"], detail: "A task id is required." },
     permission: (args) => ({ action: "edit", nodeType: "task", recordNodeIds: [args.taskId] }),
     involvesMoneyOrPeople: () => false,
-    execute: (args) => {
-      const before = graph.getNode("task", args.taskId)?.data as TaskData | undefined;
+    execute: async (args) => {
+      const node = await graph.getNode("task", args.taskId);
+      const before = node?.data as TaskData | undefined;
       if (!before) throw new Error(`No task ${args.taskId}`);
-      graph.putNode("task", args.taskId, { ...before, status: "done" });
+      await graph.putNode("task", args.taskId, { ...before, status: "done" });
       return {
         changes: [{ nodeType: "task", nodeId: args.taskId, after: { status: "done" } }],
         undo: {
           description: `Reopen task ${args.taskId}.`,
-          revert: () => { graph.putNode("task", args.taskId, before); },
+          revert: async () => { await graph.putNode("task", args.taskId, before); },
+        },
+      };
+    },
+  };
+}
+
+export function taskEditHandler(
+  graph: RecordStore,
+): OperationHandler<{
+  taskId: string;
+  title?: string;
+  description?: string;
+  priority?: string;
+  dueDate?: string;
+}> {
+  return {
+    name: "task.edit",
+    validate: (args) =>
+      args.taskId
+        ? { ok: true }
+        : { ok: false, missing: ["taskId"], detail: "A task id is required." },
+    permission: (args) => ({ action: "edit", nodeType: "task", recordNodeIds: [args.taskId] }),
+    involvesMoneyOrPeople: () => false,
+    execute: async (args) => {
+      const node = await graph.getNode("task", args.taskId);
+      const before = node?.data as TaskData | undefined;
+      if (!before) throw new Error(`No task ${args.taskId}`);
+      const updated: TaskData = {
+        ...before,
+        title: args.title ?? before.title,
+        description: args.description ?? before.description,
+        priority: (args.priority as TaskData["priority"]) ?? before.priority,
+        dueDate: args.dueDate ?? before.dueDate,
+      };
+      await graph.putNode("task", args.taskId, updated);
+      return {
+        changes: [{ nodeType: "task", nodeId: args.taskId, after: { title: updated.title, priority: updated.priority, dueDate: updated.dueDate } }],
+        undo: {
+          description: `Revert edits to task ${args.taskId}.`,
+          revert: async () => { await graph.putNode("task", args.taskId, before); },
+        },
+      };
+    },
+  };
+}
+
+export function taskDeleteHandler(
+  graph: RecordStore,
+): OperationHandler<{ taskId: string }> {
+  return {
+    name: "task.delete",
+    validate: (args) =>
+      args.taskId
+        ? { ok: true }
+        : { ok: false, missing: ["taskId"], detail: "A task id is required." },
+    permission: (args) => ({ action: "delete", nodeType: "task", recordNodeIds: [args.taskId] }),
+    involvesMoneyOrPeople: () => false,
+    execute: async (args) => {
+      const node = await graph.getNode("task", args.taskId);
+      const before = node?.data as TaskData | undefined;
+      await graph.removeNode("task", args.taskId);
+      if (before?.assignedTo) {
+        await graph.removeEdge(before.assignedTo, args.taskId, "assigned");
+      }
+      return {
+        changes: [{ nodeType: "task", nodeId: args.taskId, before }],
+        undo: {
+          description: `Restore deleted task ${args.taskId}.`,
+          revert: async () => {
+            if (before) {
+              await graph.putNode("task", args.taskId, before);
+              if (before.assignedTo) await graph.addEdge({ from: before.assignedTo, to: args.taskId, type: "assigned" });
+            }
+          },
         },
       };
     },

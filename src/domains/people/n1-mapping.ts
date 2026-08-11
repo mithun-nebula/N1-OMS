@@ -1,6 +1,7 @@
 import type { N1Record } from "@/config/providers";
 import type { NodeId } from "@/spine/operation/types";
 import type { RecordData } from "@/spine/record/types";
+import { mappingForDoctype } from "./n1-doctypes";
 
 export type N1Doctype = "Employee" | "Leave Application" | "Attendance";
 
@@ -81,7 +82,7 @@ export function mapN1Record(record: N1Record): {
   nodeId: NodeId;
   data: RecordData;
 } {
-  switch (record.doctype as N1Doctype) {
+  switch (record.doctype) {
     case "Employee":
       return mapEmployee(record);
     case "Leave Application":
@@ -89,11 +90,28 @@ export function mapN1Record(record: N1Record): {
     case "Attendance":
       return mapAttendance(record);
   }
+  const mapping = mappingForDoctype(record.doctype);
+  if (mapping) {
+    const renames = mapping.fields ?? {};
+    const data: RecordData = {};
+    for (const [key, value] of Object.entries(record.data)) {
+      const target = renames[key] ?? toCamel(key);
+      if (!(target in data)) data[target] = value;
+    }
+    const id =
+      (mapping.idField ? str(record.data[renames[mapping.idField] ?? mapping.idField]) : undefined) ??
+      record.name;
+    return { nodeType: mapping.nodeType, nodeId: id, data };
+  }
   return {
     nodeType: record.doctype.toLowerCase().replace(/\s+/g, "-"),
     nodeId: record.name,
     data: record.data,
   };
+}
+
+function toCamel(value: string): string {
+  return value.replace(/_([a-z0-9])/g, (_, c: string) => c.toUpperCase());
 }
 
 function str(value: unknown): string | undefined {
