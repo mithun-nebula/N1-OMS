@@ -1,10 +1,12 @@
 import { NextResponse } from "next/server";
-import { getSessionUser } from "@/server/auth";
+import { getLiveSessionUser } from "@/server/session-guard";
 
 export const dynamic = "force-dynamic";
 
 export async function GET() {
-  const user = await getSessionUser();
+  // Live account state, so a password reset that happened after this session
+  // started is visible to the client (which redirects on it in `shell.tsx`).
+  const user = await getLiveSessionUser();
   if (!user) {
     return NextResponse.json({ error: "Not authenticated." }, { status: 401 });
   }

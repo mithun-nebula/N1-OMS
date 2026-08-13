@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getSessionUser } from "@/server/auth";
+import { getActingUser } from "@/server/session-guard";
 import { getOrgMemoryService, getSpine } from "@/server/runtime";
 import * as adapters from "@/spine/adapters";
 
@@ -15,10 +16,11 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
-  const user = await getSessionUser();
-  if (!user) {
-    return NextResponse.json({ error: "Not authenticated." }, { status: 401 });
+  const auth = await getActingUser();
+  if (!auth.ok) {
+    return NextResponse.json({ error: auth.error }, { status: auth.status });
   }
+  const user = auth.user;
   let body: {
     title?: string;
     decision?: string;

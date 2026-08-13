@@ -18,6 +18,8 @@ import { PostgresRecordStore } from "./store-pg-record";
 import { PostgresActivityLog } from "./store-pg-activity";
 import { PostgresFigureStore } from "./store-pg-figures";
 import { configureAccounts } from "./accounts";
+import { directory } from "./directory";
+import { env } from "@/config/env";
 import { seedN1DemoIfEmpty } from "@/domains/people/n1-demo-seed";
 import {
   recordCreateHandler,
@@ -35,7 +37,7 @@ export interface DemoWorld {
 
 /** Returns a shared Postgres pool when DATABASE_URL is set, else undefined. */
 function pgPool(): import("pg").Pool | undefined {
-  const url = process.env.DATABASE_URL;
+  const url = env().databaseUrl;
   if (!url) return undefined;
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   const { Pool } = require("pg") as typeof import("pg");
@@ -44,10 +46,28 @@ function pgPool(): import("pg").Pool | undefined {
     host = new URL(url).hostname;
   } catch {}
   const isLocal = ["localhost", "127.0.0.1", "::1"].includes(host);
-  return new Pool({
+
+  const pool = new Pool({
     connectionString: url,
     ...(isLocal ? {} : { ssl: { rejectUnauthorized: false } }),
+    // Tuned for a hosted pooler (Supabase transaction mode, port 6543):
+    // a small ceiling because the free tier's own limits are modest, and
+    // keepAlive so a connection held open across slow sequential work is not
+    // dropped by an idle timeout somewhere in between.
+    max: isLocal ? 10 : 5,
+    idleTimeoutMillis: 30_000,
+    connectionTimeoutMillis: 15_000,
+    keepAlive: true,
   });
+
+  // An idle client dropped by the server emits 'error' on the pool. Unhandled,
+  // that is an uncaught exception and takes the process down — the pool itself
+  // recovers by opening a fresh connection on the next query.
+  pool.on("error", (err: Error) => {
+    console.warn(`[db] idle client error (recovering): ${err.message}`);
+  });
+
+  return pool;
 }
 
 export async function buildDemoWorld(): Promise<DemoWorld> {
@@ -80,9 +100,15 @@ export async function buildDemoWorld(): Promise<DemoWorld> {
   ctx.registry.register(recordCreateHandler(ctx.graph));
   ctx.registry.register(recordUpdateHandler(ctx.graph));
   ctx.registry.register(recordDeleteHandler(ctx.graph));
-  await seedIfEmpty(ctx, graph);
-  await seedN1DemoIfEmpty(ctx);
+  if (env().seedDemo) {
+    await seedIfEmpty(ctx, graph);
+    await seedN1DemoIfEmpty(ctx);
+  }
   await hydrateOwners(owners, graph);
+  // Must come before the permission policy is built: `own-team` scope is
+  // resolved through the directory, so an empty one means every manager sees
+  // nothing — and because refusal is opaque, that failure is silent.
+  await directory().hydrate(graph);
 
   const permissions = buildDemoPermissionPolicy(owners, teams);
   const autonomyStore = new AutonomyStore(pool);

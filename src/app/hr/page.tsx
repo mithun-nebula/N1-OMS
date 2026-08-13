@@ -1,15 +1,16 @@
 import { redirect } from "next/navigation";
 import { getSessionUser } from "@/server/auth";
 import { getWorld } from "@/server/runtime";
-import { DEMO_PEOPLE } from "@/domains/shared/people-roster";
+import { directory } from "@/server/directory";
 import { findOverdueSteps } from "@/domains/people/joining";
+import { isHrLike } from "@/server/roles";
 import { Shell } from "../shell";
 import { HrClient } from "./hr-client";
 
 export default async function HrPage() {
   const user = await getSessionUser();
   if (!user) redirect("/login");
-  if (!["super-admin", "admin", "hr"].includes(user.role)) redirect("/dashboard");
+  if (!isHrLike(user.role)) redirect("/dashboard");
 
   const { deps } = await getWorld();
   const asOf = new Date().toISOString().slice(0, 10);
@@ -19,14 +20,14 @@ export default async function HrPage() {
     return {
       id: n.id,
       employeeId: String(d.employeeId ?? ""),
-      employeeName: DEMO_PEOPLE[String(d.employeeId ?? "")]?.name ?? String(d.employeeId ?? ""),
+      employeeName: directory().nameOf(String(d.employeeId ?? "")),
       status: String(d.status ?? "active"),
       steps: Array.isArray(d.steps)
         ? (d.steps as Array<Record<string, unknown>>).map((s) => ({
             id: String(s.id ?? ""),
             title: String(s.title ?? ""),
             owner: String(s.owner ?? ""),
-            ownerName: DEMO_PEOPLE[String(s.owner ?? "")]?.name ?? String(s.owner ?? ""),
+            ownerName: directory().nameOf(String(s.owner ?? "")),
             dueAt: String(s.dueAt ?? ""),
             status: String(s.status ?? "pending"),
           }))
@@ -39,7 +40,7 @@ export default async function HrPage() {
     return {
       id: n.id,
       employeeId: String(d.employeeId ?? ""),
-      employeeName: DEMO_PEOPLE[String(d.employeeId ?? "")]?.name ?? String(d.employeeId ?? ""),
+      employeeName: directory().nameOf(String(d.employeeId ?? "")),
       separationDate: String(d.separationDate ?? ""),
       status: String(d.status ?? "active"),
       separated: Boolean(d.separated),
@@ -50,7 +51,7 @@ export default async function HrPage() {
             title: String(h.title ?? ""),
             from: String(h.from ?? ""),
             to: String(h.to ?? ""),
-            toName: DEMO_PEOPLE[String(h.to ?? "")]?.name ?? String(h.to ?? ""),
+            toName: directory().nameOf(String(h.to ?? "")),
             status: String(h.status ?? "pending"),
           }))
         : [],
@@ -59,12 +60,12 @@ export default async function HrPage() {
 
   const overdue = (await findOverdueSteps(deps.graph, asOf)).map((o) => ({
     employeeId: o.employeeId,
-    employeeName: DEMO_PEOPLE[o.employeeId]?.name ?? o.employeeId,
+    employeeName: directory().nameOf(o.employeeId),
     title: o.step.title,
     owner: o.step.owner,
   }));
 
-  const people = Object.entries(DEMO_PEOPLE).map(([id, p]) => ({ id, name: p.name }));
+  const people = directory().all().filter((p) => p.active).map((p) => ({ id: p.id, name: p.name }));
 
   return (
     <Shell>

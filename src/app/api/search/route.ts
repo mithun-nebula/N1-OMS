@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { getSessionUser } from "@/server/auth";
 import { getSpine, getWorld } from "@/server/runtime";
-import { DEMO_PEOPLE } from "@/domains/shared/people-roster";
+import { directory } from "@/server/directory";
 
 export const dynamic = "force-dynamic";
 
@@ -26,11 +26,20 @@ export async function GET(request: Request) {
   const graph = (await getWorld()).deps.graph;
   const results: Array<{ nodeType: string; nodeId: string; label: string; sub?: string }> = [];
 
-  for (const [id, person] of Object.entries(DEMO_PEOPLE)) {
-    if (person.name.toLowerCase().includes(q) || id.includes(q)) {
-      const read = await spine.read({ actor: user.id, nodeType: "employee", nodeId: id });
-      if (read.found) results.push({ nodeType: "employee", nodeId: id, label: person.name, sub: person.role });
-    }
+  // Match on the real records, and only return the ones this actor may see.
+  const matchedPeople = await spine.readMany({
+    actor: user.id,
+    nodeType: "employee",
+    filter: (data, nodeId) =>
+      String(data.name ?? "").toLowerCase().includes(q) || nodeId.includes(q),
+  });
+  for (const { nodeId, record } of matchedPeople) {
+    results.push({
+      nodeType: "employee",
+      nodeId,
+      label: String(record.name ?? nodeId),
+      sub: String(record.role ?? ""),
+    });
   }
 
   for (const { type, labelField, extra } of SEARCH_TYPES) {
@@ -43,7 +52,7 @@ export async function GET(request: Request) {
           nodeType: type,
           nodeId: node.id,
           label,
-          sub: type === "course" && d.owner ? DEMO_PEOPLE[String(d.owner)]?.name : type,
+          sub: type === "course" && d.owner ? directory().nameOf(String(d.owner)) : type,
         });
       }
     }

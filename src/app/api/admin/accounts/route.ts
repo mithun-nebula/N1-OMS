@@ -1,19 +1,13 @@
 import { NextResponse } from "next/server";
 import { getSessionUser } from "@/server/auth";
+import { getActingUser } from "@/server/session-guard";
 import { addAccount, listAccounts } from "@/server/accounts";
+import { assignableRoles, canAddPeople, canAssignRole } from "@/server/roles";
 import type { RbacRole } from "@/domains/shared/people-roster";
 
 export const dynamic = "force-dynamic";
 
 const ADMIN_ROLES = new Set(["super-admin", "admin"]);
-const VALID_ROLES: RbacRole[] = [
-  "super-admin",
-  "admin",
-  "hr",
-  "manager",
-  "employee",
-  "intern",
-];
 
 export async function GET() {
   const user = await getSessionUser();
@@ -24,10 +18,18 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
-  const user = await getSessionUser();
-  if (!user) return NextResponse.json({ error: "Not authenticated." }, { status: 401 });
-  if (!ADMIN_ROLES.has(user.role))
-    return NextResponse.json({ error: "Admin only." }, { status: 403 });
+  const auth = await getActingUser();
+  if (!auth.ok) {
+    return NextResponse.json({ error: auth.error }, { status: auth.status });
+  }
+  const user = auth.user;
+  // HR, managers and admins can add people. A manager adding their own team is
+  // the common case — but see the role ladder below.
+  if (!canAddPeople(user.role))
+    return NextResponse.json(
+      { error: "You cannot add people." },
+      { status: 403 },
+    );
 
   let body: {
     username?: string;
@@ -49,9 +51,20 @@ export async function POST(request: Request) {
     );
   }
 
-  const role = (VALID_ROLES as string[]).includes(body.role ?? "")
-    ? (body.role as RbacRole)
-    : "intern";
+  // Nobody may hand out a role above their own. Without this, "managers can
+  // add people" would also mean "a manager can create an admin login and sign
+  // into it" — escalation in one step.
+  const requested = body.role ?? "intern";
+  if (!canAssignRole(user.role, requested)) {
+    return NextResponse.json(
+      {
+        error: `You cannot create a ${requested}.`,
+        allowed: assignableRoles(user.role),
+      },
+      { status: 403 },
+    );
+  }
+  const role = requested as RbacRole;
 
   const result = await addAccount({
     username: body.username,

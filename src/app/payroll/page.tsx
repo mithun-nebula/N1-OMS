@@ -1,14 +1,15 @@
 import { redirect } from "next/navigation";
 import { getSessionUser } from "@/server/auth";
 import { getSpine, getWorld } from "@/server/runtime";
-import { DEMO_PEOPLE } from "@/domains/shared/people-roster";
+import { directory } from "@/server/directory";
+import { isHrLike } from "@/server/roles";
 import { Shell } from "../shell";
 import { PayrollClient } from "./payroll-client";
 
 export default async function PayrollPage() {
   const user = await getSessionUser();
   if (!user) redirect("/login");
-  if (!["super-admin", "admin", "hr"].includes(user.role)) redirect("/dashboard");
+  if (!isHrLike(user.role)) redirect("/dashboard");
 
   const { deps } = await getWorld();
   const spine = await getSpine();
@@ -26,7 +27,9 @@ export default async function PayrollPage() {
   const payslips = (await readVisible("payslip")).map((d) => ({
     id: String(d.id),
     employee: String(d.employee ?? ""),
-    employeeName: DEMO_PEOPLE[String(d.employee ?? "")]?.name ?? String(d.employeeName ?? ""),
+    employeeName:
+      directory().get(String(d.employee ?? ""))?.name ??
+      String(d.employeeName ?? d.employee ?? ""),
     month: String(d.month ?? d.postingDate ?? ""),
     grossPay: d.grossPay as number | undefined,
     netPay: d.netPay as number | undefined,

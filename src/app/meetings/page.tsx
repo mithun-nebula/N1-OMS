@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 import { getSessionUser } from "@/server/auth";
 import { getWorld } from "@/server/runtime";
-import { DEMO_PEOPLE } from "@/domains/shared/people-roster";
+import { directory } from "@/server/directory";
 import { Shell } from "../shell";
 import { MeetingsClient } from "./meetings-client";
 
@@ -19,7 +19,7 @@ export default async function MeetingsPage() {
       from: (n.data as { from?: string }).from,
       to: (n.data as { to?: string }).to,
       attendees: ((n.data as { attendees?: string[] }).attendees ?? []).map(
-        (id) => DEMO_PEOPLE[id]?.name ?? id,
+        (id) => directory().nameOf(id),
       ),
       link: (n.data as { link?: string }).link,
     }));
@@ -29,7 +29,7 @@ export default async function MeetingsPage() {
     name: (n.data as { name?: string }).name ?? n.id,
   }));
 
-  const people = Object.entries(DEMO_PEOPLE).map(([id, p]) => ({ id, name: p.name }));
+  const people = directory().all().filter((p) => p.active).map((p) => ({ id: p.id, name: p.name }));
 
   return (
     <Shell>

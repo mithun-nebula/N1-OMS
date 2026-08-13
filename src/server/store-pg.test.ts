@@ -38,8 +38,11 @@ beforeAll(async () => {
     CREATE TABLE IF NOT EXISTS orga_accounts (
       username text PRIMARY KEY, person_id text NOT NULL, role text NOT NULL,
       display_name text NOT NULL, team text, password_hash text NOT NULL);
+    ALTER TABLE orga_accounts
+      ADD COLUMN IF NOT EXISTS must_change_password boolean NOT NULL DEFAULT false;
     CREATE TABLE IF NOT EXISTS orga_autonomy_rules (
       rule_id text PRIMARY KEY, data jsonb NOT NULL);
+    CREATE SEQUENCE IF NOT EXISTS orga_activity_seq;
   `);
   await p.end();
 });
@@ -116,6 +119,67 @@ describe("PostgresActivityLog + FigureStore — durability", { skip: !DATABASE_U
     expect(got?.operationName).toBe("test.op");
     const queried = await b.query({ actor: "x" });
     expect(queried.length).toBe(1);
+  });
+
+  /**
+   * The bug this covers: nextId() used to be a per-process counter, so a second
+   * boot restarted at act_1 and collided with the first boot's entries — and
+   * append() used ON CONFLICT DO NOTHING, so the new entry was discarded in
+   * silence. An audit trail that quietly drops records is worse than none.
+   */
+  itIfDb("ids from separate instances never collide", async () => {
+    const first = new PostgresActivityLog(pool());
+    const second = new PostgresActivityLog(pool());
+    const ids = new Set<string>();
+    for (let i = 0; i < 5; i += 1) {
+      ids.add(await first.nextId());
+      ids.add(await second.nextId());
+    }
+    expect(ids.size).toBe(10);
+  });
+
+  itIfDb("a duplicate id fails loudly instead of being discarded", async () => {
+    const log = new PostgresActivityLog(pool());
+    const entry = {
+      id: "act_dup",
+      operationId: "op_dup",
+      operationName: "test.op",
+      actor: "x",
+      authority: { kind: "self", actor: "x" } as const,
+      startedBy: { kind: "form", at: "2026-01-01T00:00:00Z", actor: "x" } as const,
+      at: "2026-01-01T00:00:00Z",
+      changes: [],
+      outcome: "ran" as const,
+    };
+    await log.append(entry);
+    await expect(log.append(entry)).rejects.toThrow();
+  });
+
+  itIfDb("an undo plan survives a round trip through the database", async () => {
+    const a = new PostgresActivityLog(pool());
+    await a.append({
+      id: "act_plan",
+      operationId: "op_plan",
+      operationName: "task.edit",
+      actor: "priya",
+      authority: { kind: "self", actor: "priya" },
+      startedBy: { kind: "form", at: "2026-01-01T00:00:00Z", actor: "priya" },
+      at: "2026-01-01T00:00:00Z",
+      changes: [],
+      undoDescription: "Revert edits.",
+      undoPlan: [
+        { op: "patch", nodeType: "task", nodeId: "task_1", data: { title: "Before" } },
+      ],
+      outcome: "ran",
+    });
+    await new Promise((r) => setTimeout(r, 50));
+    const b = new PostgresActivityLog(pool());
+    const got = await b.get("act_plan");
+    expect(got?.undoPlan?.[0]).toMatchObject({
+      op: "patch",
+      nodeType: "task",
+      nodeId: "task_1",
+    });
   });
 
   itIfDb("figures persist and open into their parts", async () => {

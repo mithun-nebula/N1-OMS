@@ -2,9 +2,9 @@ import type { ActorId, NodeId } from "@/spine/operation/types";
 import type { PermissionAction } from "@/spine/operation/registry";
 import { PermissionPolicy } from "@/spine/permission/policy";
 import type { PermissionRule, RoleProvider } from "@/spine/permission/types";
-import { DEMO_PEOPLE, DEMO_TEAM_LEADS } from "@/domains/shared/people-roster";
 import { SUPPORTED_DOCTYPES } from "@/domains/people/n1-doctypes";
 import { roleOfActor } from "./accounts";
+import { directory } from "./directory";
 
 const ALL_ACTIONS: PermissionAction[] = [
   "view",
@@ -137,6 +137,17 @@ export const DEMO_PERMISSION_RULES: PermissionRule[] = [
     fields: { kind: "all-visible" },
   },
   {
+    // Managers add their own team members. Scope is `all` because there is no
+    // record yet to scope against — *which* roles they may hand out is enforced
+    // separately by the role ladder in `employee.create` (`canAssignRole`), so
+    // a manager can create an employee or an intern but never an admin.
+    role: "manager",
+    nodeType: "employee",
+    actions: ["create"],
+    recordScope: { kind: "all" },
+    fields: { kind: "all-visible" },
+  },
+  {
     role: "manager",
     nodeType: "course",
     actions: ["view", "edit", "approve"],
@@ -266,25 +277,29 @@ export class DemoRoleProvider implements RoleProvider {
   constructor(
     private readonly owners: Map<string, ActorId>,
     private readonly teams: Map<ActorId, string>,
-  ) {
-    for (const [id, p] of Object.entries(DEMO_PEOPLE)) {
-      if (!teams.has(id)) teams.set(id, p.team);
-    }
-  }
+  ) {}
 
   rolesFor(actor: ActorId): string[] {
     const role = roleOfActor(actor);
     return role ? [role] : [];
   }
 
+  /**
+   * The `own-team` scope: everyone whose records this actor may reach.
+   *
+   * Reads the people directory rather than the old hardcoded roster, so someone
+   * added today is in their manager's scope immediately. `teams` is still
+   * honoured as an override for anything set outside the directory.
+   */
   teamOf(actor: ActorId): ActorId[] {
+    const fromDirectory = directory().teamCircleOf(actor);
+    if (fromDirectory.length > 0) return fromDirectory;
+
     const team = this.teams.get(actor);
     if (!team) return [];
-    const lead = DEMO_TEAM_LEADS[team];
-    const members = Object.entries(DEMO_PEOPLE)
-      .filter(([, p]) => p.team === team)
+    return [...this.teams.entries()]
+      .filter(([, t]) => t === team)
       .map(([id]) => id);
-    return lead ? [lead, ...members] : members;
   }
 
   ownerOf(nodeType: string, recordNodeId: NodeId): ActorId | undefined {

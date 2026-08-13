@@ -1,6 +1,9 @@
 import { DEMO_PEOPLE } from "@/domains/shared/people-roster";
 import type { RbacRole } from "@/domains/shared/people-roster";
 import { hashPassword, verifyPassword, type AuthUser } from "./auth";
+import { env } from "@/config/env";
+import { directory } from "./directory";
+import { temporaryPasswordExpiry } from "./roles";
 import type { Pool } from "pg";
 
 export interface Account {
@@ -10,6 +13,13 @@ export interface Account {
   displayName: string;
   team?: string;
   passwordHash: string;
+  /** Blocks every page except the password form until the password is replaced. */
+  mustChangePassword?: boolean;
+  /**
+   * When a temporary password stops working. Set alongside
+   * `mustChangePassword`; cleared once the holder chooses their own.
+   */
+  temporaryPasswordExpiresAt?: string;
 }
 
 interface RawAccount {
@@ -19,8 +29,16 @@ interface RawAccount {
   displayName: string;
   team?: string;
   password: string;
+  mustChangePassword?: boolean;
+  temporaryPasswordExpiresAt?: string;
 }
 
+/**
+ * Demo-only system logins. Gated by `ORG_SEED_DEMO` along with the rest of the
+ * demo data — their passwords are printed in AGENTS.md and on the login page,
+ * so they must never exist on a real deployment. The way in on a real, empty
+ * database is `bootstrapAccount()` below.
+ */
 const SYSTEM_ACCOUNTS: RawAccount[] = [
   {
     username: "superadmin",
@@ -37,6 +55,28 @@ const SYSTEM_ACCOUNTS: RawAccount[] = [
     password: "admin123",
   },
 ];
+
+/**
+ * The single super-admin created on a first boot against an empty accounts
+ * table, from ORG_BOOTSTRAP_USER / ORG_BOOTSTRAP_PASSWORD.
+ *
+ * It is flagged `mustChangePassword`, so the initial password from `.env` gets
+ * someone through the door exactly once and is then useless. Everyone else is
+ * added in-platform.
+ */
+function bootstrapAccount(): RawAccount | undefined {
+  const e = env();
+  if (!e.bootstrapUser || !e.bootstrapPassword) return undefined;
+  return {
+    username: e.bootstrapUser,
+    personId: e.bootstrapUser,
+    role: "super-admin",
+    displayName: "Administrator",
+    password: e.bootstrapPassword,
+    mustChangePassword: true,
+    temporaryPasswordExpiresAt: temporaryPasswordExpiry(),
+  };
+}
 
 const USERNAME_OVERRIDE: Record<string, string> = {
   shruti: "hr",
@@ -71,10 +111,30 @@ function defaultPasswordFor(role: RbacRole): string {
   }
 }
 
+/**
+ * The accounts a first boot creates.
+ *
+ * With demo data on: the two system logins plus one per demo person.
+ * With demo data off: only the bootstrap super-admin, which is the sole way
+ * into a real, empty deployment.
+ */
 function buildDefaultAccounts(): Account[] {
-  return [...SYSTEM_ACCOUNTS, ...personAccounts()].map((raw) => ({
-    ...raw,
-    passwordHash: hashPassword(raw.password),
+  const raw: RawAccount[] = env().seedDemo
+    ? [...SYSTEM_ACCOUNTS, ...personAccounts()]
+    : [];
+  const bootstrap = bootstrapAccount();
+  if (bootstrap && !raw.some((a) => a.username === bootstrap.username)) {
+    raw.unshift(bootstrap);
+  }
+  return raw.map((a) => ({
+    username: a.username,
+    personId: a.personId,
+    role: a.role,
+    displayName: a.displayName,
+    team: a.team,
+    passwordHash: hashPassword(a.password),
+    mustChangePassword: a.mustChangePassword,
+    temporaryPasswordExpiresAt: a.temporaryPasswordExpiresAt,
   }));
 }
 
@@ -91,7 +151,12 @@ interface AccountRow {
   display_name: string;
   team: string | null;
   password_hash: string;
+  must_change_password: boolean | null;
+  temporary_password_expires_at: string | null;
 }
+
+const ACCOUNT_COLUMNS =
+  "username, person_id, role, display_name, team, password_hash, must_change_password, temporary_password_expires_at";
 
 function rowToAccount(row: AccountRow): Account {
   return {
@@ -101,6 +166,8 @@ function rowToAccount(row: AccountRow): Account {
     displayName: row.display_name,
     team: row.team ?? undefined,
     passwordHash: row.password_hash,
+    mustChangePassword: row.must_change_password ?? false,
+    temporaryPasswordExpiresAt: row.temporary_password_expires_at ?? undefined,
   };
 }
 
@@ -122,24 +189,49 @@ export async function configureAccounts(pool?: Pool): Promise<void> {
       team          text,
       password_hash text NOT NULL
     );
+    ALTER TABLE orga_accounts
+      ADD COLUMN IF NOT EXISTS must_change_password boolean NOT NULL DEFAULT false;
+    ALTER TABLE orga_accounts
+      ADD COLUMN IF NOT EXISTS temporary_password_expires_at timestamptz;
   `);
 
   const res = await pool.query<AccountRow>(
-    "SELECT username, person_id, role, display_name, team, password_hash FROM orga_accounts",
+    `SELECT ${ACCOUNT_COLUMNS} FROM orga_accounts`,
   );
 
   if (res.rows.length === 0) {
-    for (const a of accountList) {
-      await pool.query(
-        "INSERT INTO orga_accounts (username, person_id, role, display_name, team, password_hash) VALUES ($1,$2,$3,$4,$5,$6)",
-        [a.username, a.personId, a.role, a.displayName, a.team ?? null, a.passwordHash],
+    // First boot against an empty table. On a real deployment `accountList` is
+    // just the bootstrap super-admin; with demo data on it is the nine logins.
+    if (accountList.length === 0) {
+      throw new Error(
+        "No accounts to create: set ORG_BOOTSTRAP_USER and ORG_BOOTSTRAP_PASSWORD, " +
+          "or enable ORG_SEED_DEMO. Nobody could sign in otherwise.",
       );
+    }
+    for (const a of accountList) {
+      await insertAccount(pool, a);
     }
   } else {
     accountList = res.rows.map(rowToAccount);
     byUsername = new Map(accountList.map((a) => [a.username, a]));
     byPerson = new Map(accountList.map((a) => [a.personId, a]));
   }
+}
+
+async function insertAccount(pool: Pool, a: Account): Promise<void> {
+  await pool.query(
+    `INSERT INTO orga_accounts (${ACCOUNT_COLUMNS}) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
+    [
+      a.username,
+      a.personId,
+      a.role,
+      a.displayName,
+      a.team ?? null,
+      a.passwordHash,
+      a.mustChangePassword ?? false,
+      a.temporaryPasswordExpiresAt ?? null,
+    ],
+  );
 }
 
 // ── sync reads (unchanged signatures — the gate consumes these synchronously) ──
@@ -152,10 +244,23 @@ export function accountOfActor(actorId: string): Account | undefined {
   return byPerson.get(actorId);
 }
 
+/**
+ * The role the gate applies to this actor.
+ *
+ * The **account** is the source of truth. It used to check the hardcoded roster
+ * first, which meant changing someone's role in `/admin` appeared to work and
+ * silently did nothing for any of the nine seeded people — the gate kept
+ * reading the old value out of a constant.
+ *
+ * Falls back to the directory for an actor with a record but no login, then to
+ * the roster while demo data is still seeded.
+ */
 export function roleOfActor(actorId: string): RbacRole | undefined {
-  const person = DEMO_PEOPLE[actorId];
-  if (person) return person.role;
-  return accountOfActor(actorId)?.role;
+  const fromAccount = accountOfActor(actorId)?.role;
+  if (fromAccount) return fromAccount;
+  const fromDirectory = directory().roleOf(actorId);
+  if (fromDirectory) return fromDirectory;
+  return DEMO_PEOPLE[actorId]?.role;
 }
 
 export function verifyCredentials(
@@ -165,11 +270,16 @@ export function verifyCredentials(
   const account = byUsername.get(username);
   if (!account) return null;
   if (!verifyPassword(password, account.passwordHash)) return null;
+  // An unused temporary password stops working once it expires. The holder has
+  // to ask for another reset — the same opaque failure as a wrong password, so
+  // it discloses nothing about whether the account exists.
+  if (isTemporaryPasswordExpired(account)) return null;
   return {
     id: account.personId,
     username: account.username,
     role: account.role,
     displayName: account.displayName,
+    mustChangePassword: account.mustChangePassword === true,
   };
 }
 
@@ -188,12 +298,21 @@ export function listAccounts(): Array<{
 
 // ── async mutations (write-through to Postgres when pool is set) ──
 
+/**
+ * Creates a login. The password an admin types here is a **temporary** one:
+ * the account is flagged `mustChangePassword`, so the holder has to replace it
+ * at first sign-in and the value the admin knows stops working.
+ *
+ * Set `mustChangePassword: false` only for a login whose password was chosen by
+ * the person themselves.
+ */
 export async function addAccount(input: {
   username: string;
   password: string;
   displayName: string;
   role: RbacRole;
   team?: string;
+  mustChangePassword?: boolean;
 }): Promise<{ ok: boolean; error?: string }> {
   if (byUsername.has(input.username)) {
     return { ok: false, error: "Username already exists." };
@@ -209,17 +328,99 @@ export async function addAccount(input: {
     displayName: input.displayName,
     team: input.team,
     passwordHash: hashPassword(input.password),
+    mustChangePassword: input.mustChangePassword ?? true,
+    temporaryPasswordExpiresAt:
+      (input.mustChangePassword ?? true) ? temporaryPasswordExpiry() : undefined,
   };
   accountList.push(account);
   byUsername.set(account.username, account);
   byPerson.set(account.personId, account);
+  if (dbPool) await insertAccount(dbPool, account);
+  return { ok: true };
+}
+
+/**
+ * Create a login for an existing person, with the account's `personId` set
+ * explicitly rather than derived from the username.
+ *
+ * `addAccount()` builds `personId` by slugifying the username, which is wrong
+ * here: the employee node id **is** the actor id the permission layer keys on
+ * (`ownerOf("employee", id) === id`). If the account's personId and the
+ * employee node id ever diverge, every `self` and `own-team` scope silently
+ * fails for that person — and because refusal is opaque by design, it is close
+ * to undebuggable.
+ */
+export async function addAccountForPerson(input: {
+  personId: string;
+  username: string;
+  temporaryPassword: string;
+  displayName: string;
+  role: RbacRole;
+  team?: string;
+}): Promise<{ ok: boolean; error?: string }> {
+  if (byUsername.has(input.username)) {
+    return { ok: false, error: "That username is already taken." };
+  }
+  if (byPerson.has(input.personId)) {
+    return { ok: false, error: "That person already has a login." };
+  }
+  const account: Account = {
+    username: input.username,
+    personId: input.personId,
+    role: input.role,
+    displayName: input.displayName,
+    team: input.team,
+    passwordHash: hashPassword(input.temporaryPassword),
+    mustChangePassword: true,
+    temporaryPasswordExpiresAt: temporaryPasswordExpiry(),
+  };
+  accountList.push(account);
+  byUsername.set(account.username, account);
+  byPerson.set(account.personId, account);
+  if (dbPool) await insertAccount(dbPool, account);
+  return { ok: true };
+}
+
+/** Remove a login entirely. Used to undo a person who was just created. */
+export async function removeAccount(username: string): Promise<void> {
+  const account = byUsername.get(username);
+  if (!account) return;
+  accountList = accountList.filter((a) => a.username !== username);
+  byUsername.delete(account.username);
+  byPerson.delete(account.personId);
+  if (dbPool) {
+    await dbPool.query("DELETE FROM orga_accounts WHERE username=$1", [username]);
+  }
+}
+
+/**
+ * Stop a login working without deleting it — the account row, and the history
+ * attached to it, stay. Implemented as an unusable password hash so every
+ * existing sync reader keeps working unchanged.
+ */
+export async function setAccountEnabled(
+  personId: string,
+  enabled: boolean,
+): Promise<void> {
+  const account = byPerson.get(personId);
+  if (!account) return;
+  if (enabled) {
+    // Re-enabling needs a fresh temporary password, set by whoever reactivates.
+    return;
+  }
+  account.passwordHash = hashPassword(randomUnusablePassword());
+  account.mustChangePassword = false;
+  account.temporaryPasswordExpiresAt = undefined;
   if (dbPool) {
     await dbPool.query(
-      "INSERT INTO orga_accounts (username, person_id, role, display_name, team, password_hash) VALUES ($1,$2,$3,$4,$5,$6)",
-      [account.username, account.personId, account.role, account.displayName, account.team ?? null, account.passwordHash],
+      "UPDATE orga_accounts SET password_hash=$2, must_change_password=false, temporary_password_expires_at=NULL WHERE username=$1",
+      [account.username, account.passwordHash],
     );
   }
-  return { ok: true };
+}
+
+function randomUnusablePassword(): string {
+  return `disabled-${Math.random().toString(36).slice(2)}${Date.now().toString(36)}`;
 }
 
 export async function updateRole(
@@ -248,9 +449,15 @@ export async function changePassword(
   if (next.length < 6) {
     return { ok: false, error: "New password must be at least 6 characters." };
   }
+  // Changing your own password is what clears the forced-change gate.
   account.passwordHash = hashPassword(next);
+  account.mustChangePassword = false;
+  account.temporaryPasswordExpiresAt = undefined;
   if (dbPool) {
-    await dbPool.query("UPDATE orga_accounts SET password_hash=$2 WHERE username=$1", [username, account.passwordHash]);
+    await dbPool.query(
+      "UPDATE orga_accounts SET password_hash=$2, must_change_password=false, temporary_password_expires_at=NULL WHERE username=$1",
+      [username, account.passwordHash],
+    );
   }
   return { ok: true };
 }
@@ -264,9 +471,26 @@ export async function resetPassword(
   if (next.length < 6) {
     return { ok: false, error: "New password must be at least 6 characters." };
   }
+  // An admin reset hands out a temporary password, so the holder must replace
+  // it themselves before they can use the app.
   account.passwordHash = hashPassword(next);
+  account.mustChangePassword = true;
+  account.temporaryPasswordExpiresAt = temporaryPasswordExpiry();
   if (dbPool) {
-    await dbPool.query("UPDATE orga_accounts SET password_hash=$2 WHERE username=$1", [username, account.passwordHash]);
+    await dbPool.query(
+      "UPDATE orga_accounts SET password_hash=$2, must_change_password=true, temporary_password_expires_at=$3 WHERE username=$1",
+      [username, account.passwordHash, account.temporaryPasswordExpiresAt],
+    );
   }
   return { ok: true };
+}
+
+/** True when a temporary password has passed its expiry and no longer works. */
+export function isTemporaryPasswordExpired(
+  account: Account,
+  now: Date = new Date(),
+): boolean {
+  if (!account.mustChangePassword) return false;
+  if (!account.temporaryPasswordExpiresAt) return false;
+  return new Date(account.temporaryPasswordExpiresAt).getTime() <= now.getTime();
 }

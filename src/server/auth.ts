@@ -18,6 +18,11 @@ export interface AuthUser {
   username: string;
   role: RbacRole;
   displayName: string;
+  /**
+   * Carried in the session token because middleware runs on the Edge runtime
+   * and cannot reach the database to look it up.
+   */
+  mustChangePassword?: boolean;
 }
 
 export const SESSION_MAX_AGE = 60 * 60 * 24 * 7;
@@ -48,6 +53,7 @@ export function readSessionToken(token: string | undefined): AuthUser | null {
       username: string;
       role: RbacRole;
       displayName: string;
+      mustChangePassword?: boolean;
       exp?: number;
     };
     if (typeof data.exp === "number" && Date.now() > data.exp) return null;
@@ -56,6 +62,7 @@ export function readSessionToken(token: string | undefined): AuthUser | null {
       username: data.username,
       role: data.role,
       displayName: data.displayName,
+      mustChangePassword: data.mustChangePassword === true,
     };
   } catch {
     return null;

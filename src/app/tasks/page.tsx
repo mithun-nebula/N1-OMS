@@ -2,7 +2,7 @@ import { redirect } from "next/navigation";
 import { getSessionUser } from "@/server/auth";
 import { getWorld } from "@/server/runtime";
 import { getSpine } from "@/server/runtime";
-import { DEMO_PEOPLE } from "@/domains/shared/people-roster";
+import { directory } from "@/server/directory";
 import { Shell } from "../shell";
 import { ExportButton } from "../chrome/export-button";
 import { TasksClient } from "./tasks-client";
@@ -27,7 +27,7 @@ export default async function TasksPage() {
     };
   });
 
-  const people = Object.entries(DEMO_PEOPLE).map(([id, p]) => ({ id, name: p.name }));
+  const people = directory().all().filter((p) => p.active).map((p) => ({ id: p.id, name: p.name }));
 
   return (
     <Shell>

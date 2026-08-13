@@ -1,14 +1,17 @@
 import { NextResponse } from "next/server";
-import { getSessionUser } from "@/server/auth";
+import { getActingUser } from "@/server/session-guard";
 import { assistantAsk } from "@/server/runtime";
 
 export const dynamic = "force-dynamic";
 
 export async function POST(request: Request) {
-  const user = await getSessionUser();
-  if (!user) {
-    return NextResponse.json({ error: "Not authenticated." }, { status: 401 });
+  // A read rather than a write, but it returns organisation data, so an account
+  // still holding a temporary password should not reach it either.
+  const auth = await getActingUser();
+  if (!auth.ok) {
+    return NextResponse.json({ error: auth.error }, { status: auth.status });
   }
+  const user = auth.user;
   let body: { message?: string };
   try {
     body = (await request.json()) as { message?: string };

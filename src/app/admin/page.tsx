@@ -3,13 +3,14 @@ import { getSessionUser } from "@/server/auth";
 import { listAccounts } from "@/server/accounts";
 import { getAutonomyEngine, getWorld } from "@/server/runtime";
 import { providerModes } from "@/config/providers";
+import { homeRouteFor, isAdminLike } from "@/server/roles";
 import { Shell } from "../shell";
 import { AdminClient } from "./admin-client";
 
 export default async function AdminPage() {
   const user = await getSessionUser();
   if (!user) redirect("/login");
-  if (user.role !== "super-admin" && user.role !== "admin") redirect("/today");
+  if (!isAdminLike(user.role)) redirect(homeRouteFor(user.role));
 
   const accounts = listAccounts();
   const engine = await getAutonomyEngine();

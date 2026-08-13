@@ -1,7 +1,8 @@
 import { redirect } from "next/navigation";
 import { getSessionUser } from "@/server/auth";
 import { getWorld } from "@/server/runtime";
-import { DEMO_PEOPLE } from "@/domains/shared/people-roster";
+import { directory } from "@/server/directory";
+import { isManagerOrAbove } from "@/server/roles";
 import { Shell } from "../shell";
 import { AnnouncementsClient } from "./announcements-client";
 
@@ -31,8 +32,8 @@ export default async function AnnouncementsPage() {
     })
     .sort((a, b) => (a.at < b.at ? 1 : -1));
 
-  const canSend = ["super-admin", "admin", "hr", "manager"].includes(user.role);
-  const people = Object.keys(DEMO_PEOPLE);
+  const canSend = isManagerOrAbove(user.role);
+  const people = directory().activeIds();
 
   return (
     <Shell>

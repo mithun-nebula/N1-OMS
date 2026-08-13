@@ -9,6 +9,7 @@ import {
   type OperationRegistry,
   type OperationResult,
   type UndoInfo,
+  type UndoStep,
 } from "./operation/registry";
 import type { ActorId, NodeId, Operation, RoleId } from "./operation/types";
 import type { RecordStore } from "./record/types";
@@ -105,6 +106,11 @@ export class Spine {
   ): Promise<SubmissionResult> {
     const pending = this.pending.get(pendingId);
     if (!pending) return { status: "not-found" };
+    if (!(await this.mayConfirm(pending.preparedOperation, confirmer))) {
+      // Do NOT delete the pending item — an unauthorised attempt must not
+      // destroy a confirmation the rightful approver still needs.
+      return { status: "forbidden", opaqueMessage: OPAQUE_REFUSAL_MESSAGE };
+    }
     this.pending.delete(pendingId);
     const operation = pending.preparedOperation;
     const edited = Boolean(opts?.editedArgs);
@@ -142,21 +148,69 @@ export class Spine {
     return [...this.pending.values()];
   }
 
+  /**
+   * Confirming a parked money/people operation is an authority decision, so it
+   * needs the same scrutiny as running one. Without this, knowing a pending id
+   * was enough for any signed-in user to release it (non-negotiable #3).
+   *
+   * Allowed: the rule's own author (they delegated it, they answer for it), or
+   * anyone holding `approve` on every record the operation touches.
+   */
+  private async mayConfirm(
+    operation: Operation,
+    confirmer: ActorId,
+  ): Promise<boolean> {
+    const auth = operation.authority;
+    // Person-started operations never park here today, but if one ever does,
+    // only the person who started it may release it.
+    if (auth.kind === "self") return auth.actor === confirmer;
+    if (auth.ruleAuthor === confirmer) return true;
+
+    const handler = this.deps.operations.get(operation.name);
+    if (!handler) return false;
+    const requirements = flattenRequirements(
+      await handler.permission(operation.args),
+    );
+    return requirements.every((req) => {
+      const ids: (NodeId | undefined)[] = req.recordNodeIds?.length
+        ? req.recordNodeIds
+        : [undefined];
+      return ids.every(
+        (recordNodeId) =>
+          this.deps.permissions.can({
+            actor: confirmer,
+            action: "approve",
+            nodeType: req.nodeType,
+            recordNodeId,
+          }).allowed,
+      );
+    });
+  }
+
   async undo(
     activityEntryId: string,
     by: ActorId,
   ): Promise<SubmissionResult> {
     const entry = await this.deps.log.get(activityEntryId);
     if (!entry) return { status: "not-found" };
+    if (entry.outcome === "undone") {
+      return { status: "rejected", detail: "That action was already undone." };
+    }
     const undo = this.undos.get(entry.operationId);
-    if (!undo) {
+    const ctx = this.ctx(by);
+    if (undo?.revert) {
+      // Same process as the original action — use the richer closure.
+      await undo.revert(ctx);
+    } else if (entry.undoPlan?.length) {
+      // The closure is gone (restart, or a different instance). Replay the
+      // serialised plan instead. This is why undo survives a restart at all.
+      await this.applyUndoPlan(entry.undoPlan);
+    } else {
       return {
         status: "rejected",
         detail: "No undo is available for this action.",
       };
     }
-    const ctx = this.ctx(by);
-    await undo.revert(ctx);
     const undoEntry: ActivityEntry = {
       id: await this.deps.log.nextId(),
       operationId: `undo_${entry.operationId}`,
@@ -200,10 +254,87 @@ export class Spine {
     return { found: true, record: filtered };
   }
 
+  /**
+   * `read()` for a whole node type, in one pass.
+   *
+   * Pages like `/team` and the dashboard currently loop `read()` over every
+   * person, which is one database round trip each — fine for nine people, not
+   * for two hundred. This does a single `find()` and applies the same
+   * permission and field filtering in memory, resolving the field policy once
+   * for the actor instead of once per record.
+   *
+   * Records the actor may not view are simply absent from the result, which is
+   * the same non-disclosure `read()` gives with `{ found: false }` — the caller
+   * cannot tell "not permitted" from "does not exist".
+   */
+  async readMany(opts: {
+    actor: ActorId;
+    nodeType: string;
+    filter?: (data: Record<string, unknown>, nodeId: NodeId) => boolean;
+  }): Promise<Array<{ nodeId: NodeId; record: FilteredRecord }>> {
+    const { actor, nodeType, filter } = opts;
+
+    // Cheap gate first: with no matching rule for this actor and type at all,
+    // no record of it can be visible, so skip the query entirely.
+    const anyRule = this.deps.permissions.can({ actor, action: "view", nodeType });
+    if (!anyRule.allowed) return [];
+
+    const nodes = await this.deps.graph.find(nodeType, (node) =>
+      filter ? filter(node.data as Record<string, unknown>, node.id) : true,
+    );
+    const policy = this.deps.permissions.effectiveFieldPolicy(actor, nodeType);
+
+    const out: Array<{ nodeId: NodeId; record: FilteredRecord }> = [];
+    for (const node of nodes) {
+      // Record scope still has to be checked per record — `own-team` and `self`
+      // depend on which record it is, not just the type.
+      const allowed = this.deps.permissions.can({
+        actor,
+        action: "view",
+        nodeType,
+        recordNodeId: node.id,
+      }).allowed;
+      if (!allowed) continue;
+      out.push({
+        nodeId: node.id,
+        record: applyFieldPolicy(node.data as Record<string, unknown>, policy),
+      });
+    }
+    return out;
+  }
+
   canExport(actor: ActorId, nodeType: string): boolean {
     return this.deps.permissions
       .can({ actor, action: "export", nodeType })
       .allowed;
+  }
+
+  /** Replays a serialised undo plan against the record store, in order. */
+  private async applyUndoPlan(plan: UndoStep[]): Promise<void> {
+    for (const step of plan) {
+      switch (step.op) {
+        case "put":
+          await this.deps.graph.putNode(step.nodeType, step.nodeId, step.data);
+          break;
+        case "patch":
+          await this.deps.graph.patchNode(step.nodeType, step.nodeId, step.data);
+          break;
+        case "remove":
+          await this.deps.graph.removeNode(step.nodeType, step.nodeId);
+          break;
+        case "addEdge":
+          await this.deps.graph.addEdge({
+            from: step.from,
+            to: step.to,
+            type: step.edgeType,
+            data: step.data,
+          });
+          break;
+        case "removeEdge":
+          await this.deps.graph.removeEdge(step.from, step.to, step.edgeType);
+          break;
+      }
+    }
   }
 
   private async executeAndRecord(
@@ -216,7 +347,20 @@ export class Spine {
     const handler = this.deps.operations.require(operation.name);
     const actor = effectiveActor(operation.authority);
     const ctx = this.ctx(actor);
-    const result = await handler.execute(operation.args, ctx);
+
+    let result: OperationResult;
+    try {
+      result = await handler.execute(operation.args, ctx);
+    } catch (error) {
+      // A handler refusing on a business rule — "that id is taken", "they still
+      // manage people" — must reach the caller as a refusal, not a 500. Nothing
+      // is recorded: the operation did not happen.
+      return {
+        status: "rejected",
+        detail:
+          error instanceof Error ? error.message : "That could not be completed.",
+      };
+    }
     const entry: ActivityEntry = {
       id: await this.deps.log.nextId(),
       operationId: operation.id,
@@ -227,6 +371,7 @@ export class Spine {
       at: ctx.now(),
       changes: result.changes,
       undoDescription: result.undo?.description,
+      undoPlan: result.undo?.plan,
       approvedBy: confirmation?.approvedBy,
       confirmationReason: confirmation?.confirmationReason,
       outcome: "ran",
@@ -238,24 +383,34 @@ export class Spine {
   }
 
   private publishResult(_operation: Operation, result: OperationResult): void {
+    // An operation may supply its own wording and a record to link to; where it
+    // does not, fall back to the generic change summary.
+    const fallback = () => summarizeChanges(result);
+    const firstChange = result.changes[0];
+    const defaultRef = firstChange
+      ? { nodeType: firstChange.nodeType, nodeId: firstChange.nodeId }
+      : undefined;
+
     for (const target of result.publishedTo ?? []) {
       if (target.kind === "broadcast") {
         this.deps.bus.publish({
           kind: "broadcast",
-          message: summarizeChanges(result),
+          message: target.message ?? fallback(),
+          ref: target.ref ?? defaultRef,
         });
       } else if (target.kind === "actor") {
         this.deps.bus.publish({
           kind: "actor",
           actor: target.actor,
-          message: summarizeChanges(result),
+          message: target.message ?? fallback(),
+          ref: target.ref ?? defaultRef,
         });
       } else {
         this.deps.bus.publish({
           kind: "record",
           nodeType: target.nodeType,
           nodeId: target.nodeId,
-          message: summarizeChanges(result),
+          message: target.message ?? fallback(),
         });
       }
     }

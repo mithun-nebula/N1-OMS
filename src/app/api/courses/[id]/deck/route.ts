@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getSessionUser } from "@/server/auth";
+import { getActingUser } from "@/server/session-guard";
 import { getCourseService, getSpine } from "@/server/runtime";
 
 export const dynamic = "force-dynamic";
@@ -8,10 +8,11 @@ export async function POST(
   request: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
-  const user = await getSessionUser();
-  if (!user) {
-    return NextResponse.json({ error: "Not authenticated." }, { status: 401 });
+  const auth = await getActingUser();
+  if (!auth.ok) {
+    return NextResponse.json({ error: auth.error }, { status: auth.status });
   }
+  const user = auth.user;
   const { id } = await params;
   const read = await (await getSpine()).read({ actor: user.id, nodeType: "course", nodeId: id });
   if (!read.found) {

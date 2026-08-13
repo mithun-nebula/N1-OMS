@@ -109,6 +109,45 @@ Six roles, applied by the gate's permission layer (role × record × field):
 - `POST /api/activity/[id]/undo` — undo an action by activity entry id
 - `GET  /api/notifications` · `GET /api/search` · `GET /api/export?type=` (gated by `canExport`)
 
+## Node-id convention (required)
+
+`PostgresRecordStore.nodeByIdAny()` resolves an id **without** a type
+(`WHERE id=$1 LIMIT 1`), and `traverse()` depends on it. Two node types sharing
+an id makes traversal silently return the wrong record — no error, wrong answer.
+
+**Every new node type must use a type prefix.** Where a record belongs to one
+person, put the owner in the id too: the permission layer's `ownerOf()` is
+synchronous and can then parse it with no I/O, instead of hydrating a map of
+every row at boot.
+
+| Type | Id shape |
+|---|---|
+| `employee` | bare person id (`priya`) — **the node id IS the actor id**, relied on by `ownerOf` |
+| `department` / `designation` | `dept_<slug>` / `desig_<slug>` |
+| `approval` | `apr_<ulid>` |
+| `attendance` / `employee-checkin` | `att_<employee>_<YYYY-MM-DD>` / `chk_<employee>_<ts>` |
+| `attendance-request` / `shift-assignment` / `shift-request` | `atr_` / `sha_` / `shr_` + `<employee>_<seq>` |
+| `leave-ledger-entry` / `leave-allocation` | `lle_` / `lal_` + `<employee>_<seq>` |
+| `holiday-list` / `notification` | `hol_` / `ntf_` |
+
+`src/spine/integrity.test.ts` asserts no two types share an id.
+
+## Writing an operation (all six rules apply)
+
+Every operation is a verb an agent may later call through a non-form start, so:
+
+1. `category` and `involvesMoneyOrPeople` must be **exactly** right — they drive
+   gate checks 4 and 5, and `NEVER_GRADUATE = {money, people, leaving-org}`. A
+   mislabelled operation is a hole in the autonomy safety net. When unsure, `true`.
+2. **No business logic in React components.** If a decision lives in a page, no
+   agent can reach it.
+3. Return a **serialisable `undo.plan`**, not only a closure — closures die with
+   the process (`src/spine/spine.ts` replays the plan otherwise).
+4. `validate()` returns structured `missing[]`, never prose — that array is how a
+   caller knows which argument to ask for.
+5. `permission()` declared per operation and scoped to the record.
+6. Operations are complete units: args in, effect out, no reliance on UI state.
+
 ## Non-negotiables enforced here (CONTEXT §13)
 
 1. One gate; permission + activity log live only there.
@@ -159,3 +198,13 @@ reminders (auto-notify via PublishBus), team/role task assignment (resolve
 (restore appendix-A morning-brief → day-plan → streak; the engine is built +
 async-tested, needs the UI). See `docs/TODO.md` § "Roadmap — Team workflow
 features" for details.
+
+<!-- BEGIN:nextjs-agent-rules -->
+
+# This is NOT the Next.js you know
+
+This version has breaking changes — APIs, conventions, and file structure may all differ from your training data. Read the relevant guide in `node_modules/next/dist/docs/` (resolved from this file's directory; in monorepos the `next` package may not be visible from the repo root) before writing any code. Heed deprecation notices.
+
+This block is written and re-added by `next dev` — verify at `node_modules/next/dist/server/lib/generate-agent-files.js`. Removing it from a diff only re-creates the uncommitted change; committing it with your work keeps the tree clean.
+
+<!-- END:nextjs-agent-rules -->

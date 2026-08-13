@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { getSessionUser } from "@/server/auth";
 import { DEMO_PERMISSION_RULES, OPEN_NODE_TYPES } from "@/server/policy";
 import { RBAC_ROLES } from "@/domains/shared/people-roster";
+import { isAdminLike } from "@/server/roles";
 import { Shell } from "../shell";
 
 const ACTIONS = ["view", "create", "edit", "approve", "export", "delete"] as const;
@@ -9,7 +10,7 @@ const ACTIONS = ["view", "create", "edit", "approve", "export", "delete"] as con
 export default async function RbacPage() {
   const user = await getSessionUser();
   if (!user) redirect("/login");
-  if (user.role !== "super-admin" && user.role !== "admin") redirect("/dashboard");
+  if (!isAdminLike(user.role)) redirect("/dashboard");
 
   const nodeTypes = [...new Set(DEMO_PERMISSION_RULES.map((r) => r.nodeType))].sort();
 

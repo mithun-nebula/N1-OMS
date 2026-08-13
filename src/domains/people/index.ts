@@ -14,6 +14,13 @@ import {
   leavingCompleteHandoverHandler,
   leavingStartHandler,
 } from "./leaving";
+import {
+  employeeCreateHandler,
+  employeeDeactivateHandler,
+  employeeReactivateHandler,
+  employeeSetPayHandler,
+  employeeUpdateHandler,
+} from "./employee";
 import { seedPeople } from "./seed";
 
 export const peopleDomain: DomainModule = {
@@ -24,6 +31,11 @@ export const peopleDomain: DomainModule = {
     ctx.registry.register(leaveApproveHandler(ctx.graph));
     ctx.registry.register(leaveDeclineHandler(ctx.graph));
     ctx.registry.register(employeeUpdateContactHandler(ctx.graph));
+    ctx.registry.register(employeeCreateHandler(ctx.graph));
+    ctx.registry.register(employeeUpdateHandler(ctx.graph));
+    ctx.registry.register(employeeDeactivateHandler(ctx.graph));
+    ctx.registry.register(employeeReactivateHandler(ctx.graph));
+    ctx.registry.register(employeeSetPayHandler(ctx.graph));
     ctx.registry.register(joiningStartHandler(ctx.graph));
     ctx.registry.register(joiningCompleteStepHandler(ctx.graph));
     ctx.registry.register(leavingStartHandler(ctx.graph));

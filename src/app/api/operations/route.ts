@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getSessionUser } from "@/server/auth";
+import { getActingUser } from "@/server/session-guard";
 import { getSpine } from "@/server/runtime";
 import * as adapters from "@/spine/adapters";
 import {
@@ -23,10 +23,14 @@ interface SubmitBody {
 }
 
 export async function POST(request: Request) {
-  const user = await getSessionUser();
-  if (!user) {
-    return NextResponse.json({ error: "Not authenticated." }, { status: 401 });
+  // The single write door for all seven starts. Checked against the live
+  // account, not the session token — an account still holding a temporary
+  // password cannot act here even if it reached the page some other way.
+  const auth = await getActingUser();
+  if (!auth.ok) {
+    return NextResponse.json({ error: auth.error }, { status: auth.status });
   }
+  const user = auth.user;
   let body: SubmitBody;
   try {
     body = (await request.json()) as SubmitBody;

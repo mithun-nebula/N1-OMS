@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { getSessionUser } from "@/server/auth";
 import { getWorld } from "@/server/runtime";
+import { isManagerOrAbove } from "@/server/roles";
 import { Shell } from "../shell";
 import { DecisionsClient } from "./decisions-client";
 
@@ -25,7 +26,7 @@ export default async function DecisionsPage() {
     })
     .sort((a, b) => (a.decidedAt < b.decidedAt ? 1 : -1));
 
-  const canRecord = ["super-admin", "admin", "hr", "manager"].includes(user.role);
+  const canRecord = isManagerOrAbove(user.role);
 
   return (
     <Shell>

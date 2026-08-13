@@ -1,7 +1,8 @@
 import { redirect } from "next/navigation";
 import { getSessionUser } from "@/server/auth";
 import { getWorld } from "@/server/runtime";
-import { DEMO_PEOPLE } from "@/domains/shared/people-roster";
+import { directory } from "@/server/directory";
+import { isAdminLike, isApprover as roleIsApprover } from "@/server/roles";
 import { Shell } from "../shell";
 import { DashboardClient } from "./dashboard-client";
 
@@ -31,17 +32,14 @@ export default async function DashboardPage() {
     })
     .slice(0, 5);
 
-  const isApprover = ["manager", "hr", "admin", "super-admin"].includes(user.role);
+  const isApprover = roleIsApprover(user.role);
 
   let pendingApprovals: Array<{ id: string; employeeName?: string; fromDate?: string; toDate?: string }> = [];
   if (isApprover) {
+    // A manager sees their own team's requests; HR and admin see all of them.
     const teamMembers =
       user.role === "manager"
-        ? new Set(
-            Object.entries(DEMO_PEOPLE)
-              .filter(([, p]) => p.team === (DEMO_PEOPLE[user.id]?.team ?? ""))
-              .map(([id]) => id),
-          )
+        ? new Set(directory().teamCircleOf(user.id))
         : null;
     pendingApprovals = (await deps.graph
       .find("leave", (n) => (n.data as { status?: string }).status === "Pending"))
@@ -53,7 +51,7 @@ export default async function DashboardPage() {
         const d = n.data as { employeeName?: string; fromDate?: string; toDate?: string; employeeId?: string };
         return {
           id: n.id,
-          employeeName: d.employeeName ?? DEMO_PEOPLE[d.employeeId ?? ""]?.name,
+          employeeName: d.employeeName ?? directory().nameOf(d.employeeId ?? ""),
           fromDate: d.fromDate,
           toDate: d.toDate,
         };
@@ -61,10 +59,10 @@ export default async function DashboardPage() {
   }
 
   const courseCount = (await deps.graph.find("course", () => true)).length;
-  const teamSize = Object.keys(DEMO_PEOPLE).length;
+  const teamSize = directory().activeIds().length;
 
   const isHr = user.role === "hr";
-  const isAdmin = user.role === "admin" || user.role === "super-admin";
+  const isAdmin = isAdminLike(user.role);
 
   const hrAttention = isHr
     ? {

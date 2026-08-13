@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 import { getSessionUser } from "@/server/auth";
 import { getWorld } from "@/server/runtime";
-import { DEMO_PEOPLE } from "@/domains/shared/people-roster";
+import { directory } from "@/server/directory";
 import { repeatFaults } from "@/domains/workplace/equipment";
 import { Shell } from "../shell";
 import { EquipmentClient } from "./equipment-client";
@@ -26,7 +26,7 @@ export default async function EquipmentPage() {
         faults.push({
           fault: String(f.fault ?? ""),
           by: String(f.by ?? ""),
-          byName: DEMO_PEOPLE[String(f.by ?? "")]?.name ?? String(f.by ?? ""),
+          byName: directory().nameOf(String(f.by ?? "")),
           at: String(f.at ?? ""),
           resolved: Boolean(f.resolved),
         });
@@ -37,7 +37,7 @@ export default async function EquipmentPage() {
       id: n.id,
       name: String(d.name ?? n.id),
       assigneeId,
-      assigneeName: assigneeId ? DEMO_PEOPLE[assigneeId]?.name ?? assigneeId : undefined,
+      assigneeName: assigneeId ? directory().nameOf(assigneeId) : undefined,
       status: String(d.status ?? ""),
       faults,
       repeatsThisMonth: (await repeatFaults(deps.graph, n.id, yearMonth)).length,

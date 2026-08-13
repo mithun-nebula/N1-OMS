@@ -5,6 +5,7 @@ import {
   SESSION_MAX_AGE,
 } from "@/server/auth";
 import { verifyCredentials } from "@/server/accounts";
+import { ensureAccountsReady } from "@/server/runtime";
 import { env } from "@/config/env";
 
 export const dynamic = "force-dynamic";
@@ -16,6 +17,10 @@ export async function POST(request: Request) {
   } catch {
     return NextResponse.json({ error: "Invalid JSON body." }, { status: 400 });
   }
+  // Load the real accounts before checking. Without this the check runs
+  // against the defaults built at import time, and the .env bootstrap password
+  // keeps working after every restart.
+  await ensureAccountsReady();
   const user = verifyCredentials(
     (body.username ?? "").trim(),
     body.password ?? "",

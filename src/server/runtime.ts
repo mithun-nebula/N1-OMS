@@ -28,6 +28,24 @@ export async function getSpine(): Promise<Spine> {
   return (await getWorld()).spine;
 }
 
+/**
+ * Await before reading or changing any account.
+ *
+ * Accounts live in a module-level map in `accounts.ts`, built at import time
+ * from `buildDefaultAccounts()` and only replaced with the real rows when
+ * `configureAccounts(pool)` runs inside `buildDemoWorld()`.
+ *
+ * Until that happens the map holds the *defaults* — on a real deployment, the
+ * `ORG_BOOTSTRAP_PASSWORD` from `.env`. `/api/auth/login` calls
+ * `verifyCredentials()` directly and never touched the world, so after every
+ * restart the throwaway bootstrap password worked again, no matter how many
+ * times the admin had changed it. Hydration order, not a permissions bug, and
+ * invisible in tests because every test builds the world first.
+ */
+export async function ensureAccountsReady(): Promise<void> {
+  await getWorld();
+}
+
 let peopleService: PeopleRecordService | undefined;
 let courseService: CourseService | undefined;
 let orgMemoryService: OrgMemoryService | undefined;

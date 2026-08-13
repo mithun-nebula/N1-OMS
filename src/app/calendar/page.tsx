@@ -2,7 +2,7 @@ import { redirect } from "next/navigation";
 import { getSessionUser } from "@/server/auth";
 import { getWorld } from "@/server/runtime";
 import { monthView } from "@/domains/workplace/calendar";
-import { DEMO_PEOPLE } from "@/domains/shared/people-roster";
+import { directory } from "@/server/directory";
 import { Shell } from "../shell";
 import { CalendarClient } from "./calendar-client";
 
@@ -44,12 +44,12 @@ export default async function CalendarPage({
         to: d.to ? String(d.to) : undefined,
         detail: d.detail ? String(d.detail) : undefined,
         peopleIds,
-        people: peopleIds.map((id) => DEMO_PEOPLE[id]?.name ?? id),
+        people: peopleIds.map((id) => directory().nameOf(id)),
         cancelled: Boolean(d.cancelled),
       };
     });
 
-  const people = Object.entries(DEMO_PEOPLE).map(([id, p]) => ({ id, name: p.name }));
+  const people = directory().all().filter((p) => p.active).map((p) => ({ id: p.id, name: p.name }));
 
   const prevMonth = month === 1 ? 12 : month - 1;
   const prevYear = month === 1 ? year - 1 : year;

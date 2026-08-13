@@ -7,6 +7,12 @@ export async function seedPeople(ctx: DomainContext): Promise<void> {
     await ctx.graph.putNode("employee", id, {
       name: person.name,
       role: person.role,
+      // `team` has to live on the record, not only in the in-memory map.
+      // The people directory rebuilds itself from these nodes after a restart,
+      // and a person with no team lands in no team scope — which silently
+      // empties every manager's `own-team` permission.
+      team: person.team,
+      status: "active",
       contact: `${id}@orga.example`,
       pay: 50000 + (hashPay(id) % 50000),
       performance: "meets",

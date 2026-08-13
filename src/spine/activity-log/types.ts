@@ -5,7 +5,7 @@ import type {
   OperationId,
   StartSource,
 } from "../operation/types";
-import type { ChangeSummary } from "../operation/registry";
+import type { ChangeSummary, UndoStep } from "../operation/registry";
 
 export interface ActivityEntry {
   id: string;
@@ -17,6 +17,8 @@ export interface ActivityEntry {
   at: ISODate;
   changes: ChangeSummary[];
   undoDescription?: string;
+  /** Serialisable reversal, replayed when the in-process closure is gone. */
+  undoPlan?: UndoStep[];
   approvedBy?: ActorId;
   confirmationReason?: "money-or-people" | "never-graduate" | "not-earned";
   outcome: "ran" | "undone";

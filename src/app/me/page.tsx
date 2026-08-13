@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 import { getSessionUser } from "@/server/auth";
 import { getSpine, getWorld, getPeopleService } from "@/server/runtime";
-import { DEMO_PEOPLE } from "@/domains/shared/people-roster";
+import { directory } from "@/server/directory";
 import { isRestricted } from "@/spine/permission/types";
 import { Shell } from "../shell";
 import { ProfileClient } from "./profile-client";
@@ -70,7 +70,7 @@ export default async function ProfilePage() {
         employeeId={user.id}
         name={String(record.name ?? user.displayName)}
         role={String(record.role ?? user.role)}
-        team={DEMO_PEOPLE[user.id]?.team}
+        team={directory().teamNameOf(user.id)}
         contact={isRestricted(contactField) ? undefined : String(contactField ?? "")}
         pay={isRestricted(payField) ? undefined : (payField as number | string | undefined)}
         leaveBalance={myBalance}

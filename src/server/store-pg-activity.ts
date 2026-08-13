@@ -12,7 +12,6 @@ import type {
  * of the spine — it must persist.
  */
 export class PostgresActivityLog implements ActivityLog {
-  private seq = 0;
   private ready: Promise<void>;
 
   constructor(private readonly pool: Pool) {
@@ -27,6 +26,7 @@ export class PostgresActivityLog implements ActivityLog {
         at timestamptz NOT NULL DEFAULT now()
       );
       CREATE INDEX IF NOT EXISTS orga_activity_at ON orga_activity (at);
+      CREATE SEQUENCE IF NOT EXISTS orga_activity_seq;
     `);
   }
 
@@ -34,10 +34,15 @@ export class PostgresActivityLog implements ActivityLog {
     return this.ready;
   }
 
+  /**
+   * Plain INSERT — no ON CONFLICT DO NOTHING. A duplicate id means the audit
+   * trail is about to lose an entry, and that must fail loudly rather than
+   * silently discard it. InMemoryActivityLog throws on duplicates too.
+   */
   async append(entry: ActivityEntry): Promise<void> {
     await this.r();
     await this.pool.query(
-      "INSERT INTO orga_activity (id, data, at) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING",
+      "INSERT INTO orga_activity (id, data, at) VALUES ($1, $2, $3)",
       [entry.id, JSON.stringify(entry), entry.at],
     );
   }
@@ -96,8 +101,16 @@ export class PostgresActivityLog implements ActivityLog {
     );
   }
 
+  /**
+   * Ids come from a Postgres sequence, not a per-process counter. A counter
+   * restarts at 1 on every boot, so the second run would collide with entries
+   * written by the first — and the audit trail would silently lose them.
+   */
   async nextId(): Promise<string> {
-    this.seq += 1;
-    return `act_${this.seq.toString(36)}`;
+    await this.r();
+    const res = await this.pool.query<{ nextval: string }>(
+      "SELECT nextval('orga_activity_seq') AS nextval",
+    );
+    return `act_${Number(res.rows[0].nextval).toString(36)}`;
   }
 }

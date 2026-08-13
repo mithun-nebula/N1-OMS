@@ -1,14 +1,15 @@
 import { NextResponse } from "next/server";
-import { getSessionUser } from "@/server/auth";
+import { getActingUser } from "@/server/session-guard";
 import { getAutonomyEngine } from "@/server/runtime";
 
 export const dynamic = "force-dynamic";
 
 export async function POST(request: Request) {
-  const user = await getSessionUser();
-  if (!user) {
-    return NextResponse.json({ error: "Not authenticated." }, { status: 401 });
+  const auth = await getActingUser();
+  if (!auth.ok) {
+    return NextResponse.json({ error: auth.error }, { status: auth.status });
   }
+  const user = auth.user;
   if (user.role !== "super-admin" && user.role !== "admin") {
     return NextResponse.json({ error: "Not permitted." }, { status: 403 });
   }

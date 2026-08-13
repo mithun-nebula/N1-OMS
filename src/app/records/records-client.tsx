@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { isAdminLike, isHrLike } from "@/server/roles";
 
 interface DoctypeEntry {
   doctype: string;
@@ -44,8 +45,8 @@ export function RecordsClient({ actorRole }: { actorRole: string }) {
   const [newKey, setNewKey] = useState("");
   const [newValue, setNewValue] = useState("");
 
-  const canManage = ["super-admin", "admin", "hr"].includes(actorRole);
-  const canDelete = ["super-admin", "admin"].includes(actorRole);
+  const canManage = isHrLike(actorRole);
+  const canDelete = isAdminLike(actorRole);
 
   useEffect(() => {
     fetch("/api/n1-doctypes")

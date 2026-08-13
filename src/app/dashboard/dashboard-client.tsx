@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { isApprover as roleIsApprover } from "@/server/roles";
 
 interface TaskItem {
   id: string;
@@ -50,7 +51,7 @@ export function DashboardClient({
   const [busyTask, setBusyTask] = useState<string | null>(null);
   const [busyLeave, setBusyLeave] = useState<string | null>(null);
 
-  const isApprover = ["manager", "hr", "admin", "super-admin"].includes(role);
+  const isApprover = roleIsApprover(role);
 
   async function completeTask(taskId: string) {
     setBusyTask(taskId);

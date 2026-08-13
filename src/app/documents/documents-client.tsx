@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { isManagerOrAbove } from "@/server/roles";
 
 interface DocItem {
   id: string;
@@ -37,7 +38,7 @@ export function DocumentsClient({
     expiresOn: "",
   });
 
-  const canStore = ["super-admin", "admin", "hr", "manager"].includes(actorRole);
+  const canStore = isManagerOrAbove(actorRole);
 
   async function store() {
     if (!form.name || !form.nodeType || !form.nodeId) return;

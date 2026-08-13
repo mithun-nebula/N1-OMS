@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 import { getSessionUser } from "@/server/auth";
 import { getCourseService, getSpine, getWorld } from "@/server/runtime";
-import { DEMO_PEOPLE } from "@/domains/shared/people-roster";
+import { directory } from "@/server/directory";
 import { nextStages } from "@/domains/course/stages";
 import { readVersions } from "@/domains/course/versioning";
 import { Shell } from "../shell";
@@ -36,7 +36,7 @@ export default async function CoursesPage() {
     const versions = (await readVersions(deps.graph, c.id)).map((v) => ({
       version: v.version,
       at: v.at,
-      by: DEMO_PEOPLE[v.by]?.name ?? v.by,
+      by: directory().nameOf(v.by),
       reason: v.reason,
     }));
     enriched.push({
@@ -45,7 +45,7 @@ export default async function CoursesPage() {
       stage: c.stage,
       stageLabel: STAGE_LABELS[c.stage] ?? c.stage,
       owner: c.owner,
-      ownerName: DEMO_PEOPLE[c.owner ?? ""]?.name ?? c.owner ?? "—",
+      ownerName: c.owner ? directory().nameOf(c.owner) : "—",
       stageOwners: c.stageOwners ?? {},
       progressNote: c.progressNote,
       completion: c.completion?.value ?? 0,
@@ -58,7 +58,7 @@ export default async function CoursesPage() {
     });
   }
 
-  const people = Object.entries(DEMO_PEOPLE).map(([id, p]) => ({ id, name: p.name }));
+  const people = directory().all().filter((p) => p.active).map((p) => ({ id: p.id, name: p.name }));
 
   return (
     <Shell>

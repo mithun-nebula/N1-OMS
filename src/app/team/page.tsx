@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 import { getSessionUser } from "@/server/auth";
 import { getSpine, getWorld } from "@/server/runtime";
-import { DEMO_PEOPLE } from "@/domains/shared/people-roster";
+import { directory } from "@/server/directory";
 import { isRestricted } from "@/spine/permission/types";
 import { Shell } from "../shell";
 import { ExportButton } from "../chrome/export-button";
@@ -13,11 +13,13 @@ export default async function TeamPage() {
   const spine = await getSpine();
   const { deps } = await getWorld();
 
-  const visiblePeople: Array<{ id: string; person: typeof DEMO_PEOPLE[string]; record: Record<string, unknown> }> = [];
-  for (const [id, person] of Object.entries(DEMO_PEOPLE)) {
-    const read = await spine.read({ actor: user.id, nodeType: "employee", nodeId: id });
-    if (read.found) visiblePeople.push({ id, person, record: read.record });
-  }
+  // One query rather than a database round trip per person, and it returns
+  // only the people this actor may see, already field-filtered.
+  const visiblePeople = await spine.readMany({
+    actor: user.id,
+    nodeType: "employee",
+    filter: (data) => data.status !== "inactive" && data.status !== "separated",
+  });
 
   const coursesByOwner = new Map<string, Array<{ title: string; pct: number }>>();
   const allCourses = await deps.graph.find("course", () => true);
@@ -33,7 +35,7 @@ export default async function TeamPage() {
     coursesByOwner.set(owner, list);
   }
 
-  const rows = visiblePeople.map(({ id, record }) => ({
+  const rows = visiblePeople.map(({ nodeId: id, record }) => ({
     id,
     name: String(record.name ?? ""),
     role: String(record.role ?? ""),
@@ -42,7 +44,7 @@ export default async function TeamPage() {
   }));
 
   const perPerson: Array<{ id: string; courses: Array<{ title: string; pct: number }>; tasks: Array<{ title: string; priority: string; dueDate?: string }>; leave: Array<{ fromDate: string; toDate: string; status: string }> }> = [];
-  for (const id of Object.keys(DEMO_PEOPLE)) {
+  for (const id of directory().activeIds()) {
     const courses = (coursesByOwner.get(id) ?? []).map((c) => ({ title: c.title, pct: c.pct }));
     const tasks = (await deps.graph
       .find("task", (n) => {
@@ -76,7 +78,7 @@ export default async function TeamPage() {
         perPerson={perPerson}
         coursesByOwner={[...coursesByOwner.entries()].map(([ownerId, courses]) => ({
           ownerId,
-          ownerName: DEMO_PEOPLE[ownerId]?.name ?? ownerId,
+          ownerName: directory().nameOf(ownerId),
           courses,
         }))}
       />

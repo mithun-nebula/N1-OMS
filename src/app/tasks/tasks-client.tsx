@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { isAdminLike } from "@/server/roles";
 
 interface Task {
   id: string;
@@ -40,7 +41,7 @@ export function TasksClient({
   const [editForm, setEditForm] = useState({ title: "", description: "", priority: "medium", dueDate: "" });
   const [filters, setFilters] = useState({ assignee: "", project: "", priority: "" });
 
-  const canDelete = actorRole === "super-admin" || actorRole === "admin";
+  const canDelete = isAdminLike(actorRole);
   const today = new Date().toISOString().slice(0, 10);
 
   async function run(name: string, args: Record<string, unknown>) {

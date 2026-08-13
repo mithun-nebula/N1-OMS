@@ -1,8 +1,9 @@
 import { redirect } from "next/navigation";
 import { getSessionUser } from "@/server/auth";
 import { getSpine, getWorld } from "@/server/runtime";
-import { DEMO_PEOPLE } from "@/domains/shared/people-roster";
+import { directory } from "@/server/directory";
 import { isRestricted } from "@/spine/permission/types";
+import { isApprover as roleIsApprover } from "@/server/roles";
 import { Shell } from "../shell";
 import { LeaveClient } from "./leave-client";
 
@@ -35,7 +36,7 @@ export default async function LeavePage() {
     })
     .sort((a, b) => (a.fromDate < b.fromDate ? 1 : -1));
 
-  const isApprover = ["manager", "hr", "admin", "super-admin"].includes(user.role);
+  const isApprover = roleIsApprover(user.role);
 
   let pendingForApproval: Array<{
     id: string;
@@ -51,10 +52,8 @@ export default async function LeavePage() {
   if (isApprover) {
     const teamMembers =
       user.role === "manager"
-        ? Object.entries(DEMO_PEOPLE)
-            .filter(([id, p]) => id !== user.id && p.team === (DEMO_PEOPLE[user.id]?.team ?? ""))
-            .map(([id]) => id)
-        : Object.keys(DEMO_PEOPLE);
+        ? directory().teamCircleOf(user.id).filter((id) => id !== user.id)
+        : directory().activeIds();
 
     pendingForApproval = (await graph
       .find(
@@ -67,7 +66,7 @@ export default async function LeavePage() {
         return {
           id: n.id,
           employeeId,
-          employeeName: String(d.employeeName ?? DEMO_PEOPLE[employeeId]?.name ?? employeeId),
+          employeeName: String(d.employeeName ?? directory().nameOf(employeeId)),
           fromDate: String(d.fromDate ?? ""),
           toDate: String(d.toDate ?? ""),
           type: d.type ? String(d.type) : undefined,
@@ -79,7 +78,7 @@ export default async function LeavePage() {
       .sort((a, b) => (a.fromDate < b.fromDate ? 1 : -1));
   }
 
-  const peopleForSelect = Object.entries(DEMO_PEOPLE).map(([id, p]) => ({ id, name: p.name }));
+  const peopleForSelect = directory().all().filter((p) => p.active).map((p) => ({ id: p.id, name: p.name }));
 
   return (
     <Shell>

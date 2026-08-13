@@ -1,6 +1,6 @@
 import type { NodeId } from "@/spine/operation/types";
 import type { RecordStore } from "@/spine/record/types";
-import { DEMO_PEOPLE, DEMO_TEAM_LEADS } from "../shared/people-roster";
+import { directory } from "@/server/directory";
 
 export interface LeaveClash {
   nodeId: NodeId;
@@ -54,10 +54,13 @@ export async function findLeaveClashes(
   return clashes;
 }
 
+/**
+ * Who approves this person's leave. Reads the directory, so someone added today
+ * routes to their manager immediately. Block 2 replaces this with real
+ * reporting lines.
+ */
 export function teamLeadOf(employeeId: string): string | undefined {
-  const person = DEMO_PEOPLE[employeeId];
-  if (!person) return undefined;
-  return DEMO_TEAM_LEADS[person.team];
+  return directory().managerOf(employeeId);
 }
 
 let leaveSeq = 0;

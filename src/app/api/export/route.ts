@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
 import { getSessionUser } from "@/server/auth";
 import { getSpine, getWorld } from "@/server/runtime";
-import { DEMO_PEOPLE } from "@/domains/shared/people-roster";
 import { isRestricted } from "@/spine/permission/types";
 
 export const dynamic = "force-dynamic";
@@ -33,15 +32,19 @@ export async function GET(request: Request) {
 
   if (type === "employee") {
     header = ["id", "name", "role", "team", "contact"];
-    const visibleEmployees = await Promise.all(
-      Object.entries(DEMO_PEOPLE).map(async ([id, p]) => {
-        const r = await spine.read({ actor: user.id, nodeType: "employee", nodeId: id });
-        return r.found ? ([id, p] as const) : null;
-      }),
-    );
-    rows = visibleEmployees
-      .filter((x): x is NonNullable<typeof x> => x !== null)
-      .map(([id, p]) => [id, p.name, p.role, p.team, `${id}@orga.example`]);
+    // Export the real records, permission-filtered in one pass. The contact
+    // column comes from the record rather than being rebuilt from the id.
+    const visibleEmployees = await spine.readMany({
+      actor: user.id,
+      nodeType: "employee",
+    });
+    rows = visibleEmployees.map(({ nodeId, record }) => [
+      nodeId,
+      String(record.name ?? ""),
+      String(record.role ?? ""),
+      String(record.team ?? ""),
+      isRestricted(record.contact) ? "" : String(record.contact ?? ""),
+    ]);
   } else if (type === "task") {
     header = ["id", "title", "assignedTo", "status", "priority", "dueDate"];
     rows = (await graph.find("task", () => true)).map((n) => {

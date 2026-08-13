@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 import { getSessionUser } from "@/server/auth";
 import { getSpine, getWorld } from "@/server/runtime";
-import { DEMO_PEOPLE } from "@/domains/shared/people-roster";
+import { directory } from "@/server/directory";
 import { Shell } from "../shell";
 
 export default async function ExpensesPage() {
@@ -24,7 +24,9 @@ export default async function ExpensesPage() {
 
   const claimRows = (d: Record<string, unknown>) => ({
     id: String(d.id),
-    employeeName: DEMO_PEOPLE[String(d.employee ?? "")]?.name ?? String(d.employeeName ?? ""),
+    employeeName:
+      directory().get(String(d.employee ?? ""))?.name ??
+      String(d.employeeName ?? d.employee ?? ""),
     date: String(d.expenseDate ?? d.fromDate ?? ""),
     amount: (d.totalAmount ?? d.estimatedAmount ?? d.advanceAmount) as number | undefined,
     status: String(d.status ?? ""),
