@@ -6,6 +6,10 @@ import type { Spine } from "@/spine/spine";
 import * as adapters from "@/spine/adapters";
 import type { CompiledRule } from "./compiler";
 import type { AutonomyStore } from "./store";
+import {
+  cleanApprovalsToGraduate,
+  neverGraduatesCategory,
+} from "@/spine/gate/autonomy";
 
 export interface RoutineSuggestion {
   id: string;
@@ -30,8 +34,19 @@ export class AutonomyEngine {
     private readonly bus: PublishBus,
   ) {}
 
+  /**
+   * Registering a rule is the **only** place one comes into existence.
+   *
+   * It used to be created as a side effect of `recordOutcome`, which meant
+   * confirming an operation against an unheard-of rule id declared a persisted
+   * grant of authority nobody had granted. Declaring it here, deliberately,
+   * is what lets `recordOutcome` refuse to invent one.
+   */
   registerRule(rule: CompiledRule): void {
     if (!this.rules.find((r) => r.id === rule.id)) this.rules.push(rule);
+    if (!this.store.get(rule.id)) {
+      this.store.declare(rule.id, rule.author, rule.opName, rule.category);
+    }
     if (!this.subscribed) {
       this.bus.subscribe(() => this.tick(new Date().toISOString()));
       this.subscribed = true;
@@ -45,6 +60,10 @@ export class AutonomyEngine {
       if (state?.status === "suspended") continue;
       const findings = await rule.evaluate(this.graph, asOf);
       for (const finding of findings) {
+        // A rule may only emit the operation it declared. The ledger grants an
+        // earned right to a (rule, operation) pair, so a rule emitting anything
+        // else would be running under a grant that was never given for it.
+        if (finding.opName !== rule.opName) continue;
         const op = this.buildOp(rule, finding.opName, finding.args);
         const res = await this.spine.submit(op);
         if (res.status === "ran" || res.status === "awaiting-confirmation") emitted += 1;
@@ -92,18 +111,34 @@ export class AutonomyEngine {
     return suspended;
   }
 
+  /**
+   * Graduation is offered, never assumed (appendix B).
+   *
+   * The threshold used not to be checked here at all —
+   * `CLEAN_APPROVALS_TO_GRADUATE` was read only by `offerGraduation`, which
+   * decides when to *notify*. So a rule author could graduate their own rule
+   * instantly, with zero approvals behind it.
+   */
   acceptGraduation(ruleId: string, actor: ActorId): boolean {
     const state = this.store.get(ruleId);
     if (!state || state.author !== actor) return false;
     if (state.status !== "supervised") return false;
+    if (neverGraduatesCategory(state.category)) return false;
+    if (state.cleanCount < cleanApprovalsToGraduate()) return false;
     state.status = "graduated";
     this.store.set(state);
     return true;
   }
 
-  revoke(ruleId: string, _actor: ActorId): boolean {
+  /**
+   * One tap returns a rule to supervised — but only for someone entitled to.
+   * The actor was previously accepted and ignored, so anyone could revoke
+   * anyone's rule.
+   */
+  revoke(ruleId: string, actor: ActorId, opts?: { isAdmin?: boolean }): boolean {
     const state = this.store.get(ruleId);
     if (!state) return false;
+    if (state.author !== actor && opts?.isAdmin !== true) return false;
     state.status = "supervised";
     state.cleanCount = 0;
     this.store.set(state);

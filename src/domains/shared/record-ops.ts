@@ -5,6 +5,40 @@ import { providers } from "@/config/providers";
 import { doctypeForNodeType } from "@/domains/people/n1-doctypes";
 
 /**
+ * Node types whose contents are money or employment, whichever route reaches
+ * them. `record.*` takes its nodeType as a caller argument, so a static flag
+ * cannot express its risk — a generic update is harmless on a room and is a
+ * pay change on an employee.
+ */
+const MONEY_OR_PEOPLE_NODE_TYPES = new Set([
+  "employee",
+  "payslip",
+  "salary-structure",
+  "salary-slip",
+  "leave",
+  "onboarding",
+  "offboarding",
+  "expense-claim",
+  "employee-advance",
+]);
+
+const MONEY_OR_PEOPLE_FIELDS = new Set([
+  "pay",
+  "salary",
+  "grossPay",
+  "netPay",
+  "ctc",
+  "role",
+  "status",
+  "performance",
+]);
+
+function touchesMoneyOrPeople(nodeType: string, data?: RecordData): boolean {
+  if (MONEY_OR_PEOPLE_NODE_TYPES.has(nodeType)) return true;
+  return Object.keys(data ?? {}).some((f) => MONEY_OR_PEOPLE_FIELDS.has(f));
+}
+
+/**
  * Generic record operations — let any mapped DocType be created, edited, and
  * deleted from the /records browser. All three go through the gate (permission
  * + activity log + undo). In live N1 mode they also write back to Frappe.
@@ -21,8 +55,13 @@ export function recordCreateHandler(
       if (!args.data) missing.push("data");
       return missing.length === 0 ? { ok: true } : { ok: false, missing };
     },
-    permission: (args) => ({ action: "create", nodeType: args.nodeType }),
-    involvesMoneyOrPeople: () => false,
+    permission: (args) => ({
+      action: "create",
+      nodeType: args.nodeType,
+      fields: Object.keys(args.data ?? {}),
+    }),
+    involvesMoneyOrPeople: (args) => touchesMoneyOrPeople(args.nodeType, args.data),
+    category: "routine",
     execute: async (args) => {
       const id = args.id ?? `${args.nodeType}_${Date.now().toString(36)}`;
       await graph.putNode(args.nodeType, id, args.data);
@@ -52,12 +91,19 @@ export function recordUpdateHandler(
       if (!args.data) missing.push("data");
       return missing.length === 0 ? { ok: true } : { ok: false, missing };
     },
+    // Declaring the fields is what makes the field-permission layer run at
+    // all: `PermissionPolicy.can` only tests fields when it is told which
+    // ones. Without this line, `record.update` wrote any field on any record
+    // the actor could edit — including `pay` on their own employee record,
+    // which the employee/self/edit rule marks restricted.
     permission: (args) => ({
       action: "edit",
       nodeType: args.nodeType,
       recordNodeIds: [args.nodeId],
+      fields: Object.keys(args.data ?? {}),
     }),
-    involvesMoneyOrPeople: () => false,
+    involvesMoneyOrPeople: (args) => touchesMoneyOrPeople(args.nodeType, args.data),
+    category: "routine",
     execute: async (args) => {
       const before = await graph.getNode(args.nodeType, args.nodeId);
       if (!before) throw new Error(`No ${args.nodeType}:${args.nodeId}`);

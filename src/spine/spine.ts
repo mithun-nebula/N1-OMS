@@ -5,6 +5,7 @@ import type { PermissionPolicy } from "./permission/policy";
 import type { PublishBus } from "./bus";
 import {
   flattenRequirements,
+  type ChangeSummary,
   type OperationContext,
   type OperationRegistry,
   type OperationResult,
@@ -193,6 +194,18 @@ export class Spine {
   ): Promise<SubmissionResult> {
     const entry = await this.deps.log.get(activityEntryId);
     if (!entry) return { status: "not-found" };
+
+    // Undo is a write, and it used to be the only one that skipped the gate
+    // entirely — no permission check of any kind. Combined with an activity
+    // log readable by anyone, that was: find the pay change, reverse it.
+    //
+    // Reversing something requires being able to edit every record it touched.
+    // Checked before the "already undone" reply, so that reply cannot be used
+    // to probe whether an entry exists.
+    if (!this.mayUndo(entry, by)) {
+      return { status: "forbidden", opaqueMessage: OPAQUE_REFUSAL_MESSAGE };
+    }
+
     if (entry.outcome === "undone") {
       return { status: "rejected", detail: "That action was already undone." };
     }
@@ -307,6 +320,42 @@ export class Spine {
     return this.deps.permissions
       .can({ actor, action: "export", nodeType })
       .allowed;
+  }
+
+  /**
+   * Whether `by` may reverse this entry. The rule: **you can undo what you
+   * could have done.**
+   *
+   * The original arguments are not on the activity entry, so the original
+   * permission requirement cannot be replayed exactly. Three cases instead:
+   *
+   * - The original actor may always reverse their own action. They held the
+   *   right when they did it, and taking that away would make undo useless for
+   *   operations permitted by `approve` rather than `edit` — approving leave,
+   *   for one.
+   * - The open calendar carries no permission at all (appendix E3) and offers
+   *   undo to anyone affected (E5). Its safeguard is notify + record + undo,
+   *   not access control, so reversal is open too.
+   * - Otherwise: `edit` or `approve` on every record the operation touched,
+   *   including the fields it wrote. Without the field check an intern could
+   *   reverse a pay change they could never have made.
+   */
+  private mayUndo(entry: ActivityEntry, by: ActorId): boolean {
+    if (entry.actor === by) return true;
+    if (entry.changes.length === 0) return false;
+
+    return entry.changes.every((change) => {
+      if (this.deps.permissions.isOpenNodeType(change.nodeType)) return true;
+      const holds = (action: "edit" | "approve") =>
+        this.deps.permissions.can({
+          actor: by,
+          action,
+          nodeType: change.nodeType,
+          recordNodeId: change.nodeId,
+          requiredFields: fieldsTouchedBy(change),
+        }).allowed;
+      return holds("edit") || holds("approve");
+    });
   }
 
   /** Replays a serialised undo plan against the record store, in order. */
@@ -431,6 +480,20 @@ export class Spine {
     this.seq += 1;
     return `pending_${this.seq.toString(36)}`;
   }
+}
+
+/**
+ * Which fields an undo would write. Taken from both sides of the change: the
+ * `after` names what was set, the `before` what would be restored.
+ */
+function fieldsTouchedBy(change: ChangeSummary): string[] | undefined {
+  const names = new Set<string>();
+  for (const side of [change.before, change.after]) {
+    if (side && typeof side === "object" && !Array.isArray(side)) {
+      for (const key of Object.keys(side as Record<string, unknown>)) names.add(key);
+    }
+  }
+  return names.size > 0 ? [...names] : undefined;
 }
 
 export function summarizeChanges(result: OperationResult): string {

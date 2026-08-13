@@ -18,6 +18,17 @@ export class PermissionPolicy {
     private readonly readOnlyRoles: ReadonlySet<string> = new Set(["intern"]),
   ) {}
 
+  /**
+   * Whether this node type is outside the permission system entirely.
+   *
+   * The common calendar is exempt by design (appendix E3) — it is open to
+   * everyone and safeguarded by notify + record + undo instead of by access
+   * control. Callers that need to honour that exemption ask here.
+   */
+  isOpenNodeType(nodeType: string): boolean {
+    return this.openNodeTypes.has(nodeType);
+  }
+
   can(input: PermissionCheckInput): PermissionDecision {
     if (
       this.openNodeTypes.has(input.nodeType) &&

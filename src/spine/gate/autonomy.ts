@@ -63,9 +63,17 @@ export class GraduatingAutonomyPolicy implements AutonomyPolicy {
     return NEVER_GRADUATE.has(category);
   }
 
-  hasEarnedRight(ruleId: string): boolean {
+  /**
+   * An earned right belongs to a rule AND the operation it earned it for.
+   *
+   * This used to ignore `operationName` entirely, so a rule graduated for
+   * `announcement.send` was silently authorised to run all 51 operations —
+   * including generic writes to payroll records.
+   */
+  hasEarnedRight(ruleId: string, operationName: string): boolean {
     const state = this.ledger.get(ruleId);
-    return state?.status === "graduated";
+    if (state?.status !== "graduated") return false;
+    return state.opName === operationName;
   }
 
   isSuspended(ruleId: string): boolean {
@@ -77,8 +85,12 @@ export class GraduatingAutonomyPolicy implements AutonomyPolicy {
     operationName: string,
     opts: { approved: boolean; edited: boolean; category?: OperationCategory; author: string },
   ): void {
-    let state = this.ledger.get(ruleId);
-    if (!state) state = this.ledger.declare(ruleId, opts.author, operationName, opts.category);
+    // Only ever updates a rule that already exists. This used to declare one
+    // on first sight, which made confirming your own parked operation an
+    // undocumented rule-creation API — a persisted grant of authority that
+    // nobody granted.
+    const state = this.ledger.get(ruleId);
+    if (!state) return;
     if (state.status === "suspended") return;
     if (opts.category && this.neverGraduates(opts.category)) return;
     if (opts.edited) {
@@ -95,6 +107,11 @@ export class GraduatingAutonomyPolicy implements AutonomyPolicy {
     if (state.category && this.neverGraduates(state.category)) return { due: false, cleanCount: state.cleanCount };
     return { due: state.cleanCount >= CLEAN_APPROVALS_TO_GRADUATE, cleanCount: state.cleanCount };
   }
+}
+
+/** Money, employment and leaving-the-org can never run unattended. */
+export function neverGraduatesCategory(category?: OperationCategory): boolean {
+  return category !== undefined && NEVER_GRADUATE.has(category);
 }
 
 export function cleanApprovalsToGraduate(): number {

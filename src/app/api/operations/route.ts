@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getActingUser } from "@/server/session-guard";
-import { getSpine } from "@/server/runtime";
+import { getSpine, getWorld } from "@/server/runtime";
 import * as adapters from "@/spine/adapters";
 import {
   isApplicationStart,
@@ -37,6 +37,32 @@ export async function POST(request: Request) {
   } catch {
     return NextResponse.json({ error: "Invalid JSON body." }, { status: 400 });
   }
+  // ── Application starts cannot be forged ───────────────────────────────────
+  //
+  // `ruleAuthor` used to be taken from the request body and never compared to
+  // the session, and `effectiveActor` runs a delegated operation AS that
+  // person. So any signed-in user could act as anyone — and the activity log
+  // recorded the impersonated actor, not them.
+  //
+  // Two conditions now: you may only name yourself, and only against a rule
+  // that already exists. Rules are created deliberately, not by submitting
+  // against an id nobody has heard of.
+  if (isApplicationStart(body.start)) {
+    if (body.ruleAuthor !== user.id) {
+      return NextResponse.json(
+        { error: "An application start can only run under your own authority." },
+        { status: 403 },
+      );
+    }
+    const known = (await getWorld()).autonomy.get(body.ruleId ?? "");
+    if (!known) {
+      return NextResponse.json(
+        { error: "No such rule." },
+        { status: 403 },
+      );
+    }
+  }
+
   const op = buildOperation(body, user.id);
   if (!op) {
     return NextResponse.json(

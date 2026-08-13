@@ -6,6 +6,15 @@ export interface CompiledRule {
   author: string;
   plainLanguage: string;
   category: "routine";
+  /**
+   * The one operation this rule may emit.
+   *
+   * The ledger grants an earned right to a rule **and an operation**
+   * (`RuleState.opName`), but `evaluate` could previously return any operation
+   * name it liked — so the grant and the thing being run were unrelated. A rule
+   * declares its operation up front and `tick` refuses anything else.
+   */
+  opName: string;
   evaluate: (graph: RecordStore, asOf: string) => Promise<Array<{ opName: string; args: Record<string, unknown> }>>;
 }
 
@@ -19,6 +28,7 @@ export function compileRule(plainLanguage: string, author: string, ruleId: strin
       author,
       plainLanguage,
       category: "routine",
+      opName: "announcement.send",
   evaluate: async (graph, asOf) => {
     const stale = await findStaleCourses(graph, asOf, { review: days });
     return stale

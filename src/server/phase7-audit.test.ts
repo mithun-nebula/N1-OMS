@@ -56,6 +56,9 @@ describe("non-negotiable audit — every CONTEXT §13 rule holds", () => {
 
   it("§4 autonomy is earned (10 clean) and revocable", async () => {
     const { spine, autonomy } = await world();
+    // A rule must be declared before anything runs under it — creating one by
+    // confirming against an unknown id was the authority-forgery hole.
+    autonomy.declare("auto-announce", "james", "announcement.send", "routine");
     for (let i = 0; i < 10; i++) {
       const res = await spine.submit(adapters.fromStandingRule({ ruleId: "auto-announce", ruleAuthor: "james", name: "announcement.send", args: { message: "test", to: ["james"] } }));
       await spine.confirm(res.pendingId!, "james");

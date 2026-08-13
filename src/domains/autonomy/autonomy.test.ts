@@ -18,7 +18,22 @@ beforeEach(async () => {
   );
 });
 
+/**
+ * A rule now has to exist before anything can run under it.
+ *
+ * These tests used to submit against an id nobody had declared and let the
+ * first confirmation bring the rule into being — which was the vulnerability:
+ * confirming your own parked operation minted a persisted grant of authority.
+ * Declaring it up front is the real flow.
+ */
+function declareRule(ruleId: string, opName = "announcement.send") {
+  if (!world.autonomy.get(ruleId)) {
+    world.autonomy.declare(ruleId, "james", opName, "routine");
+  }
+}
+
 function standingAnnouncement(ruleId: string) {
+  declareRule(ruleId);
   return adapters.fromStandingRule({
     ruleId,
     ruleAuthor: "james",
@@ -28,6 +43,7 @@ function standingAnnouncement(ruleId: string) {
 }
 
 async function confirmTimes(ruleId: string, times: number, edited = false) {
+  declareRule(ruleId);
   let lastOffer = undefined as { ruleId: string; cleanCount: number } | undefined;
   for (let i = 0; i < times; i++) {
     const submit = await world.spine.submit(standingAnnouncement(ruleId));
@@ -69,6 +85,7 @@ describe("earning the right — an edit resets the count", () => {
 
 describe("never-graduate — money/people/leaving-org never earn autonomy", () => {
   it("a people-action rule is never offered graduation", async () => {
+    declareRule("rule-leave", "leave.request");
     for (let i = 0; i < 12; i++) {
       const submit = await world.spine.submit(
         adapters.fromStandingRule({
