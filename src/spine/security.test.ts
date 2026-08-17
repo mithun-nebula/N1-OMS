@@ -518,3 +518,69 @@ describe("person-scoping: nobody browses a colleague's day", () => {
     expect(stranger.found).toBe(false);
   });
 });
+
+describe("the open-node bypass is one type wide, not twelve", () => {
+  /**
+   * Twelve workplace types used to skip the permission system entirely. The
+   * exemption is now the common calendar alone (appendix E, by design); the
+   * other eleven run on explicit rules with the same reach the bypass gave —
+   * except an actor with no role at all, which the bypass silently allowed.
+   */
+  it("an actor with no role cannot create a task any more", async () => {
+    const { spine } = await buildDemoWorld();
+    const attack = await spine.submit(
+      adapters.fromForm({
+        actor: "ghost-with-no-account",
+        name: "task.create",
+        args: { title: "smuggled in through the bypass" },
+      }),
+    );
+    expect(attack.status).toBe("forbidden");
+  });
+
+  it("an intern is still read-only on workplace records", async () => {
+    const { spine } = await buildDemoWorld();
+    const attack = await spine.submit(
+      adapters.fromForm({
+        actor: "ravi",
+        name: "task.create",
+        args: { title: "intern-created task" },
+      }),
+    );
+    expect(attack.status).toBe("forbidden");
+  });
+
+  it("an employee still acknowledges an announcement (function preserved)", async () => {
+    const { spine, deps } = await buildDemoWorld();
+    const sent = await spine.submit(
+      adapters.fromForm({
+        actor: "james",
+        name: "announcement.send",
+        args: { message: "Fire drill on Friday", to: ["priya"] },
+      }),
+    );
+    expect(sent.status).toBe("ran");
+    const all = await deps.graph.find("announcement", () => true);
+    expect(all.length).toBeGreaterThan(0);
+    const ok = await spine.submit(
+      adapters.fromForm({
+        actor: "priya",
+        name: "announcement.ack",
+        args: { announcementId: all[0].id },
+      }),
+    );
+    expect(ok.status).toBe("ran");
+  });
+
+  it("the common calendar stays open to an employee", async () => {
+    const { spine } = await buildDemoWorld();
+    const ok = await spine.submit(
+      adapters.fromForm({
+        actor: "priya",
+        name: "calendar.create",
+        args: { title: "Open calendar entry", kind: "meeting", date: "2026-09-05" },
+      }),
+    );
+    expect(ok.status).toBe("ran");
+  });
+});

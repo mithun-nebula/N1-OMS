@@ -62,6 +62,43 @@ function adminRules(): PermissionRule[] {
   }));
 }
 
+/** The workplace types the open-node bypass used to cover. */
+const WORKPLACE_NODE_TYPES = [
+  "room",
+  "booking",
+  "meeting",
+  "meeting-decision",
+  "event",
+  "event-task",
+  "document",
+  "announcement",
+  "utility-capture",
+  "fault",
+  "task",
+];
+
+/**
+ * Function-preserving replacement for the open-node bypass: everyone reads,
+ * everyone but interns writes — exactly what the bypass allowed once
+ * `readOnlyRoles` existed. Per-record ownership for tasks and meetings is a
+ * deliberate later cut; this change replaces the mechanism, not the reach.
+ */
+function workplaceRules(): PermissionRule[] {
+  const rules: PermissionRule[] = [];
+  for (const nodeType of WORKPLACE_NODE_TYPES) {
+    for (const role of ["super-admin", "admin", "hr", "manager", "employee", "intern"] as const) {
+      rules.push({
+        role,
+        nodeType,
+        actions: role === "intern" ? ["view"] : ["view", "create", "edit"],
+        recordScope: { kind: "all" },
+        fields: { kind: "all-visible" },
+      });
+    }
+  }
+  return rules;
+}
+
 /**
  * Permission rules generated from the N1 DocType registry.
  *
@@ -163,6 +200,7 @@ function n1GeneratedRules(): PermissionRule[] {
 export const DEMO_PERMISSION_RULES: PermissionRule[] = [
   ...superAdminRules(),
   ...adminRules(),
+  ...workplaceRules(),
   ...n1GeneratedRules(),
   {
     role: "super-admin",
@@ -477,20 +515,18 @@ export class DemoRoleProvider implements RoleProvider {
   }
 }
 
-export const OPEN_NODE_TYPES = new Set([
-  "room",
-  "booking",
-  "meeting",
-  "calendar-entry",
-  "meeting-decision",
-  "event",
-  "event-task",
-  "document",
-  "announcement",
-  "utility-capture",
-  "fault",
-  "task",
-]);
+/**
+ * Node types outside the permission system entirely.
+ *
+ * Shrunk from twelve types to one: the common calendar keeps its deliberate
+ * appendix-E exemption (open to everyone, safeguarded by notify + record +
+ * undo). The other eleven moved to explicit rules in `workplaceRules()` —
+ * same reach as the bypass gave (view for everyone, create/edit for everyone
+ * but interns), but now visible in /rbac, subject to field permission, and
+ * closed to actors with no role at all, which the bypass silently allowed.
+ */
+export const OPEN_NODE_TYPES = new Set(["calendar-entry"]);
+
 
 export function buildDemoPermissionPolicy(
   owners: Map<string, ActorId>,
