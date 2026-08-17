@@ -35,11 +35,11 @@ export function DataTable<T>({
     <div className="overflow-x-auto">
       <table className="w-full min-w-full text-sm">
         <thead>
-          <tr className="border-b border-black/[.08] dark:border-white/[.12]">
+          <tr>
             {columns.map((c) => (
               <th
                 key={c.key}
-                className={`px-3 py-2 text-xs font-medium uppercase tracking-wide text-zinc-400 ${
+                className={`px-3 py-2 text-[10px] font-semibold uppercase tracking-widest text-ink-faint ${
                   c.align === "right" ? "text-right" : "text-left"
                 } ${c.hideOnMobile ? "hidden sm:table-cell" : ""}`}
               >
@@ -52,12 +52,12 @@ export function DataTable<T>({
           {rows.map((row, i) => (
             <tr
               key={rowKey(row, i)}
-              className="border-b border-black/[.04] last:border-0 dark:border-white/[.06]"
+              className="border-t border-line transition-colors hover:bg-raised"
             >
               {columns.map((c) => (
                 <td
                   key={c.key}
-                  className={`px-3 py-2 text-zinc-700 dark:text-zinc-300 ${
+                  className={`px-3 py-2 text-[13px] text-ink ${
                     c.align === "right" ? "text-right" : "text-left"
                   } ${c.hideOnMobile ? "hidden sm:table-cell" : ""}`}
                 >

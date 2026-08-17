@@ -9,12 +9,9 @@ import type { ReactNode } from "react";
 export type CardTone = "plain" | "attention" | "problem";
 
 const TONE: Record<CardTone, string> = {
-  plain:
-    "border-black/[.08] bg-white dark:border-white/[.12] dark:bg-black",
-  attention:
-    "border-amber-300 bg-amber-50 dark:border-amber-900 dark:bg-amber-950",
-  problem:
-    "border-rose-300 bg-rose-50 dark:border-rose-900 dark:bg-rose-950",
+  plain: "bg-surface shadow-card",
+  attention: "border-l-[3px] border-peach-strong bg-peach shadow-card",
+  problem: "border-l-[3px] border-rose-strong bg-rose shadow-card",
 };
 
 export function Card({
@@ -27,7 +24,7 @@ export function Card({
   className?: string;
 }) {
   return (
-    <section className={`rounded-2xl border p-5 ${TONE[tone]} ${className}`}>
+    <section className={`rise rounded-3xl p-5 ${TONE[tone]} ${className}`}>
       {children}
     </section>
   );
@@ -45,7 +42,7 @@ export function CardHeader({
 }) {
   return (
     <div className="mb-3 flex items-baseline justify-between gap-3">
-      <h2 className="text-sm font-medium uppercase tracking-wide text-zinc-500">
+      <h2 className="text-[11px] font-semibold uppercase tracking-widest text-ink-faint">
         {title}
       </h2>
       {action}

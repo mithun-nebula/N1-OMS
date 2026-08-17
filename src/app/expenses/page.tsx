@@ -3,6 +3,8 @@ import { getSessionUser } from "@/server/auth";
 import { getSpine, getWorld } from "@/server/runtime";
 import { directory } from "@/server/directory";
 import { Shell } from "../shell";
+import { Icon } from "../ui/icons";
+import { Empty, SectionTitle } from "../ui/kit";
 
 export default async function ExpensesPage() {
   const user = await getSessionUser();
@@ -39,55 +41,85 @@ export default async function ExpensesPage() {
 
   return (
     <Shell>
-      <header className="border-b border-black/[.08] px-6 py-4 dark:border-white/[.1]">
-        <h1 className="text-xl font-semibold text-black dark:text-zinc-50">Expenses & travel</h1>
-        <p className="text-sm text-zinc-400">Claims · travel requests · advances</p>
+      <header className="rise flex flex-wrap items-center justify-between gap-3 px-4 pt-6 sm:px-6">
+        <div>
+          <h1 className="text-2xl font-light tracking-tight text-ink sm:text-3xl">
+            Expenses <span className="font-extrabold">&amp; travel</span>
+          </h1>
+          <p className="mt-1 text-sm text-ink-soft">Claims, travel requests and advances.</p>
+        </div>
       </header>
-      <div className="space-y-6 p-6">
-        <ClaimTable title="Expense claims" rows={claims} />
-        <ClaimTable title="Travel requests" rows={travel} />
-        <ClaimTable title="Employee advances" rows={advances} />
-        <p className="text-xs text-zinc-400">
-          Approval and accounting posting happen in N1 — submit via N1 and they appear here on read-through.
-        </p>
+      <div className="mx-auto max-w-4xl space-y-5 p-4 sm:p-6">
+        <ClaimTable title="Expense claims" rows={claims} index={0} />
+        <ClaimTable title="Travel requests" rows={travel} index={1} />
+        <ClaimTable title="Employee advances" rows={advances} index={2} />
+        <div
+          className="rise flex items-center gap-3 rounded-2xl bg-raised px-4 py-3"
+          style={{ animationDelay: "260ms" }}
+        >
+          <span className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-accent-soft text-accent-strong">
+            <Icon name="spark" className="h-4 w-4" />
+          </span>
+          <p className="text-xs text-ink-faint">
+            This page is read-only for now — approval and accounting posting happen in N1.
+            Submit via N1 and your records appear here on read-through.
+          </p>
+        </div>
       </div>
     </Shell>
   );
 }
 
+function statusPill(status: string) {
+  if (status === "Draft" || status === "Applied") return "bg-peach text-peach-strong";
+  if (status === "Unpaid") return "bg-rose text-rose-strong";
+  return "bg-mint text-mint-strong";
+}
+
 function ClaimTable({
   title,
   rows,
+  index,
 }: {
   title: string;
   rows: Array<{ id: string; employeeName: string; date: string; amount?: number; status: string; description: string }>;
+  index: number;
 }) {
   return (
-    <section className="rounded-2xl border border-black/[.08] bg-white p-5 dark:border-white/[.12] dark:bg-black">
-      <h2 className="mb-3 text-sm font-medium uppercase tracking-wide text-zinc-500">{title} ({rows.length})</h2>
+    <section
+      className="rise rounded-3xl bg-surface p-5 shadow-card"
+      style={{ animationDelay: `${60 + index * 60}ms` }}
+    >
+      <SectionTitle>
+        {title} ({rows.length})
+      </SectionTitle>
       {rows.length === 0 ? (
-        <p className="text-sm text-zinc-400">None.</p>
+        <Empty icon="booking" text={`No ${title.toLowerCase()} to show yet.`} />
       ) : (
-        <div className="overflow-hidden rounded-xl border border-black/[.06] dark:border-white/[.08]">
+        <div className="mt-3 overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
-              <tr className="border-b border-black/[.06] bg-zinc-50 text-left text-xs uppercase tracking-wide text-zinc-400 dark:border-white/[.1] dark:bg-zinc-900">
-                <th className="px-4 py-2">Employee</th>
-                <th className="px-4 py-2">Date</th>
-                <th className="px-4 py-2">Description</th>
-                <th className="px-4 py-2">Amount</th>
-                <th className="px-4 py-2">Status</th>
+              <tr className="text-left text-[10px] uppercase tracking-widest text-ink-faint">
+                <th className="px-3 py-2 font-semibold">Employee</th>
+                <th className="px-3 py-2 font-semibold">Date</th>
+                <th className="px-3 py-2 font-semibold">Description</th>
+                <th className="px-3 py-2 font-semibold">Amount</th>
+                <th className="px-3 py-2 font-semibold">Status</th>
               </tr>
             </thead>
             <tbody>
               {rows.map((r) => (
-                <tr key={r.id} className="border-b border-black/[.04] last:border-0 dark:border-white/[.04]">
-                  <td className="px-4 py-2 font-medium text-black dark:text-zinc-50">{r.employeeName}</td>
-                  <td className="px-4 py-2 text-zinc-500">{r.date}</td>
-                  <td className="px-4 py-2 text-zinc-500">{r.description}</td>
-                  <td className="px-4 py-2 text-zinc-500">{r.amount !== undefined ? `₹${r.amount.toLocaleString()}` : "—"}</td>
-                  <td className="px-4 py-2">
-                    <span className={`rounded-full px-2 py-0.5 text-xs ${r.status === "Draft" || r.status === "Applied" ? "bg-amber-100 text-amber-700" : r.status === "Unpaid" ? "bg-rose-100 text-rose-700" : "bg-teal-100 text-teal-700"}`}>{r.status}</span>
+                <tr key={r.id} className="border-t border-line transition-colors hover:bg-raised">
+                  <td className="px-3 py-2.5 text-[13px] font-medium text-ink">{r.employeeName}</td>
+                  <td className="px-3 py-2.5 text-[13px] text-ink-soft">{r.date}</td>
+                  <td className="px-3 py-2.5 text-[13px] text-ink-soft">{r.description}</td>
+                  <td className="px-3 py-2.5 text-[13px] text-ink-soft">
+                    {r.amount !== undefined ? `₹${r.amount.toLocaleString()}` : "—"}
+                  </td>
+                  <td className="px-3 py-2.5">
+                    <span className={`rounded-full px-2.5 py-0.5 text-[11px] font-semibold ${statusPill(r.status)}`}>
+                      {r.status}
+                    </span>
                   </td>
                 </tr>
               ))}

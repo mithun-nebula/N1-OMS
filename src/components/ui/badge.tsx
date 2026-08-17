@@ -7,11 +7,11 @@ export type BadgeTone = "neutral" | "info" | "good" | "warn" | "bad";
  * so priority pills were unreadable in dark mode.
  */
 const TONE: Record<BadgeTone, string> = {
-  neutral: "bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300",
-  info: "bg-teal-100 text-teal-800 dark:bg-teal-950 dark:text-teal-300",
-  good: "bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300",
-  warn: "bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300",
-  bad: "bg-rose-100 text-rose-800 dark:bg-rose-950 dark:text-rose-300",
+  neutral: "bg-raised text-ink-faint",
+  info: "bg-lilac text-lilac-strong",
+  good: "bg-mint text-mint-strong",
+  warn: "bg-peach text-peach-strong",
+  bad: "bg-rose text-rose-strong",
 };
 
 export function Badge({
@@ -23,7 +23,7 @@ export function Badge({
 }) {
   return (
     <span
-      className={`inline-block rounded-full px-2 py-0.5 text-xs font-medium ${TONE[tone]}`}
+      className={`inline-block rounded-full px-2 py-0.5 text-[11px] font-semibold ${TONE[tone]}`}
     >
       {children}
     </span>

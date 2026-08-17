@@ -1,8 +1,9 @@
 "use client";
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
 import { isManagerOrAbove } from "@/server/roles";
+import { AccentButton, ChromeButton, Empty, inputCls, OpFeedback, SectionTitle } from "../ui/kit";
+import { useOperation } from "@/components/ops/use-operation";
 
 interface DocItem {
   id: string;
@@ -25,9 +26,9 @@ export function DocumentsClient({
   expiring: Array<{ id: string; name: string; expiresOn: string; daysLeft: number }>;
   actorRole: string;
 }) {
-  const router = useRouter();
+  const op = useOperation();
+  const busy = op.busy;
   const [showForm, setShowForm] = useState(false);
-  const [busy, setBusy] = useState(false);
   const [form, setForm] = useState({
     name: "",
     nodeType: "employee",
@@ -42,113 +43,147 @@ export function DocumentsClient({
 
   async function store() {
     if (!form.name || !form.nodeType || !form.nodeId) return;
-    setBusy(true);
-    const res = await fetch("/api/operations", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        start: "form",
-        name: "document.store",
-        args: {
-          name: form.name,
-          nodeType: form.nodeType,
-          nodeId: form.nodeId,
-          contentType: form.contentType,
-          blobRef: form.blobRef || undefined,
-          required: form.required || undefined,
-          expiresOn: form.expiresOn || undefined,
-        },
-      }),
+    const outcome = await op.run("document.store", {
+      name: form.name,
+      nodeType: form.nodeType,
+      nodeId: form.nodeId,
+      contentType: form.contentType,
+      blobRef: form.blobRef || undefined,
+      required: form.required || undefined,
+      expiresOn: form.expiresOn || undefined,
     });
-    const data = await res.json();
-    setBusy(false);
-    if (data.status === "ran") {
+    if (outcome.status === "ran") {
       setShowForm(false);
       setForm({ ...form, name: "", nodeId: "", blobRef: "", expiresOn: "" });
-      router.refresh();
     }
   }
 
   return (
-    <div className="space-y-6 p-6">
+    <div className="mx-auto max-w-4xl space-y-5 p-4 sm:p-6">
+      {/* Expiry warning — rose "needs attention" card. */}
       {expiring.length > 0 && (
-        <section className="rounded-2xl border border-rose-300 bg-rose-50 p-5 dark:border-rose-900 dark:bg-rose-950">
-          <h2 className="mb-2 text-sm font-medium uppercase tracking-wide text-rose-700 dark:text-rose-400">
+        <section
+          className="rise rounded-3xl border-l-[3px] border-rose-strong bg-rose p-5 shadow-card"
+          style={{ animationDelay: "60ms" }}
+        >
+          <h2 className="text-[11px] font-semibold uppercase tracking-widest text-rose-strong">
             Expiring within 30 days
           </h2>
-          <div className="space-y-1">
-            {expiring.map((e) => (
-              <div key={e.id} className="text-sm text-rose-800 dark:text-rose-200">
-                {e.name} — expires {e.expiresOn} ({e.daysLeft} day{e.daysLeft === 1 ? "" : "s"})
+          <div className="mt-3 space-y-2">
+            {expiring.map((e, i) => (
+              <div
+                key={e.id}
+                className="rise flex flex-wrap items-center justify-between gap-2 rounded-2xl bg-surface/80 px-3.5 py-2.5"
+                style={{ animationDelay: `${100 + i * 50}ms` }}
+              >
+                <span className="text-[13px] font-semibold text-ink">{e.name}</span>
+                <span className="text-[11px] text-ink-soft">
+                  expires {e.expiresOn}
+                  <span className="ml-2 rounded-full bg-rose px-2 py-0.5 text-[10px] font-bold text-rose-strong">
+                    {e.daysLeft} day{e.daysLeft === 1 ? "" : "s"} left
+                  </span>
+                </span>
               </div>
             ))}
           </div>
         </section>
       )}
 
-      <section className="rounded-2xl border border-black/[.08] bg-white p-5 dark:border-white/[.12] dark:bg-black">
-        <div className="mb-3 flex items-center justify-between">
-          <h2 className="text-sm font-medium uppercase tracking-wide text-zinc-500">All documents</h2>
+      {/* Register. */}
+      <section className="rise rounded-3xl bg-surface p-5 shadow-card" style={{ animationDelay: "130ms" }}>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <SectionTitle>All documents</SectionTitle>
           {canStore && (
-            <button onClick={() => setShowForm(!showForm)} className="rounded-lg bg-teal-700 px-4 py-1.5 text-sm font-medium text-white">
+            <ChromeButton onClick={() => setShowForm(!showForm)}>
               {showForm ? "Close" : "+ File document"}
-            </button>
+            </ChromeButton>
           )}
         </div>
 
         {showForm && (
-          <div className="mb-4 space-y-3 rounded-xl border border-dashed border-black/[.12] p-4 dark:border-white/[.15]">
+          <div className="pop-in mt-4 space-y-3">
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-              <input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="Document name" className="rounded-lg border border-black/[.12] px-3 py-2 text-sm dark:border-white/[.2] dark:bg-black dark:text-zinc-50" />
-              <select value={form.nodeType} onChange={(e) => setForm({ ...form, nodeType: e.target.value })} className="rounded-lg border border-black/[.12] px-3 py-2 text-sm dark:border-white/[.2] dark:bg-black dark:text-zinc-50">
+              <input
+                value={form.name}
+                onChange={(e) => setForm({ ...form, name: e.target.value })}
+                placeholder="Document name"
+                className={`${inputCls} w-full py-2`}
+              />
+              <select
+                value={form.nodeType}
+                onChange={(e) => setForm({ ...form, nodeType: e.target.value })}
+                className={`${inputCls} w-full py-2`}
+              >
                 <option value="employee">Employee</option>
                 <option value="course">Course</option>
                 <option value="event">Event</option>
               </select>
-              <input value={form.nodeId} onChange={(e) => setForm({ ...form, nodeId: e.target.value })} placeholder="Record id (e.g. priya)" className="rounded-lg border border-black/[.12] px-3 py-2 text-sm dark:border-white/[.2] dark:bg-black dark:text-zinc-50" />
-              <input value={form.blobRef} onChange={(e) => setForm({ ...form, blobRef: e.target.value })} placeholder="Blob ref (cloud storage deferred)" className="rounded-lg border border-black/[.12] px-3 py-2 text-sm dark:border-white/[.2] dark:bg-black dark:text-zinc-50" />
-              <input type="date" value={form.expiresOn} onChange={(e) => setForm({ ...form, expiresOn: e.target.value })} className="rounded-lg border border-black/[.12] px-3 py-2 text-sm dark:border-white/[.2] dark:bg-black dark:text-zinc-50" />
-              <label className="flex items-center gap-2 text-sm text-zinc-500">
-                <input type="checkbox" checked={form.required} onChange={(e) => setForm({ ...form, required: e.target.checked })} className="accent-teal-700" />
+              <input
+                value={form.nodeId}
+                onChange={(e) => setForm({ ...form, nodeId: e.target.value })}
+                placeholder="Record id (e.g. priya)"
+                className={`${inputCls} w-full py-2`}
+              />
+              <input
+                value={form.blobRef}
+                onChange={(e) => setForm({ ...form, blobRef: e.target.value })}
+                placeholder="Blob ref (cloud storage deferred)"
+                className={`${inputCls} w-full py-2`}
+              />
+              <input
+                type="date"
+                value={form.expiresOn}
+                onChange={(e) => setForm({ ...form, expiresOn: e.target.value })}
+                className={`${inputCls} w-full py-2`}
+              />
+              <label className="flex items-center gap-2 text-xs font-medium text-ink-soft">
+                <input
+                  type="checkbox"
+                  checked={form.required}
+                  onChange={(e) => setForm({ ...form, required: e.target.checked })}
+                  className="accent-accent-strong"
+                />
                 Required document
               </label>
             </div>
-            <button onClick={store} disabled={busy || !form.name || !form.nodeId} className="rounded-lg bg-black px-4 py-1.5 text-sm font-medium text-white disabled:opacity-40 dark:bg-white dark:text-black">Store</button>
+            <AccentButton onClick={store} disabled={busy || !form.name || !form.nodeId}>
+              {busy ? "Storing…" : "Store"}
+            </AccentButton>
           </div>
         )}
 
         {documents.length === 0 ? (
-          <p className="text-sm text-zinc-400">No documents filed yet.</p>
+          <Empty icon="projects" text="No documents filed yet — the register is empty." />
         ) : (
-          <div className="overflow-hidden rounded-xl border border-black/[.06] dark:border-white/[.08]">
+          <div className="mt-3 overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
-                <tr className="border-b border-black/[.06] bg-zinc-50 text-left text-xs uppercase tracking-wide text-zinc-400 dark:border-white/[.1] dark:bg-zinc-900">
-                  <th className="px-4 py-2">Name</th>
-                  <th className="px-4 py-2">On record</th>
-                  <th className="px-4 py-2">Version</th>
-                  <th className="px-4 py-2">Status</th>
-                  <th className="px-4 py-2">Access</th>
+                <tr className="text-left text-[10px] uppercase tracking-widest text-ink-faint">
+                  <th className="px-3 py-2 font-semibold">Name</th>
+                  <th className="px-3 py-2 font-semibold">On record</th>
+                  <th className="px-3 py-2 font-semibold">Version</th>
+                  <th className="px-3 py-2 font-semibold">Status</th>
+                  <th className="px-3 py-2 font-semibold">Access</th>
                 </tr>
               </thead>
               <tbody>
                 {documents.map((d) => (
-                  <tr key={d.id} className="border-b border-black/[.04] last:border-0 dark:border-white/[.04]">
-                    <td className="px-4 py-2 font-medium text-black dark:text-zinc-50">{d.name}</td>
-                    <td className="px-4 py-2 text-zinc-500">{d.nodeType}:{d.nodeId}</td>
-                    <td className="px-4 py-2 text-zinc-500">v{d.version}</td>
-                    <td className="px-4 py-2">
+                  <tr key={d.id} className="border-t border-line transition-colors hover:bg-raised">
+                    <td className="px-3 py-2.5 text-[13px] font-semibold text-ink">{d.name}</td>
+                    <td className="px-3 py-2.5 text-[13px] text-ink-soft">{d.nodeType}:{d.nodeId}</td>
+                    <td className="px-3 py-2.5 text-[13px] text-ink-soft">v{d.version}</td>
+                    <td className="px-3 py-2.5">
                       {d.required && d.version === 0 ? (
-                        <span className="rounded-full bg-rose-100 px-2 py-0.5 text-xs text-rose-700">Required · missing</span>
+                        <span className="rounded-full bg-rose px-2.5 py-0.5 text-[11px] font-semibold text-rose-strong">Required · missing</span>
                       ) : d.required ? (
-                        <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs text-amber-700">Required · supplied</span>
+                        <span className="rounded-full bg-peach px-2.5 py-0.5 text-[11px] font-semibold text-peach-strong">Required · supplied</span>
                       ) : d.expiresOn ? (
-                        <span className="rounded-full bg-zinc-100 px-2 py-0.5 text-xs text-zinc-500">Expires {d.expiresOn}</span>
+                        <span className="rounded-full bg-raised px-2.5 py-0.5 text-[11px] font-semibold text-ink-faint">Expires {d.expiresOn}</span>
                       ) : (
-                        <span className="text-xs text-zinc-400">supplied</span>
+                        <span className="text-[11px] text-ink-faint">supplied</span>
                       )}
                     </td>
-                    <td className="px-4 py-2 text-xs text-zinc-400">{d.roleAccess.join(", ") || "—"}</td>
+                    <td className="px-3 py-2.5 text-xs text-ink-faint">{d.roleAccess.join(", ") || "—"}</td>
                   </tr>
                 ))}
               </tbody>
@@ -156,6 +191,15 @@ export function DocumentsClient({
           </div>
         )}
       </section>
+
+      <OpFeedback
+        error={op.error}
+        confirmation={op.confirmation}
+        busy={op.busy}
+        onConfirm={() => op.confirm()}
+        onCancel={op.cancel}
+        onDismiss={op.reset}
+      />
     </div>
   );
 }

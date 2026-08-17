@@ -1,7 +1,9 @@
 "use client";
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { Icon } from "../ui/icons";
+import { AccentButton, AvatarStack, Bar, ChromeButton, Empty, inputCls, OpFeedback } from "../ui/kit";
+import { useOperation } from "@/components/ops/use-operation";
 
 interface EventItem {
   id: string;
@@ -23,9 +25,9 @@ export function EventsClient({
   people: Array<{ id: string; name: string }>;
   actorId: string;
 }) {
-  const router = useRouter();
+  const op = useOperation();
+  const busy = op.busy;
   const [showForm, setShowForm] = useState(false);
-  const [busy, setBusy] = useState(false);
   const [form, setForm] = useState({ title: "", date: "", capacity: "", budgetLimit: "" });
   const [taskText, setTaskText] = useState<{ [id: string]: string }>({});
   const [closeReport, setCloseReport] = useState<{ [id: string]: string }>({});
@@ -34,90 +36,163 @@ export function EventsClient({
   const nowMs = new Date().getTime();
 
   async function run(name: string, args: Record<string, unknown>) {
-    setBusy(true);
-    await fetch("/api/operations", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ start: "form", name, args }),
-    });
-    setBusy(false);
-    router.refresh();
+    await op.run(name, args);
   }
 
   async function create() {
     if (!form.title || !form.date) return;
-    await run("event.create", {
+    const outcome = await op.run("event.create", {
       title: form.title,
       date: form.date,
       capacity: form.capacity ? Number(form.capacity) : undefined,
       budgetLimit: form.budgetLimit ? Number(form.budgetLimit) : undefined,
     });
-    setShowForm(false);
-    setForm({ title: "", date: "", capacity: "", budgetLimit: "" });
+    if (outcome.status === "ran") {
+      setShowForm(false);
+      setForm({ title: "", date: "", capacity: "", budgetLimit: "" });
+    }
   }
 
   return (
-    <div className="space-y-6 p-6">
-      <div className="flex items-center justify-between">
-        <p className="text-sm text-zinc-400">{events.length} events</p>
-        <button onClick={() => setShowForm(!showForm)} className="rounded-lg bg-teal-700 px-4 py-1.5 text-sm font-medium text-white">
+    <div className="mx-auto max-w-4xl space-y-5 p-4 sm:p-6">
+      <div className="rise flex items-center justify-between" style={{ animationDelay: "60ms" }}>
+        <p className="text-[11px] font-medium text-ink-faint">
+          {events.length} event{events.length === 1 ? "" : "s"}
+        </p>
+        <ChromeButton onClick={() => setShowForm(!showForm)}>
           {showForm ? "Close" : "+ New event"}
-        </button>
+        </ChromeButton>
       </div>
 
       {showForm && (
-        <div className="space-y-3 rounded-xl border border-dashed border-black/[.12] p-4 dark:border-white/[.15]">
-          <div className="flex flex-wrap gap-3">
-            <input value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} placeholder="Event title" className="flex-1 rounded-lg border border-black/[.12] px-3 py-1.5 text-sm dark:border-white/[.2] dark:bg-black dark:text-zinc-50" />
-            <input type="date" value={form.date} onChange={(e) => setForm({ ...form, date: e.target.value })} className="rounded-lg border border-black/[.12] px-3 py-1.5 text-sm dark:border-white/[.2] dark:bg-black dark:text-zinc-50" />
-            <input type="number" value={form.capacity} onChange={(e) => setForm({ ...form, capacity: e.target.value })} placeholder="Capacity" className="w-28 rounded-lg border border-black/[.12] px-3 py-1.5 text-sm dark:border-white/[.2] dark:bg-black dark:text-zinc-50" />
-            <input type="number" value={form.budgetLimit} onChange={(e) => setForm({ ...form, budgetLimit: e.target.value })} placeholder="Budget ₹" className="w-32 rounded-lg border border-black/[.12] px-3 py-1.5 text-sm dark:border-white/[.2] dark:bg-black dark:text-zinc-50" />
+        <div className="pop-in space-y-3 rounded-3xl bg-surface p-4 shadow-card">
+          <input
+            value={form.title}
+            onChange={(e) => setForm({ ...form, title: e.target.value })}
+            placeholder="Event title"
+            className={`${inputCls} w-full py-2`}
+          />
+          <div className="flex flex-wrap gap-2">
+            <input type="date" value={form.date} onChange={(e) => setForm({ ...form, date: e.target.value })} className={inputCls} />
+            <input type="number" value={form.capacity} onChange={(e) => setForm({ ...form, capacity: e.target.value })} placeholder="Capacity" className={`${inputCls} w-28`} />
+            <input type="number" value={form.budgetLimit} onChange={(e) => setForm({ ...form, budgetLimit: e.target.value })} placeholder="Budget ₹" className={`${inputCls} w-32`} />
           </div>
-          <button onClick={create} disabled={busy || !form.title} className="rounded-lg bg-black px-4 py-1.5 text-sm font-medium text-white disabled:opacity-40 dark:bg-white dark:text-black">Create</button>
+          <AccentButton onClick={create} disabled={busy || !form.title}>
+            {busy ? "Creating…" : "Create"}
+          </AccentButton>
         </div>
       )}
 
-      <div className="space-y-4">
-        {events.length === 0 && <p className="text-sm text-zinc-400">No events yet.</p>}
-        {events.map((e) => {
+      {events.length === 0 && (
+        <Empty icon="calendar" text="No events yet — plan the first one." />
+      )}
+      <div className="space-y-3">
+        {events.map((e, i) => {
           const overdueTasks = e.tasks.filter((t) => !t.done && t.due && String(t.due) < today).length;
           const daysOut = Math.ceil((new Date(e.date).getTime() - nowMs) / 86400000);
+          const doneTasks = e.tasks.filter((t) => t.done).length;
+          const statusPill =
+            e.status === "closed"
+              ? { cls: "bg-raised text-ink-faint", text: "closed" }
+              : daysOut < 0
+                ? { cls: "bg-rose text-rose-strong", text: "past" }
+                : daysOut === 0
+                  ? { cls: "bg-peach text-peach-strong", text: "today" }
+                  : { cls: "bg-mint text-mint-strong", text: `in ${daysOut}d` };
           return (
-            <div key={e.id} className="rounded-2xl border border-black/[.08] bg-white p-5 dark:border-white/[.12] dark:bg-black">
-              <div className="flex items-center justify-between">
-                <div>
-                  <span className="font-medium text-black dark:text-zinc-50">{e.title}</span>
-                  <span className="ml-3 text-xs text-zinc-400">{e.date}</span>
-                  <span className={`ml-2 rounded-full px-2 py-0.5 text-xs ${e.status === "closed" ? "bg-zinc-100 text-zinc-500" : daysOut < 0 ? "bg-rose-100 text-rose-700" : "bg-teal-100 text-teal-700"}`}>
-                    {e.status === "closed" ? "closed" : daysOut < 0 ? "past" : daysOut === 0 ? "today" : `in ${daysOut}d`}
+            <div
+              key={e.id}
+              className="rise lift rounded-3xl bg-surface p-5 shadow-card"
+              style={{ animationDelay: `${120 + i * 50}ms` }}
+            >
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="min-w-0">
+                  <span className="text-[14px] font-semibold text-ink">{e.title}</span>
+                  <span className="ml-2 inline-flex items-center gap-1 text-[11px] text-ink-soft">
+                    <Icon name="calendar" className="h-3 w-3" />
+                    {e.date}
+                  </span>
+                  <span className={`ml-2 rounded-full px-2 py-0.5 text-[10px] font-bold ${statusPill.cls}`}>
+                    {statusPill.text}
                   </span>
                 </div>
                 {e.status !== "closed" && (
-                  <button onClick={() => setClosing(closing === e.id ? null : e.id)} className="text-xs text-zinc-500">Close →</button>
+                  <button
+                    onClick={() => setClosing(closing === e.id ? null : e.id)}
+                    className="press text-[11px] font-medium text-accent-strong hover:underline"
+                  >
+                    Close →
+                  </button>
                 )}
               </div>
 
-              <div className="mt-3 grid grid-cols-2 gap-4 text-xs text-zinc-500 sm:grid-cols-4">
-                <div><span className="text-zinc-400">Registrations</span><br />{e.registrations.length}{e.capacity ? ` / ${e.capacity}` : ""}</div>
-                <div><span className="text-zinc-400">Tasks</span><br />{e.tasks.filter((t) => t.done).length} / {e.tasks.length}{overdueTasks > 0 && <span className="text-rose-500"> · {overdueTasks} overdue</span>}</div>
-                <div><span className="text-zinc-400">Spent</span><br />₹{e.budget?.spent ?? 0}{e.budget?.limit ? ` / ${e.budget.limit}` : ""}</div>
-                <div className="flex items-end">
-                  {e.status !== "closed" && !e.registrations.includes(actorId) && (
-                    <button onClick={() => run("event.register", { eventId: e.id, attendee: actorId })} disabled={busy} className="rounded-lg border border-teal-700 px-3 py-1 text-teal-700 disabled:opacity-40">Register me</button>
+              <div className="mt-3 grid grid-cols-2 gap-2.5 sm:grid-cols-4">
+                <div className="rounded-xl bg-raised px-3 py-2">
+                  <div className="text-[10px] font-semibold uppercase tracking-widest text-ink-faint">Registrations</div>
+                  <div className="mt-0.5 flex items-center gap-2 text-[13px] font-semibold text-ink">
+                    {e.registrations.length}{e.capacity ? ` / ${e.capacity}` : ""}
+                    {e.registrations.length > 0 && <AvatarStack names={e.registrations} max={3} />}
+                  </div>
+                </div>
+                <div className="rounded-xl bg-raised px-3 py-2">
+                  <div className="text-[10px] font-semibold uppercase tracking-widest text-ink-faint">Tasks</div>
+                  <div className="mt-0.5 text-[13px] font-semibold text-ink">
+                    {doneTasks} / {e.tasks.length}
+                    {overdueTasks > 0 && (
+                      <span className="ml-1.5 text-[11px] font-semibold text-danger">· {overdueTasks} overdue</span>
+                    )}
+                  </div>
+                  {e.tasks.length > 0 && (
+                    <div className="mt-1.5 flex">
+                      <Bar pct={(doneTasks / e.tasks.length) * 100} tone="bg-mint-strong" />
+                    </div>
                   )}
-                  {e.registrations.includes(actorId) && <span className="text-teal-600">✓ registered</span>}
+                </div>
+                <div className="rounded-xl bg-raised px-3 py-2">
+                  <div className="text-[10px] font-semibold uppercase tracking-widest text-ink-faint">Spent</div>
+                  <div className="mt-0.5 text-[13px] font-semibold text-ink">
+                    ₹{e.budget?.spent ?? 0}{e.budget?.limit ? ` / ${e.budget.limit}` : ""}
+                  </div>
+                  {e.budget?.limit ? (
+                    <div className="mt-1.5 flex">
+                      <Bar pct={((e.budget?.spent ?? 0) / e.budget.limit) * 100} />
+                    </div>
+                  ) : null}
+                </div>
+                <div className="flex items-center rounded-xl bg-raised px-3 py-2">
+                  {e.status !== "closed" && !e.registrations.includes(actorId) && (
+                    <button
+                      onClick={() => run("event.register", { eventId: e.id, attendee: actorId })}
+                      disabled={busy}
+                      className="press rounded-full bg-accent-soft px-3 py-1.5 text-xs font-semibold text-accent-strong disabled:opacity-40"
+                    >
+                      Register me
+                    </button>
+                  )}
+                  {e.registrations.includes(actorId) && (
+                    <span className="rounded-full bg-mint px-2.5 py-0.5 text-[11px] font-semibold text-mint-strong">
+                      ✓ registered
+                    </span>
+                  )}
                 </div>
               </div>
 
               {e.status !== "closed" && (
-                <div className="mt-3 border-t border-black/[.06] pt-3 dark:border-white/[.06]">
-                  <div className="mb-1 text-xs font-medium uppercase tracking-wide text-zinc-400">Tasks</div>
+                <div className="mt-3 border-t border-line pt-3">
+                  <div className="mb-1.5 text-[10px] font-semibold uppercase tracking-widest text-ink-faint">Tasks</div>
                   {e.tasks.length > 0 && (
                     <div className="mb-2 space-y-1">
-                      {e.tasks.map((t, i) => (
-                        <div key={i} className="text-xs text-zinc-600 dark:text-zinc-300">
-                          {t.done ? "✓" : "○"} {String(t.text ?? "")} {t.owner ? `· ${t.owner}` : ""} {t.due ? `· due ${String(t.due)}` : ""}
-                          {!t.done && t.due != null && String(t.due) < today && <span className="text-rose-500"> · overdue</span>}
+                      {e.tasks.map((t, ti) => (
+                        <div key={ti} className="flex items-center gap-1.5 text-xs text-ink-soft">
+                          <span className={t.done ? "text-mint-strong" : "text-ink-faint"}>
+                            {t.done ? <Icon name="check" className="h-3 w-3" /> : "○"}
+                          </span>
+                          <span className={t.done ? "line-through opacity-60" : ""}>
+                            {String(t.text ?? "")} {t.owner ? `· ${t.owner}` : ""} {t.due ? `· due ${String(t.due)}` : ""}
+                          </span>
+                          {!t.done && t.due != null && String(t.due) < today && (
+                            <span className="font-semibold text-danger">· overdue</span>
+                          )}
                         </div>
                       ))}
                     </div>
@@ -127,33 +202,55 @@ export function EventsClient({
                       value={taskText[e.id] ?? ""}
                       onChange={(ev) => setTaskText({ ...taskText, [e.id]: ev.target.value })}
                       placeholder="Add a task"
-                      className="flex-1 rounded-lg border border-black/[.12] px-2 py-1 text-xs dark:border-white/[.2] dark:bg-black dark:text-zinc-50"
+                      className={`${inputCls} flex-1`}
                     />
                     <button
                       onClick={() => { if (taskText[e.id]?.trim()) { run("event.addTask", { eventId: e.id, text: taskText[e.id].trim() }); setTaskText({ ...taskText, [e.id]: "" }); } }}
                       disabled={busy || !taskText[e.id]?.trim()}
-                      className="rounded-lg bg-black px-2 py-1 text-xs font-medium text-white disabled:opacity-40 dark:bg-white dark:text-black"
-                    >Add</button>
+                      className="press rounded-lg bg-chrome px-2.5 py-1 text-[11px] font-semibold text-chrome-ink disabled:opacity-40"
+                    >
+                      Add
+                    </button>
                   </div>
                 </div>
               )}
 
               {closing === e.id && (
-                <div className="mt-3 space-y-2 rounded-lg bg-zinc-50 p-3 dark:bg-zinc-900">
-                  <textarea value={closeReport[e.id] ?? ""} onChange={(ev) => setCloseReport({ ...closeReport, [e.id]: ev.target.value })} placeholder="Closing report" rows={2} className="w-full rounded-lg border border-black/[.12] px-2 py-1 text-xs dark:border-white/[.2] dark:bg-black dark:text-zinc-50" />
-                  <button
+                <div className="pop-in mt-3 space-y-2 rounded-2xl bg-raised p-3">
+                  <textarea
+                    value={closeReport[e.id] ?? ""}
+                    onChange={(ev) => setCloseReport({ ...closeReport, [e.id]: ev.target.value })}
+                    placeholder="Closing report"
+                    rows={2}
+                    className={`${inputCls} w-full py-2`}
+                  />
+                  <AccentButton
                     onClick={() => { if (closeReport[e.id]?.trim()) { run("event.close", { eventId: e.id, report: closeReport[e.id].trim() }); setClosing(null); } }}
                     disabled={busy || !closeReport[e.id]?.trim()}
-                    className="rounded-lg bg-zinc-800 px-3 py-1 text-xs font-medium text-white disabled:opacity-40"
-                  >Submit closing report</button>
+                  >
+                    Submit closing report
+                  </AccentButton>
                 </div>
               )}
 
-              {e.report && <div className="mt-3 rounded-lg bg-zinc-50 p-3 text-xs text-zinc-600 dark:bg-zinc-900 dark:text-zinc-300"><span className="font-medium">Closing report:</span> {e.report}</div>}
+              {e.report && (
+                <div className="mt-3 rounded-2xl bg-raised p-3 text-xs text-ink-soft">
+                  <span className="font-semibold text-ink">Closing report:</span> {e.report}
+                </div>
+              )}
             </div>
           );
         })}
       </div>
+
+      <OpFeedback
+        error={op.error}
+        confirmation={op.confirmation}
+        busy={op.busy}
+        onConfirm={() => op.confirm()}
+        onCancel={op.cancel}
+        onDismiss={op.reset}
+      />
     </div>
   );
 }

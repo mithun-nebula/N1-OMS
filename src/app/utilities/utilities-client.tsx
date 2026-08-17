@@ -1,7 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { AccentButton, Empty, inputCls, OpFeedback, SectionTitle } from "../ui/kit";
+import { useOperation } from "@/components/ops/use-operation";
 
 interface Capture {
   id: string;
@@ -23,43 +24,29 @@ export function UtilitiesClient({
   today: string;
   history: Capture[];
 }) {
-  const router = useRouter();
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const op = useOperation();
+  const busy = op.busy;
+  const [limitError, setLimitError] = useState<string | null>(null);
   const [form, setForm] = useState({ subject: "", detail: "", from: "", to: "" });
   const [fromFilter, setFromFilter] = useState("");
   const [toFilter, setToFilter] = useState("");
 
   async function capture() {
     if (!form.subject || !form.detail) return;
-    setBusy(true);
-    setError(null);
-    const res = await fetch("/api/operations", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        start: "form",
-        name: "utility.capture",
-        args: {
-          subject: form.subject,
-          detail: form.detail,
-          from: form.from || undefined,
-          to: form.to || undefined,
-        },
-      }),
+    setLimitError(null);
+    const outcome = await op.run("utility.capture", {
+      subject: form.subject,
+      detail: form.detail,
+      from: form.from || undefined,
+      to: form.to || undefined,
     });
-    const data = await res.json();
-    setBusy(false);
-    const captured = data.result?.response?.captured;
-    if (data.status === "ran" && captured === false) {
-      setError(data.result.response.reason ?? "Two-questions-per-day limit reached.");
-      return;
-    }
-    if (data.status === "ran") {
+    if (outcome.status === "ran") {
+      const resp = outcome.response as { captured?: boolean; reason?: string } | undefined;
+      if (resp?.captured === false) {
+        setLimitError(resp.reason ?? "Two-questions-per-day limit reached.");
+        return;
+      }
       setForm({ subject: "", detail: "", from: "", to: "" });
-      router.refresh();
-    } else {
-      setError(data.detail ?? data.opaqueMessage ?? "Could not capture.");
     }
   }
 
@@ -70,51 +57,113 @@ export function UtilitiesClient({
   });
 
   return (
-    <div className="space-y-6 p-6">
-      <section className="rounded-2xl border border-black/[.08] bg-white p-5 dark:border-white/[.12] dark:bg-black">
-        <div className="mb-3 flex items-center justify-between">
-          <h2 className="text-sm font-medium uppercase tracking-wide text-zinc-500">Capture</h2>
-          <span className={`rounded-full px-3 py-1 text-xs ${remaining > 0 ? "bg-teal-100 text-teal-700" : "bg-rose-100 text-rose-700"}`}>
+    <div className="mx-auto max-w-4xl space-y-5 p-4 sm:p-6">
+      <section className="rise rounded-3xl bg-surface p-5 shadow-card" style={{ animationDelay: "60ms" }}>
+        <div className="flex items-center justify-between">
+          <SectionTitle>Capture</SectionTitle>
+          <span
+            className={`rounded-full px-2.5 py-0.5 text-[11px] font-semibold ${
+              remaining > 0 ? "bg-mint text-mint-strong" : "bg-rose text-rose-strong"
+            }`}
+          >
             {remaining} of 2 remaining today
           </span>
         </div>
-        <div className="space-y-3">
-          <input value={form.subject} onChange={(e) => setForm({ ...form, subject: e.target.value })} placeholder="Room / utility (e.g. “Hall 1 AC”)" className="w-full rounded-lg border border-black/[.12] px-3 py-2 text-sm dark:border-white/[.2] dark:bg-black dark:text-zinc-50" />
-          <input value={form.detail} onChange={(e) => setForm({ ...form, detail: e.target.value })} placeholder="Detail (e.g. “on, 9 to 6”)" className="w-full rounded-lg border border-black/[.12] px-3 py-2 text-sm dark:border-white/[.2] dark:bg-black dark:text-zinc-50" />
-          <div className="flex gap-3">
-            <input type="time" value={form.from} onChange={(e) => setForm({ ...form, from: e.target.value })} placeholder="From" className="rounded-lg border border-black/[.12] px-3 py-1.5 text-sm dark:border-white/[.2] dark:bg-black dark:text-zinc-50" />
-            <input type="time" value={form.to} onChange={(e) => setForm({ ...form, to: e.target.value })} placeholder="To" className="rounded-lg border border-black/[.12] px-3 py-1.5 text-sm dark:border-white/[.2] dark:bg-black dark:text-zinc-50" />
+        <div className="mt-4 space-y-3">
+          <input
+            value={form.subject}
+            onChange={(e) => setForm({ ...form, subject: e.target.value })}
+            placeholder="Room / utility (e.g. “Hall 1 AC”)"
+            className={`${inputCls} w-full py-2`}
+          />
+          <input
+            value={form.detail}
+            onChange={(e) => setForm({ ...form, detail: e.target.value })}
+            placeholder="Detail (e.g. “on, 9 to 6”)"
+            className={`${inputCls} w-full py-2`}
+          />
+          <div className="flex flex-wrap gap-3">
+            <input
+              type="time"
+              value={form.from}
+              onChange={(e) => setForm({ ...form, from: e.target.value })}
+              placeholder="From"
+              className={inputCls}
+            />
+            <input
+              type="time"
+              value={form.to}
+              onChange={(e) => setForm({ ...form, to: e.target.value })}
+              placeholder="To"
+              className={inputCls}
+            />
           </div>
-          {error && <p className="text-xs text-rose-600">{error}</p>}
-          <button onClick={capture} disabled={busy || !form.subject || !form.detail || remaining === 0} className="rounded-lg bg-teal-700 px-4 py-1.5 text-sm font-medium text-white disabled:opacity-40">
-            {remaining === 0 ? "Daily limit reached" : "Record"}
-          </button>
+          {limitError && (
+            <p className="fade-in rounded-xl bg-danger-soft px-3 py-2 text-xs font-medium text-danger">
+              {limitError}
+            </p>
+          )}
+          <AccentButton
+            onClick={capture}
+            disabled={busy || !form.subject || !form.detail || remaining === 0}
+          >
+            {remaining === 0 ? "Daily limit reached" : busy ? "Recording…" : "Record"}
+          </AccentButton>
         </div>
       </section>
 
-      <section className="rounded-2xl border border-black/[.08] bg-white p-5 dark:border-white/[.12] dark:bg-black">
-        <div className="mb-3 flex flex-wrap items-center gap-3">
-          <h2 className="text-sm font-medium uppercase tracking-wide text-zinc-500">History</h2>
-          <div className="ml-auto flex items-center gap-2 text-xs text-zinc-400">
+      <section className="rise rounded-3xl bg-surface p-5 shadow-card" style={{ animationDelay: "130ms" }}>
+        <div className="flex flex-wrap items-center gap-3">
+          <SectionTitle>History</SectionTitle>
+          <div className="ml-auto flex items-center gap-2 text-[11px] font-medium text-ink-faint">
             <span>from</span>
-            <input type="date" value={fromFilter} max={today} onChange={(e) => setFromFilter(e.target.value)} className="rounded border border-black/[.12] px-2 py-1 dark:border-white/[.2] dark:bg-black dark:text-zinc-50" />
+            <input
+              type="date"
+              value={fromFilter}
+              max={today}
+              onChange={(e) => setFromFilter(e.target.value)}
+              className={inputCls}
+            />
             <span>to</span>
-            <input type="date" value={toFilter} max={today} onChange={(e) => setToFilter(e.target.value)} className="rounded border border-black/[.12] px-2 py-1 dark:border-white/[.2] dark:bg-black dark:text-zinc-50" />
+            <input
+              type="date"
+              value={toFilter}
+              max={today}
+              onChange={(e) => setToFilter(e.target.value)}
+              className={inputCls}
+            />
           </div>
         </div>
         {filtered.length === 0 ? (
-          <p className="text-sm text-zinc-400">No captures in this range.</p>
+          <Empty icon="clock" text="No captures in this range — nothing recorded yet." />
         ) : (
-          <div className="space-y-1">
-            {filtered.map((h) => (
-              <div key={h.id} className="flex items-center justify-between rounded-lg bg-zinc-50 px-3 py-1.5 text-xs dark:bg-zinc-900">
-                <span className="text-zinc-600 dark:text-zinc-300"><span className="font-medium">{h.subject}</span> — {h.detail}{h.from && h.to ? ` (${h.from}–${h.to})` : ""}</span>
-                <span className="text-zinc-400">{h.by} · {new Date(h.at).toLocaleDateString()}</span>
+          <div className="mt-3 space-y-1.5">
+            {filtered.map((h, i) => (
+              <div
+                key={h.id}
+                className="rise flex flex-wrap items-center justify-between gap-2 rounded-xl bg-raised px-3 py-2 text-xs"
+                style={{ animationDelay: `${180 + i * 40}ms` }}
+              >
+                <span className="min-w-0 text-ink-soft">
+                  <span className="font-semibold text-ink">{h.subject}</span> — {h.detail}
+                  {h.from && h.to ? ` (${h.from}–${h.to})` : ""}
+                </span>
+                <span className="shrink-0 text-[11px] text-ink-faint">
+                  {h.by} · {new Date(h.at).toLocaleDateString()}
+                </span>
               </div>
             ))}
           </div>
         )}
       </section>
+      <OpFeedback
+        error={op.error}
+        confirmation={op.confirmation}
+        busy={op.busy}
+        onConfirm={() => op.confirm()}
+        onCancel={op.cancel}
+        onDismiss={op.reset}
+      />
     </div>
   );
 }

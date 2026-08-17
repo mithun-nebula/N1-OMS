@@ -46,9 +46,15 @@ export default async function EquipmentPage() {
 
   return (
     <Shell>
-      <header className="border-b border-black/[.08] px-6 py-4 dark:border-white/[.1]">
-        <h1 className="text-xl font-semibold text-black dark:text-zinc-50">Equipment</h1>
-        <p className="text-sm text-zinc-400">Register · fault reporting (voice-ready) · repeat-fault detection</p>
+      <header className="rise flex flex-wrap items-center justify-between gap-3 px-4 pt-6 sm:px-6">
+        <div>
+          <h1 className="text-2xl font-light tracking-tight text-ink sm:text-3xl">
+            Equipment <span className="font-extrabold">&amp; faults</span>
+          </h1>
+          <p className="mt-1 text-sm text-ink-soft">
+            Register, fault reporting and repeat-fault detection.
+          </p>
+        </div>
       </header>
       <EquipmentClient equipment={equipment} actorId={user.id} />
     </Shell>

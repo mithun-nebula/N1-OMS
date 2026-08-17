@@ -34,8 +34,11 @@ const SECONDARY: NavItem[] = [
   { href: "/equipment", label: "Equipment" },
   { href: "/utilities", label: "Utilities" },
   { href: "/decisions", label: "Decisions" },
-  { href: "/expenses", label: "Expenses & travel" },
-  { href: "/records", label: "Records (N1)" },
+  // Expenses is deliberately absent: the page is read-only and routes nowhere
+  // yet — a dead end in the menu. It returns when claims actually work here.
+  // Records is a raw browser over 162 HR record types — an admin tool, not an
+  // everyone destination.
+  { href: "/records", label: "Records (N1)", roles: ["super-admin", "admin"] },
   { href: "/payroll", label: "Payroll", roles: ["super-admin", "admin", "hr"] },
   { href: "/hr/employees", label: "People", roles: ["super-admin", "admin", "hr", "manager"] },
   { href: "/hr", label: "HR · Joining/Leaving", roles: ["super-admin", "admin", "hr"] },

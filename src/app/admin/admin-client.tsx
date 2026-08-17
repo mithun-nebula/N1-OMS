@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { Avatar, Empty, SectionTitle, inputCls } from "../ui/kit";
 
 interface Account {
   username: string;
@@ -68,11 +69,16 @@ export function AdminClient({
   }
 
   async function changeRole(username: string, role: string) {
-    await fetch(`/api/admin/accounts/${username}`, {
+    const res = await fetch(`/api/admin/accounts/${username}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ role }),
     });
+    if (!res.ok) {
+      const data = await res.json();
+      setError(data.error ?? "That role change was refused.");
+      return;
+    }
     setAccounts((prev) => prev.map((a) => (a.username === username ? { ...a, role } : a)));
   }
 
@@ -119,38 +125,51 @@ export function AdminClient({
   }
 
   return (
-    <div className="space-y-8 p-6">
-      <section>
-        <h2 className="mb-3 text-sm font-medium uppercase tracking-wide text-zinc-500">Users</h2>
-        <div className="overflow-hidden rounded-xl border border-black/[.08] dark:border-white/[.12]">
+    <div className="mx-auto max-w-5xl space-y-5 p-4 sm:p-6">
+      {/* ============ Users ============ */}
+      <section className="rise rounded-3xl bg-surface p-5 shadow-card" style={{ animationDelay: "60ms" }}>
+        <SectionTitle>Users</SectionTitle>
+        <div className="mt-3 overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
-              <tr className="border-b border-black/[.08] bg-zinc-50 text-left text-xs uppercase tracking-wide text-zinc-400 dark:border-white/[.1] dark:bg-zinc-900">
-                <th className="px-4 py-2">Username</th>
-                <th className="px-4 py-2">Name</th>
-                <th className="px-4 py-2">Team</th>
-                <th className="px-4 py-2">Role</th>
+              <tr className="text-left text-[10px] font-semibold uppercase tracking-widest text-ink-faint">
+                <th className="px-3 py-2">Person</th>
+                <th className="px-3 py-2">Username</th>
+                <th className="px-3 py-2">Team</th>
+                <th className="px-3 py-2">Role</th>
+                <th className="px-3 py-2" />
               </tr>
             </thead>
             <tbody>
               {accounts.map((a) => (
-                <tr key={a.username} className="border-b border-black/[.04] last:border-0 dark:border-white/[.04]">
-                  <td className="px-4 py-2 font-mono text-xs text-zinc-500">{a.username}</td>
-                  <td className="px-4 py-2 font-medium text-black dark:text-zinc-50">{a.displayName}</td>
-                  <td className="px-4 py-2 text-zinc-400">{a.team ?? "—"}</td>
-                  <td className="px-4 py-2">
+                <tr key={a.username} className="border-t border-line transition-colors hover:bg-raised">
+                  <td className="px-3 py-2">
+                    <span className="flex items-center gap-2.5">
+                      <Avatar name={a.displayName} size={26} />
+                      <span className="text-[13px] font-semibold text-ink">{a.displayName}</span>
+                    </span>
+                  </td>
+                  <td className="px-3 py-2 font-mono text-xs text-ink-faint">{a.username}</td>
+                  <td className="px-3 py-2 text-[13px] text-ink-soft">{a.team ?? "—"}</td>
+                  <td className="px-3 py-2">
                     <select
                       value={a.role}
                       onChange={(e) => changeRole(a.username, e.target.value)}
-                      className="rounded border border-black/[.1] bg-white px-2 py-1 text-xs dark:border-white/[.2] dark:bg-black dark:text-zinc-50"
+                      className={inputCls}
                     >
                       {ROLES.map((r) => (
                         <option key={r} value={r}>{r}</option>
                       ))}
                     </select>
                   </td>
-                  <td className="px-4 py-2">
-                    <button onClick={() => resetPassword(a.username)} disabled={busy} className="text-xs text-zinc-400 hover:text-teal-600 disabled:opacity-40">reset pw</button>
+                  <td className="px-3 py-2">
+                    <button
+                      onClick={() => resetPassword(a.username)}
+                      disabled={busy}
+                      className="press text-xs font-medium text-ink-faint transition-colors hover:text-accent-strong disabled:opacity-40"
+                    >
+                      Reset password
+                    </button>
                   </td>
                 </tr>
               ))}
@@ -158,49 +177,64 @@ export function AdminClient({
           </table>
         </div>
 
-        <div className="mt-4 rounded-xl border border-dashed border-black/[.12] p-4 dark:border-white/[.15]">
-          <p className="mb-3 text-xs font-medium uppercase tracking-wide text-zinc-400">Create account</p>
-          <div className="flex flex-wrap items-end gap-3">
-            <input value={form.displayName} onChange={(e) => setForm({ ...form, displayName: e.target.value })} placeholder="Name" className="rounded-lg border border-black/[.12] px-3 py-1.5 text-sm dark:border-white/[.2] dark:bg-black dark:text-zinc-50" />
-            <input value={form.username} onChange={(e) => setForm({ ...form, username: e.target.value })} placeholder="Username" autoCapitalize="none" className="rounded-lg border border-black/[.12] px-3 py-1.5 text-sm dark:border-white/[.2] dark:bg-black dark:text-zinc-50" />
-            <input value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} placeholder="Password" type="password" className="rounded-lg border border-black/[.12] px-3 py-1.5 text-sm dark:border-white/[.2] dark:bg-black dark:text-zinc-50" />
-            <select value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value })} className="rounded-lg border border-black/[.12] px-3 py-1.5 text-sm dark:border-white/[.2] dark:bg-black dark:text-zinc-50">
+        <div className="mt-4 rounded-2xl border border-dashed border-line p-4">
+          <p className="mb-3 text-[10px] font-semibold uppercase tracking-widest text-ink-faint">Create account</p>
+          <div className="flex flex-wrap items-end gap-2.5">
+            <input value={form.displayName} onChange={(e) => setForm({ ...form, displayName: e.target.value })} placeholder="Name" className={`${inputCls} py-2`} />
+            <input value={form.username} onChange={(e) => setForm({ ...form, username: e.target.value })} placeholder="Username" autoCapitalize="none" className={`${inputCls} py-2`} />
+            <input value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} placeholder="Password" type="password" className={`${inputCls} py-2`} />
+            <select value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value })} className={`${inputCls} py-2`}>
               {ROLES.map((r) => <option key={r} value={r}>{r}</option>)}
             </select>
-            <input value={form.team} onChange={(e) => setForm({ ...form, team: e.target.value })} placeholder="Team (optional)" className="rounded-lg border border-black/[.12] px-3 py-1.5 text-sm dark:border-white/[.2] dark:bg-black dark:text-zinc-50" />
-            <button onClick={createAccount} disabled={busy || !form.username || !form.password || !form.displayName} className="rounded-lg bg-teal-700 px-4 py-1.5 text-sm font-medium text-white disabled:opacity-40">
-              Create
+            <input value={form.team} onChange={(e) => setForm({ ...form, team: e.target.value })} placeholder="Team (optional)" className={`${inputCls} py-2`} />
+            <button
+              onClick={createAccount}
+              disabled={busy || !form.username || !form.password || !form.displayName}
+              className="press rounded-xl bg-accent-strong px-4 py-2 text-xs font-semibold text-white transition-colors hover:bg-accent disabled:opacity-40"
+            >
+              Create account
             </button>
           </div>
-          {error && <p className="mt-2 text-sm text-red-500">{error}</p>}
+          {error && (
+            <p className="fade-in mt-2 rounded-xl bg-danger-soft px-3 py-2 text-xs font-medium text-danger">{error}</p>
+          )}
         </div>
       </section>
 
-      <section>
-        <div className="mb-3 flex items-center justify-between">
-          <h2 className="text-sm font-medium uppercase tracking-wide text-zinc-500">Autonomy rules</h2>
+      {/* ============ Autonomy rules ============ */}
+      <section className="rise rounded-3xl bg-surface p-5 shadow-card" style={{ animationDelay: "130ms" }}>
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <SectionTitle>Autonomy rules</SectionTitle>
           <div className="flex gap-2">
-            <button onClick={() => autonomyAction("detect-routines")} disabled={busy} className="rounded-lg border border-black/[.1] px-3 py-1 text-xs dark:border-white/[.2]">Detect routines</button>
-            <button onClick={triggerTick} disabled={busy} className="rounded-lg border border-black/[.1] px-3 py-1 text-xs dark:border-white/[.2]">Trigger tick</button>
+            <button onClick={() => autonomyAction("detect-routines")} disabled={busy} className="press rounded-full bg-raised px-3.5 py-1.5 text-xs font-semibold text-ink-soft transition-colors hover:text-ink disabled:opacity-40">
+              Detect routines
+            </button>
+            <button onClick={triggerTick} disabled={busy} className="press rounded-full bg-raised px-3.5 py-1.5 text-xs font-semibold text-ink-soft transition-colors hover:text-ink disabled:opacity-40">
+              Trigger tick
+            </button>
           </div>
         </div>
         {rules.length === 0 ? (
-          <p className="text-sm text-zinc-400">No standing rules have been exercised yet.</p>
+          <Empty icon="spark" text="No standing rules have been exercised yet." />
         ) : (
-          <div className="space-y-1">
+          <div className="mt-3 space-y-1.5">
             {rules.map((r) => (
-              <div key={r.ruleId} className="flex items-center justify-between rounded-lg bg-zinc-50 px-4 py-2 text-sm dark:bg-zinc-900">
-                <div>
-                  <span className="font-mono text-xs text-zinc-500">{r.ruleId}</span>
-                  <span className="ml-3 text-black dark:text-zinc-100">{r.opName}</span>
+              <div key={r.ruleId} className="flex flex-wrap items-center justify-between gap-2 rounded-xl bg-raised px-3.5 py-2 text-sm">
+                <div className="min-w-0">
+                  <span className="font-mono text-xs text-ink-faint">{r.ruleId}</span>
+                  <span className="ml-3 text-[13px] font-medium text-ink">{r.opName}</span>
                 </div>
-                <div className="flex items-center gap-3">
-                  <span className={`rounded-full px-2 py-0.5 text-xs ${r.status === "graduated" ? "bg-teal-100 text-teal-700" : r.status === "suspended" ? "bg-rose-100 text-rose-700" : "bg-zinc-200 text-zinc-500"}`}>
+                <div className="flex items-center gap-2.5">
+                  <span className={`rounded-full px-2.5 py-0.5 text-[11px] font-semibold ${
+                    r.status === "graduated" ? "bg-mint text-mint-strong" : r.status === "suspended" ? "bg-rose text-rose-strong" : "bg-lilac text-lilac-strong"
+                  }`}>
                     {r.status}
                   </span>
-                  <span className="text-xs text-zinc-400">{r.cleanCount}/10 clean</span>
+                  <span className="text-xs text-ink-faint">{r.cleanCount}/10 clean</span>
                   {r.status === "supervised" && (
-                    <button onClick={() => autonomyAction("revoke", { ruleId: r.ruleId })} className="text-xs text-zinc-500 underline">revoke</button>
+                    <button onClick={() => autonomyAction("revoke", { ruleId: r.ruleId })} className="press text-xs font-medium text-danger hover:underline">
+                      Revoke
+                    </button>
                   )}
                 </div>
               </div>
@@ -209,40 +243,47 @@ export function AdminClient({
         )}
         {suggestions.length > 0 && (
           <div className="mt-4">
-            <p className="mb-2 text-xs font-medium uppercase tracking-wide text-zinc-400">Routine suggestions (offer, never auto)</p>
-            {suggestions.map((s) => (
-              <div key={s.id} className="flex items-center justify-between rounded-lg bg-amber-50 px-4 py-2 text-sm dark:bg-amber-950">
-                <span>{s.actor} repeats <strong>{s.opName}</strong> ({s.count}×)</span>
-                <button onClick={() => autonomyAction("accept-suggestion", { suggestionId: s.id })} className="text-xs text-amber-700 underline">accept</button>
-              </div>
-            ))}
+            <p className="mb-2 text-[10px] font-semibold uppercase tracking-widest text-ink-faint">
+              Routine suggestions — offered, never automatic
+            </p>
+            <div className="space-y-1.5">
+              {suggestions.map((s) => (
+                <div key={s.id} className="flex items-center justify-between rounded-xl border-l-[3px] border-peach-strong bg-peach px-3.5 py-2 text-[13px] text-ink">
+                  <span>{s.actor} repeats <strong>{s.opName}</strong> ({s.count}×)</span>
+                  <button onClick={() => autonomyAction("accept-suggestion", { suggestionId: s.id })} className="press text-xs font-bold text-peach-strong hover:underline">
+                    Accept
+                  </button>
+                </div>
+              ))}
+            </div>
           </div>
         )}
       </section>
 
       <ActivityLogViewer />
 
-      <section>
-        <h2 className="mb-3 text-sm font-medium uppercase tracking-wide text-zinc-500">System status</h2>
-        <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
-          <div className="rounded-xl border border-black/[.08] p-4 dark:border-white/[.12]">
-            <div className="text-xs text-zinc-400">LLM</div>
-            <div className="mt-1 text-sm font-medium text-black dark:text-zinc-50">{initial.modes.llm?.mode}</div>
-          </div>
-          <div className="rounded-xl border border-black/[.08] p-4 dark:border-white/[.12]">
-            <div className="text-xs text-zinc-400">Video</div>
-            <div className="mt-1 text-sm font-medium text-black dark:text-zinc-50">{initial.modes.video?.mode}</div>
-          </div>
-          <div className="rounded-xl border border-black/[.08] p-4 dark:border-white/[.12]">
-            <div className="text-xs text-zinc-400">N1 (HR)</div>
-            <div className="mt-1 text-sm font-medium text-black dark:text-zinc-50">{initial.modes.n1?.mode}</div>
-          </div>
-          <div className="rounded-xl border border-black/[.08] p-4 dark:border-white/[.12]">
-            <div className="text-xs text-zinc-400">Operations</div>
-            <div className="mt-1 text-sm font-medium text-black dark:text-zinc-50">{initial.operations.length}</div>
-          </div>
+      {/* ============ System status ============ */}
+      <section className="rise rounded-3xl bg-surface p-5 shadow-card" style={{ animationDelay: "260ms" }}>
+        <SectionTitle>System status</SectionTitle>
+        <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-4">
+          <StatusTile label="LLM" value={initial.modes.llm?.mode} />
+          <StatusTile label="Video" value={initial.modes.video?.mode} />
+          <StatusTile label="N1 (HR)" value={initial.modes.n1?.mode} />
+          <StatusTile label="Operations" value={String(initial.operations.length)} />
         </div>
       </section>
+    </div>
+  );
+}
+
+function StatusTile({ label, value }: { label: string; value?: string }) {
+  return (
+    <div className="rounded-2xl bg-raised px-4 py-3">
+      <div className="text-[10px] font-semibold uppercase tracking-widest text-ink-faint">{label}</div>
+      <div className="mt-1 flex items-center gap-1.5 text-sm font-bold text-ink">
+        <span className={`h-2 w-2 rounded-full ${value === "live" ? "bg-mint-strong" : "bg-peach-strong"}`} />
+        {value ?? "—"}
+      </div>
     </div>
   );
 }
@@ -274,23 +315,27 @@ function ActivityLogViewer() {
   }
 
   return (
-    <section>
-      <h2 className="mb-3 text-sm font-medium uppercase tracking-wide text-zinc-500">Activity log</h2>
-      <div className="mb-3 flex flex-wrap gap-2">
-        <input value={filters.actor} onChange={(e) => setFilters({ ...filters, actor: e.target.value })} placeholder="Filter by actor" className="rounded-lg border border-black/[.12] px-3 py-1.5 text-xs dark:border-white/[.2] dark:bg-black dark:text-zinc-50" />
-        <input value={filters.operation} onChange={(e) => setFilters({ ...filters, operation: e.target.value })} placeholder="Filter by operation (e.g. leave)" className="rounded-lg border border-black/[.12] px-3 py-1.5 text-xs dark:border-white/[.2] dark:bg-black dark:text-zinc-50" />
-        <button onClick={load} className="rounded-lg bg-black px-3 py-1.5 text-xs font-medium text-white dark:bg-white dark:text-black">Load</button>
+    <section className="rise rounded-3xl bg-surface p-5 shadow-card" style={{ animationDelay: "195ms" }}>
+      <SectionTitle>Activity log</SectionTitle>
+      <div className="mt-3 flex flex-wrap gap-2">
+        <input value={filters.actor} onChange={(e) => setFilters({ ...filters, actor: e.target.value })} placeholder="Filter by actor" className={inputCls} />
+        <input value={filters.operation} onChange={(e) => setFilters({ ...filters, operation: e.target.value })} placeholder="Filter by operation (e.g. leave)" className={inputCls} />
+        <button onClick={load} className="press rounded-xl bg-chrome px-3.5 py-1.5 text-xs font-semibold text-chrome-ink transition-colors hover:bg-chrome-card">
+          Load entries
+        </button>
       </div>
       {!loaded ? (
-        <p className="text-xs text-zinc-400">Click Load to fetch the recent activity log.</p>
+        <p className="mt-3 text-xs text-ink-faint">Load to fetch the recent activity log.</p>
       ) : entries.length === 0 ? (
-        <p className="text-xs text-zinc-400">No entries match.</p>
+        <Empty icon="search" text="No entries match those filters." />
       ) : (
-        <div className="max-h-80 overflow-y-auto rounded-xl border border-black/[.06] dark:border-white/[.08]">
+        <div className="mt-3 max-h-80 space-y-1 overflow-y-auto">
           {entries.map((e) => (
-            <div key={e.id} className="flex items-center justify-between border-b border-black/[.04] px-3 py-1.5 text-xs last:border-0 dark:border-white/[.04]">
-              <span className="text-zinc-600 dark:text-zinc-300"><span className="font-mono text-zinc-400">{e.operationName}</span> · {e.actor}</span>
-              <span className="text-zinc-400">{new Date(e.at).toLocaleString()}</span>
+            <div key={e.id} className="flex items-center justify-between rounded-xl bg-raised px-3 py-1.5 text-xs">
+              <span className="min-w-0 truncate text-ink-soft">
+                <span className="font-mono text-ink-faint">{e.operationName}</span> · {e.actor}
+              </span>
+              <span className="shrink-0 text-ink-faint">{new Date(e.at).toLocaleString()}</span>
             </div>
           ))}
         </div>

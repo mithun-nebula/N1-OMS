@@ -29,8 +29,10 @@ export default async function BookingPage() {
 
   return (
     <Shell>
-      <header className="border-b border-black/[.08] px-6 py-4 dark:border-white/[.1]">
-        <h1 className="text-xl font-semibold text-black dark:text-zinc-50">Room booking</h1>
+      <header className="rise flex flex-wrap items-center justify-between gap-3 px-4 pt-6 sm:px-6">
+        <h1 className="text-2xl font-light tracking-tight text-ink sm:text-3xl">
+          Room <span className="font-extrabold">booking</span>
+        </h1>
       </header>
       <BookingClient rooms={rooms} bookings={bookings.map((b) => ({ ...b, roomName: roomName(b.roomId) }))} />
     </Shell>

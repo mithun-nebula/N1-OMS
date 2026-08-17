@@ -15,8 +15,8 @@ export function EmptyState({
   action?: ReactNode;
 }) {
   return (
-    <div className="rounded-xl border border-dashed border-black/[.12] px-4 py-8 text-center dark:border-white/[.15]">
-      <p className="text-sm text-zinc-400">{message}</p>
+    <div className="fade-in rounded-2xl bg-raised px-4 py-8 text-center">
+      <p className="text-sm text-ink-faint">{message}</p>
       {action && <div className="mt-3">{action}</div>}
     </div>
   );

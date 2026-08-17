@@ -45,7 +45,7 @@ export function Modal({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+      className="fade-in fixed inset-0 z-50 flex items-center justify-center bg-chrome-deep/60 p-4 backdrop-blur-sm"
       onClick={onClose}
       role="presentation"
     >
@@ -56,16 +56,16 @@ export function Modal({
         aria-modal="true"
         aria-label={title}
         onClick={(e) => e.stopPropagation()}
-        className={`max-h-[85vh] w-full ${widths[width]} overflow-y-auto rounded-2xl border border-black/[.08] bg-white p-5 outline-none dark:border-white/[.12] dark:bg-black`}
+        className={`pop-in max-h-[85vh] w-full ${widths[width]} overflow-y-auto rounded-3xl bg-surface p-6 shadow-lift outline-none`}
       >
         <div className="mb-4 flex items-start justify-between gap-3">
-          <h2 className="text-base font-semibold text-black dark:text-zinc-50">
+          <h2 className="text-lg font-extrabold text-ink">
             {title}
           </h2>
           <button
             onClick={onClose}
             aria-label="Close"
-            className="text-xl leading-none text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200"
+            className="press text-xl leading-none text-ink-faint transition-colors hover:text-ink"
           >
             ×
           </button>

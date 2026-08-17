@@ -14,8 +14,10 @@ export default async function SettingsPage() {
 
   return (
     <Shell>
-      <header className="border-b border-black/[.08] px-6 py-4 dark:border-white/[.1]">
-        <h1 className="text-xl font-semibold text-black dark:text-zinc-50">Settings</h1>
+      <header className="rise flex flex-wrap items-center justify-between gap-3 px-4 pt-6 sm:px-6">
+        <h1 className="text-2xl font-light tracking-tight text-ink sm:text-3xl">
+          Your <span className="font-extrabold">settings</span>
+        </h1>
       </header>
       <SettingsClient
         employeeId={user.id}

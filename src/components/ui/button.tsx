@@ -6,17 +6,15 @@ export type ButtonVariant = "primary" | "inverted" | "ghost" | "danger";
 export type ButtonSize = "sm" | "md";
 
 const VARIANT: Record<ButtonVariant, string> = {
-  primary: "bg-teal-700 text-white hover:bg-teal-800",
-  inverted:
-    "bg-black text-white hover:bg-zinc-800 dark:bg-white dark:text-black dark:hover:bg-zinc-200",
-  ghost:
-    "border border-black/[.1] text-zinc-600 hover:border-black/[.25] dark:border-white/[.2] dark:text-zinc-300 dark:hover:border-white/[.4]",
-  danger: "bg-rose-600 text-white hover:bg-rose-700",
+  primary: "bg-chrome text-chrome-ink hover:bg-chrome-card",
+  inverted: "bg-accent-strong text-white hover:bg-accent",
+  ghost: "bg-raised text-ink-soft hover:text-ink",
+  danger: "bg-danger-soft text-danger hover:bg-rose",
 };
 
 const SIZE: Record<ButtonSize, string> = {
-  sm: "px-3 py-1 text-xs",
-  md: "px-4 py-1.5 text-sm",
+  sm: "px-3.5 py-1.5 text-xs",
+  md: "px-4.5 py-2 text-sm",
 };
 
 interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
@@ -43,7 +41,7 @@ export function Button({
     <button
       type={type}
       disabled={disabled || busy}
-      className={`rounded-lg font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-40 ${VARIANT[variant]} ${SIZE[size]} ${className}`}
+      className={`press rounded-full font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-40 ${VARIANT[variant]} ${SIZE[size]} ${className}`}
       {...rest}
     >
       {busy ? (busyLabel ?? "Working…") : children}

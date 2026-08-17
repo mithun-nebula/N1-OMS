@@ -1,7 +1,9 @@
 "use client";
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { Icon } from "../ui/icons";
+import { AccentButton, inputCls, OpFeedback, SectionTitle } from "../ui/kit";
+import { useOperation } from "@/components/ops/use-operation";
 
 export function SettingsClient({
   employeeId,
@@ -14,13 +16,13 @@ export function SettingsClient({
   username: string;
   contact?: string;
 }) {
-  const router = useRouter();
+  const op = useOperation();
   const [contactValue, setContactValue] = useState(contact ?? "");
-  const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
 
   const [pw, setPw] = useState({ current: "", next: "", confirm: "" });
-  const [pwMsg, setPwMsg] = useState<string | null>(null);
+  const [pwBusy, setPwBusy] = useState(false);
+  const [pwMsg, setPwMsg] = useState<{ ok: boolean; text: string } | null>(null);
 
   const [theme, setTheme] = useState<"light" | "dark">(
     typeof document !== "undefined" && document.documentElement.classList.contains("dark") ? "dark" : "light",
@@ -39,95 +41,154 @@ export function SettingsClient({
   }
 
   async function saveContact() {
-    setBusy(true);
-    const res = await fetch("/api/operations", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ start: "form", name: "employee.updateContact", args: { employeeId, contact: contactValue.trim() } }),
+    setMsg(null);
+    const outcome = await op.run("employee.updateContact", {
+      employeeId,
+      contact: contactValue.trim(),
     });
-    setBusy(false);
-    const data = await res.json();
-    if (data.status === "ran") {
-      setMsg("Contact updated.");
-      router.refresh();
-    } else {
-      setMsg(data.detail ?? data.opaqueMessage ?? "Could not update.");
-    }
+    if (outcome.status === "ran") setMsg("Contact updated.");
   }
 
   async function savePassword() {
     setPwMsg(null);
     if (pw.next !== pw.confirm) {
-      setPwMsg("New passwords do not match.");
+      setPwMsg({ ok: false, text: "New passwords do not match." });
       return;
     }
-    setBusy(true);
+    setPwBusy(true);
     const res = await fetch("/api/settings/password", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ current: pw.current, next: pw.next }),
     });
-    setBusy(false);
+    setPwBusy(false);
     const data = await res.json();
     if (data.ok) {
-      setPwMsg("Password changed.");
+      setPwMsg({ ok: true, text: "Password changed." });
       setPw({ current: "", next: "", confirm: "" });
     } else {
-      setPwMsg(data.error ?? "Could not change password.");
+      setPwMsg({ ok: false, text: data.error ?? "Could not change password." });
     }
   }
 
+  const labelCls = "text-[10px] font-semibold uppercase tracking-widest text-ink-faint";
+
   return (
-    <div className="space-y-6 p-6">
-      <section className="rounded-2xl border border-black/[.08] bg-white p-5 dark:border-white/[.12] dark:bg-black">
-        <h2 className="mb-3 text-sm font-medium uppercase tracking-wide text-zinc-500">Profile</h2>
-        <div className="space-y-3">
-          <div>
-            <div className="text-xs uppercase tracking-wide text-zinc-400">Display name</div>
-            <div className="mt-1 text-sm text-black dark:text-zinc-50">{displayName} <span className="text-zinc-400">(@{username})</span></div>
-            <p className="mt-1 text-xs text-zinc-400">Display name changes require an admin.</p>
-          </div>
-          <div>
-            <div className="text-xs uppercase tracking-wide text-zinc-400">Contact</div>
-            <div className="mt-1 flex items-center gap-2">
-              <input value={contactValue} onChange={(e) => setContactValue(e.target.value)} className="flex-1 rounded-lg border border-black/[.12] px-3 py-1.5 text-sm dark:border-white/[.2] dark:bg-black dark:text-zinc-50" />
-              <button onClick={saveContact} disabled={busy || !contactValue.trim()} className="rounded-lg bg-teal-700 px-3 py-1.5 text-xs font-medium text-white disabled:opacity-40">Save</button>
+    <div className="mx-auto max-w-4xl space-y-5 p-4 sm:p-6">
+      {/* Profile. */}
+      <section className="rise rounded-3xl bg-surface p-5 shadow-card" style={{ animationDelay: "60ms" }}>
+        <SectionTitle>Profile</SectionTitle>
+        <div className="mt-4 space-y-3">
+          <div className="rounded-xl bg-raised px-3.5 py-2.5">
+            <div className={labelCls}>Display name</div>
+            <div className="mt-1 text-[13px] text-ink">
+              {displayName} <span className="text-ink-faint">(@{username})</span>
             </div>
-            {msg && <p className="mt-1 text-xs text-teal-600">{msg}</p>}
+            <p className="mt-1 text-[11px] text-ink-faint">Display name changes require an admin.</p>
+          </div>
+          <div className="rounded-xl bg-raised px-3.5 py-2.5">
+            <div className={labelCls}>Contact</div>
+            <div className="mt-1.5 flex items-center gap-2">
+              <input
+                value={contactValue}
+                onChange={(e) => setContactValue(e.target.value)}
+                className={`${inputCls} flex-1`}
+              />
+              <button
+                onClick={saveContact}
+                disabled={op.busy || !contactValue.trim()}
+                className="press rounded-lg bg-chrome px-3 py-1.5 text-[11px] font-semibold text-chrome-ink transition-colors hover:bg-chrome-card disabled:opacity-40"
+              >
+                Save
+              </button>
+            </div>
+            {msg && (
+              <p className="fade-in mt-2 rounded-xl bg-mint px-3 py-2 text-xs font-medium text-mint-strong">{msg}</p>
+            )}
           </div>
         </div>
       </section>
 
-      <section className="rounded-2xl border border-black/[.08] bg-white p-5 dark:border-white/[.12] dark:bg-black">
-        <h2 className="mb-3 text-sm font-medium uppercase tracking-wide text-zinc-500">Change password</h2>
-        <div className="grid grid-cols-1 gap-3 sm:max-w-md">
-          <input type="password" value={pw.current} onChange={(e) => setPw({ ...pw, current: e.target.value })} placeholder="Current password" className="rounded-lg border border-black/[.12] px-3 py-1.5 text-sm dark:border-white/[.2] dark:bg-black dark:text-zinc-50" />
-          <input type="password" value={pw.next} onChange={(e) => setPw({ ...pw, next: e.target.value })} placeholder="New password" className="rounded-lg border border-black/[.12] px-3 py-1.5 text-sm dark:border-white/[.2] dark:bg-black dark:text-zinc-50" />
-          <input type="password" value={pw.confirm} onChange={(e) => setPw({ ...pw, confirm: e.target.value })} placeholder="Confirm new password" className="rounded-lg border border-black/[.12] px-3 py-1.5 text-sm dark:border-white/[.2] dark:bg-black dark:text-zinc-50" />
-          <button onClick={savePassword} disabled={busy || !pw.current || !pw.next || !pw.confirm} className="self-start rounded-lg bg-black px-4 py-1.5 text-sm font-medium text-white disabled:opacity-40 dark:bg-white dark:text-black">Update password</button>
-          {pwMsg && <p className="text-xs text-teal-600">{pwMsg}</p>}
+      {/* Change password. */}
+      <section className="rise rounded-3xl bg-surface p-5 shadow-card" style={{ animationDelay: "130ms" }}>
+        <SectionTitle>Change password</SectionTitle>
+        <div className="mt-4 grid grid-cols-1 gap-3 sm:max-w-md">
+          <input
+            type="password"
+            value={pw.current}
+            onChange={(e) => setPw({ ...pw, current: e.target.value })}
+            placeholder="Current password"
+            className={`${inputCls} w-full py-2`}
+          />
+          <input
+            type="password"
+            value={pw.next}
+            onChange={(e) => setPw({ ...pw, next: e.target.value })}
+            placeholder="New password"
+            className={`${inputCls} w-full py-2`}
+          />
+          <input
+            type="password"
+            value={pw.confirm}
+            onChange={(e) => setPw({ ...pw, confirm: e.target.value })}
+            placeholder="Confirm new password"
+            className={`${inputCls} w-full py-2`}
+          />
+          {pwMsg && (
+            <p
+              className={`fade-in rounded-xl px-3 py-2 text-xs font-medium ${
+                pwMsg.ok ? "bg-mint text-mint-strong" : "bg-danger-soft text-danger"
+              }`}
+            >
+              {pwMsg.text}
+            </p>
+          )}
+          <div>
+            <AccentButton onClick={savePassword} disabled={pwBusy || !pw.current || !pw.next || !pw.confirm}>
+              {pwBusy ? "Saving…" : "Update password"}
+            </AccentButton>
+          </div>
         </div>
       </section>
 
-      <section className="rounded-2xl border border-black/[.08] bg-white p-5 dark:border-white/[.12] dark:bg-black">
-        <h2 className="mb-3 text-sm font-medium uppercase tracking-wide text-zinc-500">Preferences</h2>
-        <div className="space-y-3">
-          <div className="flex items-center justify-between">
-            <span className="text-sm text-zinc-600 dark:text-zinc-300">Theme</span>
-            <div className="flex gap-2">
+      {/* Preferences. */}
+      <section className="rise rounded-3xl bg-surface p-5 shadow-card" style={{ animationDelay: "200ms" }}>
+        <SectionTitle>Preferences</SectionTitle>
+        <div className="mt-4 space-y-2.5">
+          <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl bg-raised px-3.5 py-2.5">
+            <span className="text-[13px] text-ink">Theme</span>
+            <div className="flex gap-1.5">
               {(["light", "dark"] as const).map((t) => (
-                <button key={t} onClick={() => applyTheme(t)} className={`rounded-lg border px-3 py-1 text-xs ${theme === t ? "border-teal-700 bg-teal-700/10 text-teal-700" : "border-black/[.1] text-zinc-500 dark:border-white/[.2]"}`}>
-                  {t === "light" ? "☀ Light" : "☾ Dark"}
+                <button
+                  key={t}
+                  onClick={() => applyTheme(t)}
+                  className={`press flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[11px] font-semibold capitalize transition-colors ${
+                    theme === t ? "bg-chrome text-chrome-ink" : "bg-surface text-ink-soft shadow-card hover:text-ink"
+                  }`}
+                >
+                  <Icon name={t === "light" ? "sun" : "moon"} className="h-3.5 w-3.5" />
+                  {t}
                 </button>
               ))}
             </div>
           </div>
-          <div className="flex items-center justify-between">
-            <span className="text-sm text-zinc-600 dark:text-zinc-300">Notifications <span className="text-xs text-zinc-400">(local preference)</span></span>
+          <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl bg-raised px-3.5 py-2.5">
+            <span className="text-[13px] text-ink">
+              Notifications <span className="text-[11px] text-ink-faint">(local preference)</span>
+            </span>
             <NotificationPrefToggle />
           </div>
         </div>
       </section>
+
+      <OpFeedback
+        error={op.error}
+        confirmation={op.confirmation}
+        busy={op.busy}
+        onConfirm={() => op.confirm()}
+        onCancel={op.cancel}
+        onDismiss={op.reset}
+      />
     </div>
   );
 }
@@ -151,9 +212,11 @@ function NotificationPrefToggle() {
           /* ignore */
         }
       }}
-      className={`relative h-5 w-9 rounded-full transition-colors ${on ? "bg-teal-700" : "bg-zinc-300 dark:bg-zinc-700"}`}
+      className={`press relative h-5 w-9 rounded-full transition-colors ${on ? "bg-accent-strong" : "bg-line"}`}
     >
-      <span className={`absolute top-0.5 h-4 w-4 rounded-full bg-white transition-all ${on ? "left-4" : "left-0.5"}`} />
+      <span
+        className={`absolute top-0.5 h-4 w-4 rounded-full bg-surface shadow-card transition-all ${on ? "left-4" : "left-0.5"}`}
+      />
     </button>
   );
 }

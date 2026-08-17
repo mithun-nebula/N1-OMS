@@ -1,7 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { AccentButton, ChromeButton, Empty, inputCls, OpFeedback } from "../ui/kit";
+import { useOperation } from "@/components/ops/use-operation";
 
 interface Decision {
   id: string;
@@ -20,10 +21,10 @@ export function DecisionsClient({
   decisions: Decision[];
   canRecord: boolean;
 }) {
-  const router = useRouter();
+  const op = useOperation();
+  const busy = op.busy;
   const [query, setQuery] = useState("");
   const [showForm, setShowForm] = useState(false);
-  const [busy, setBusy] = useState(false);
   const [form, setForm] = useState({ title: "", decision: "", reason: "" });
 
   const filtered = query.trim()
@@ -35,55 +36,97 @@ export function DecisionsClient({
 
   async function record() {
     if (!form.title || !form.decision || !form.reason) return;
-    setBusy(true);
-    const res = await fetch("/api/operations", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ start: "form", name: "orgMemory.record", args: { title: form.title, decision: form.decision, reason: form.reason } }),
+    const outcome = await op.run("orgMemory.record", {
+      title: form.title,
+      decision: form.decision,
+      reason: form.reason,
     });
-    const data = await res.json();
-    setBusy(false);
-    if (data.status === "ran") {
+    if (outcome.status === "ran") {
       setShowForm(false);
       setForm({ title: "", decision: "", reason: "" });
-      router.refresh();
     }
   }
 
   return (
-    <div className="space-y-6 p-6">
-      <div className="flex items-center gap-3">
-        <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search decisions…" className="flex-1 rounded-lg border border-black/[.12] px-3 py-1.5 text-sm dark:border-white/[.2] dark:bg-black dark:text-zinc-50" />
+    <div className="mx-auto max-w-4xl space-y-5 p-4 sm:p-6">
+      <div className="rise flex items-center gap-3" style={{ animationDelay: "60ms" }}>
+        <input
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder="Search decisions…"
+          className={`${inputCls} w-full flex-1 py-2`}
+        />
         {canRecord && (
-          <button onClick={() => setShowForm(!showForm)} className="rounded-lg bg-teal-700 px-4 py-1.5 text-sm font-medium text-white">
+          <ChromeButton onClick={() => setShowForm(!showForm)}>
             {showForm ? "Close" : "+ Record decision"}
-          </button>
+          </ChromeButton>
         )}
       </div>
 
       {showForm && (
-        <div className="space-y-3 rounded-xl border border-dashed border-black/[.12] p-4 dark:border-white/[.15]">
-          <input value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} placeholder="Title" className="w-full rounded-lg border border-black/[.12] px-3 py-2 text-sm dark:border-white/[.2] dark:bg-black dark:text-zinc-50" />
-          <textarea value={form.decision} onChange={(e) => setForm({ ...form, decision: e.target.value })} placeholder="What was decided" rows={2} className="w-full rounded-lg border border-black/[.12] px-3 py-2 text-sm dark:border-white/[.2] dark:bg-black dark:text-zinc-50" />
-          <textarea value={form.reason} onChange={(e) => setForm({ ...form, reason: e.target.value })} placeholder="The reason at the time" rows={2} className="w-full rounded-lg border border-black/[.12] px-3 py-2 text-sm dark:border-white/[.2] dark:bg-black dark:text-zinc-50" />
-          <button onClick={record} disabled={busy || !form.title || !form.decision || !form.reason} className="rounded-lg bg-black px-4 py-1.5 text-sm font-medium text-white disabled:opacity-40 dark:bg-white dark:text-black">Record</button>
+        <div className="pop-in space-y-3 rounded-3xl bg-surface p-5 shadow-card">
+          <input
+            value={form.title}
+            onChange={(e) => setForm({ ...form, title: e.target.value })}
+            placeholder="Title"
+            className={`${inputCls} w-full py-2`}
+          />
+          <textarea
+            value={form.decision}
+            onChange={(e) => setForm({ ...form, decision: e.target.value })}
+            placeholder="What was decided"
+            rows={2}
+            className={`${inputCls} w-full py-2`}
+          />
+          <textarea
+            value={form.reason}
+            onChange={(e) => setForm({ ...form, reason: e.target.value })}
+            placeholder="The reason at the time"
+            rows={2}
+            className={`${inputCls} w-full py-2`}
+          />
+          <AccentButton
+            onClick={record}
+            disabled={busy || !form.title || !form.decision || !form.reason}
+          >
+            {busy ? "Recording…" : "Record decision"}
+          </AccentButton>
         </div>
       )}
 
-      <div className="space-y-3">
-        {filtered.length === 0 && <p className="text-sm text-zinc-400">No decisions recorded.</p>}
-        {filtered.map((d) => (
-          <div key={d.id} className="rounded-2xl border border-black/[.08] bg-white p-5 dark:border-white/[.12] dark:bg-black">
-            <div className="font-medium text-black dark:text-zinc-50">{d.title}</div>
-            <div className="mt-1 text-sm text-zinc-600 dark:text-zinc-300">{d.decision}</div>
-            <div className="mt-1 text-xs text-zinc-400">Reason: {d.reason}</div>
-            <div className="mt-1 text-xs text-zinc-400">
-              decided by {d.decidedBy} · {new Date(d.decidedAt).toLocaleDateString()}
-              {d.linkedRecords.length > 0 && ` · links: ${d.linkedRecords.map((l) => `${l.nodeType}:${l.nodeId}`).join(", ")}`}
+      {filtered.length === 0 ? (
+        <Empty icon="spark" text="No decisions recorded yet — the memory is waiting for its first entry." />
+      ) : (
+        <div className="space-y-2.5">
+          {filtered.map((d, i) => (
+            <div
+              key={d.id}
+              className="rise lift rounded-2xl border-l-[3px] border-lilac-strong bg-surface p-5 shadow-card"
+              style={{ animationDelay: `${120 + i * 50}ms` }}
+            >
+              <div className="text-[14px] font-semibold text-ink">{d.title}</div>
+              <div className="mt-1 text-sm text-ink-soft">{d.decision}</div>
+              <div className="mt-2 rounded-xl bg-raised px-3 py-2 text-xs text-ink-soft">
+                <span className="font-semibold text-ink-faint">Reason at the time: </span>
+                {d.reason}
+              </div>
+              <div className="mt-2 text-[11px] text-ink-faint">
+                decided by {d.decidedBy} · {new Date(d.decidedAt).toLocaleDateString()}
+                {d.linkedRecords.length > 0 &&
+                  ` · links: ${d.linkedRecords.map((l) => `${l.nodeType}:${l.nodeId}`).join(", ")}`}
+              </div>
             </div>
-          </div>
-        ))}
-      </div>
+          ))}
+        </div>
+      )}
+      <OpFeedback
+        error={op.error}
+        confirmation={op.confirmation}
+        busy={op.busy}
+        onConfirm={() => op.confirm()}
+        onCancel={op.cancel}
+        onDismiss={op.reset}
+      />
     </div>
   );
 }

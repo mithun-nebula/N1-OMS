@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { inputCls } from "../../ui/kit";
 
 const MIN_LENGTH = 6;
 
@@ -13,8 +14,7 @@ export function ForcedPasswordChange({ forced }: { forced: boolean }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const field =
-    "w-full rounded-lg border border-black/[.12] px-3 py-2 text-sm dark:border-white/[.2] dark:bg-black dark:text-zinc-50";
+  const field = `${inputCls} w-full py-2`;
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -75,11 +75,13 @@ export function ForcedPasswordChange({ forced }: { forced: boolean }) {
         autoComplete="new-password"
         className={field}
       />
-      {error && <p className="text-xs text-rose-600">{error}</p>}
+      {error && (
+        <p className="fade-in rounded-xl bg-danger-soft px-3 py-2 text-xs font-medium text-danger">{error}</p>
+      )}
       <button
         type="submit"
         disabled={busy || !current || !next || !confirm}
-        className="w-full rounded-lg bg-teal-700 px-4 py-2 text-sm font-medium text-white disabled:opacity-40"
+        className="press w-full rounded-xl bg-accent-strong px-4 py-2 text-xs font-semibold text-white transition-colors hover:bg-accent disabled:opacity-40"
       >
         {busy ? "Saving…" : "Set password"}
       </button>

@@ -3,7 +3,7 @@
 import type { ReactNode } from "react";
 
 const INPUT =
-  "w-full rounded-lg border border-black/[.12] px-3 py-1.5 text-sm text-black outline-none focus:border-teal-600 disabled:opacity-50 dark:border-white/[.2] dark:bg-black dark:text-zinc-50";
+  "w-full rounded-xl border border-line bg-raised px-3 py-2 text-sm text-ink outline-none transition-colors placeholder:text-ink-faint focus:border-accent-strong focus:bg-surface disabled:opacity-50";
 
 function Wrapper({
   label,
@@ -19,15 +19,15 @@ function Wrapper({
   return (
     <label className="block">
       {label && (
-        <span className="mb-1 block text-xs uppercase tracking-wide text-zinc-400">
+        <span className="mb-1 block text-[10px] font-semibold uppercase tracking-widest text-ink-faint">
           {label}
         </span>
       )}
       {children}
       {error ? (
-        <span className="mt-1 block text-xs text-rose-600">{error}</span>
+        <span className="mt-1 block text-xs font-medium text-danger">{error}</span>
       ) : (
-        hint && <span className="mt-1 block text-xs text-zinc-400">{hint}</span>
+        hint && <span className="mt-1 block text-xs text-ink-faint">{hint}</span>
       )}
     </label>
   );

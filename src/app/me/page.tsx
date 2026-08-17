@@ -61,9 +61,10 @@ export default async function ProfilePage() {
 
   return (
     <Shell>
-      <header className="border-b border-black/[.08] px-6 py-4 dark:border-white/[.1]">
-        <h1 className="text-xl font-semibold text-black dark:text-zinc-50">Profile</h1>
-        <p className="text-sm text-zinc-400">{user.displayName}</p>
+      <header className="rise flex flex-wrap items-center justify-between gap-3 px-4 pt-6 sm:px-6">
+        <h1 className="text-2xl font-light tracking-tight text-ink sm:text-3xl">
+          Your <span className="font-extrabold">profile</span>
+        </h1>
       </header>
 
       <ProfileClient

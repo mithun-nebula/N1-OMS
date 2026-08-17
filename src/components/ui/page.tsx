@@ -13,12 +13,12 @@ export function PageHeader({
   actions?: ReactNode;
 }) {
   return (
-    <header className="flex flex-wrap items-start justify-between gap-3 border-b border-black/[.08] px-6 py-4 dark:border-white/[.12]">
+    <header className="rise flex flex-wrap items-end justify-between gap-3 px-4 pt-6 sm:px-6">
       <div>
-        <h1 className="text-xl font-semibold tracking-tight text-black dark:text-zinc-50">
+        <h1 className="text-2xl font-light tracking-tight text-ink sm:text-3xl">
           {title}
         </h1>
-        {subtitle && <p className="mt-0.5 text-sm text-zinc-500">{subtitle}</p>}
+        {subtitle && <p className="mt-1 text-sm text-ink-soft">{subtitle}</p>}
       </div>
       {actions && <div className="flex items-center gap-2">{actions}</div>}
     </header>
@@ -27,5 +27,5 @@ export function PageHeader({
 
 /** Standard vertical rhythm for page contents, below the header. */
 export function PageBody({ children }: { children: ReactNode }) {
-  return <div className="space-y-6 p-6">{children}</div>;
+  return <div className="mx-auto max-w-5xl space-y-5 p-4 sm:p-6">{children}</div>;
 }

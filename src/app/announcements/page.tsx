@@ -37,9 +37,11 @@ export default async function AnnouncementsPage() {
 
   return (
     <Shell>
-      <header className="border-b border-black/[.08] px-6 py-4 dark:border-white/[.1]">
-        <h1 className="text-xl font-semibold text-black dark:text-zinc-50">Announcements</h1>
-        <p className="text-sm text-zinc-400">Notices & policies · acknowledgement tracking</p>
+      <header className="rise flex flex-wrap items-center justify-between gap-3 px-4 pt-6 sm:px-6">
+        <h1 className="text-2xl font-light tracking-tight text-ink sm:text-3xl">
+          All <span className="font-extrabold">announcements</span>
+        </h1>
+        <p className="w-full text-sm text-ink-soft">Notices & policies · acknowledgement tracking</p>
       </header>
       <AnnouncementsClient
         actorId={user.id}

@@ -8,9 +8,13 @@ export default async function RecordsPage() {
   if (!user) redirect("/login");
   return (
     <Shell>
-      <header className="border-b border-black/[.08] px-6 py-4 dark:border-white/[.1]">
-        <h1 className="text-xl font-semibold text-black dark:text-zinc-50">Records (N1)</h1>
-        <p className="text-sm text-zinc-400">Browse any mapped N1 DocType · permission-filtered</p>
+      <header className="rise px-4 pt-6 sm:px-6">
+        <h1 className="text-2xl font-light tracking-tight text-ink sm:text-3xl">
+          Record <span className="font-extrabold">browser</span>
+        </h1>
+        <p className="mt-1 text-sm text-ink-soft">
+          An admin tool over every mapped N1 DocType · permission-filtered.
+        </p>
       </header>
       <RecordsClient actorRole={user.role} />
     </Shell>

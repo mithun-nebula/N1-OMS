@@ -61,8 +61,8 @@ export function EmployeesClient({
       header: "Name",
       cell: (p) => (
         <div>
-          <div className={p.active ? "" : "text-zinc-400 line-through"}>{p.name}</div>
-          <div className="text-xs text-zinc-400">{p.username || p.id}</div>
+          <div className={p.active ? "font-semibold text-ink" : "text-ink-faint line-through"}>{p.name}</div>
+          <div className="text-xs text-ink-faint">{p.username || p.id}</div>
         </div>
       ),
     },
@@ -109,9 +109,9 @@ export function EmployeesClient({
         {added && (
           <Card tone="attention">
             <CardHeader title="Share these once" />
-            <p className="text-sm text-zinc-700 dark:text-zinc-300">
+            <p className="text-sm text-ink">
               <strong>{added.username}</strong> can sign in with{" "}
-              <code className="rounded bg-black/[.06] px-1.5 py-0.5 dark:bg-white/[.1]">
+              <code className="rounded bg-raised px-1.5 py-0.5 font-mono">
                 {added.password}
               </code>
               . They must set their own password before they can use anything, and
@@ -321,7 +321,7 @@ function DeactivateModal({
       title={person ? `${person.name} is leaving` : ""}
       width="sm"
     >
-      <p className="mb-4 text-sm text-zinc-500">
+      <p className="mb-4 text-sm text-ink-soft">
         Their record and history stay. Their login stops working.
       </p>
       <div className="space-y-3">
