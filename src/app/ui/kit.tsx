@@ -175,6 +175,68 @@ export function Empty({ icon = "check", text }: { icon?: Parameters<typeof Icon>
   );
 }
 
+/**
+ * Feedback surface for useOperation. Renders nothing when there is nothing to
+ * say. Shows a dismissible refusal/error toast, or — when the gate parks a
+ * money/people action — a confirmation bar with the server's prompt.
+ */
+export function OpFeedback({
+  error,
+  confirmation,
+  busy,
+  onConfirm,
+  onCancel,
+  onDismiss,
+}: {
+  error: string | null;
+  confirmation: { pendingId: string; prompt: string } | null;
+  busy: boolean;
+  onConfirm: () => void;
+  onCancel: () => void;
+  onDismiss: () => void;
+}) {
+  if (confirmation) {
+    return (
+      <div className="sheet-up fixed bottom-20 left-1/2 z-50 flex w-[calc(100%-2rem)] max-w-md -translate-x-1/2 items-center gap-3 rounded-2xl border-l-[3px] border-accent-strong bg-chrome px-4 py-3 text-chrome-ink shadow-lift md:bottom-6">
+        <div className="min-w-0 flex-1">
+          <div className="text-[10px] font-semibold uppercase tracking-widest text-accent">
+            Needs your confirmation
+          </div>
+          <div className="mt-0.5 text-[13px]">{confirmation.prompt}</div>
+        </div>
+        <button
+          onClick={onConfirm}
+          disabled={busy}
+          className="press shrink-0 rounded-full bg-accent px-3.5 py-1.5 text-xs font-bold text-chrome transition-colors hover:bg-accent-strong disabled:opacity-40"
+        >
+          Confirm
+        </button>
+        <button
+          onClick={onCancel}
+          disabled={busy}
+          className="press shrink-0 text-xs text-chrome-soft transition-colors hover:text-chrome-ink"
+        >
+          Cancel
+        </button>
+      </div>
+    );
+  }
+  if (error) {
+    return (
+      <div className="sheet-up fixed bottom-20 left-1/2 z-50 flex w-[calc(100%-2rem)] max-w-md -translate-x-1/2 items-center gap-3 rounded-2xl border-l-[3px] border-danger bg-chrome px-4 py-3 text-chrome-ink shadow-lift md:bottom-6">
+        <span className="min-w-0 flex-1 text-[13px]">{error}</span>
+        <button
+          onClick={onDismiss}
+          className="press shrink-0 rounded-full bg-white/10 px-3 py-1.5 text-xs font-semibold text-chrome-ink transition-colors hover:bg-white/20"
+        >
+          OK
+        </button>
+      </div>
+    );
+  }
+  return null;
+}
+
 /** Centered modal with pop-in; closes on backdrop click. */
 export function Modal({
   onClose,

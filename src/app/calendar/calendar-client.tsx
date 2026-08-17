@@ -3,7 +3,8 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Icon } from "../ui/icons";
-import { inputCls } from "../ui/kit";
+import { inputCls, OpFeedback } from "../ui/kit";
+import { useOperation } from "@/components/ops/use-operation";
 
 interface CalendarCell {
   date: string;
@@ -55,6 +56,8 @@ export function CalendarClient({
   people: Array<{ id: string; name: string }>;
 }) {
   const router = useRouter();
+  const op = useOperation();
+  const busy = op.busy;
   const today = new Date().toISOString().slice(0, 10);
   const [selectedDate, setSelectedDate] = useState<string | null>(
     cells.some((c) => c.date === today) ? today : null,
@@ -62,7 +65,7 @@ export function CalendarClient({
   const [editingId, setEditingId] = useState<string | null>(null);
   const [showCreate, setShowCreate] = useState(false);
   const [undo, setUndo] = useState<UndoableAction | null>(null);
-  const [busy, setBusy] = useState(false);
+  const [undoBusy, setUndoBusy] = useState(false);
 
   const [createForm, setCreateForm] = useState({
     title: "",
@@ -87,18 +90,9 @@ export function CalendarClient({
   }
 
   async function runOp(name: string, args: Record<string, unknown>, okMsg: string) {
-    setBusy(true);
-    const res = await fetch("/api/operations", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ start: "form", name, args }),
-    });
-    const data = await res.json();
-    setBusy(false);
-    if (data.status === "ran") {
-      const id = data.activityEntry?.id as string | undefined;
-      if (id) flashUndo(okMsg, id);
-      else router.refresh();
+    const outcome = await op.run(name, args);
+    if (outcome.status === "ran") {
+      if (outcome.activityEntryId) flashUndo(okMsg, outcome.activityEntryId);
       return true;
     }
     return false;
@@ -106,9 +100,9 @@ export function CalendarClient({
 
   async function undoLast() {
     if (!undo) return;
-    setBusy(true);
+    setUndoBusy(true);
     await fetch(`/api/activity/${undo.activityId}/undo`, { method: "POST" });
-    setBusy(false);
+    setUndoBusy(false);
     setUndo(null);
     router.refresh();
   }
@@ -446,7 +440,7 @@ export function CalendarClient({
           <span className="text-[13px]">{undo.message}</span>
           <button
             onClick={undoLast}
-            disabled={busy}
+            disabled={undoBusy}
             className="press rounded-full bg-accent px-3.5 py-1 text-xs font-bold text-chrome transition-colors hover:bg-accent-strong disabled:opacity-40"
           >
             Undo
@@ -455,6 +449,16 @@ export function CalendarClient({
             OK
           </button>
         </div>
+      )}
+      {!undo && (
+        <OpFeedback
+          error={op.error}
+          confirmation={op.confirmation}
+          busy={op.busy}
+          onConfirm={() => op.confirm()}
+          onCancel={op.cancel}
+          onDismiss={op.reset}
+        />
       )}
     </div>
   );

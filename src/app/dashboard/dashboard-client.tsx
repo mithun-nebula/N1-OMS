@@ -2,11 +2,11 @@
 
 import Link from "next/link";
 import { useMemo, useState } from "react";
-import { useRouter } from "next/navigation";
 import { isApprover as roleIsApprover } from "@/server/roles";
 import { Icon } from "../ui/icons";
 import { CountUp, ProgressRing } from "../ui/progress-ring";
-import { Empty, PriorityBadge } from "../ui/kit";
+import { Empty, OpFeedback, PriorityBadge } from "../ui/kit";
+import { useOperation } from "@/components/ops/use-operation";
 
 interface TaskItem {
   id: string;
@@ -66,7 +66,7 @@ export function DashboardClient({
   hrAttention: { activeOnboardings: number; outstandingAcks: number; expiringDocs: number } | null;
   adminAttention: { userCount: number; rules: number; operationCount: number } | null;
 }) {
-  const router = useRouter();
+  const op = useOperation();
   const [busyTask, setBusyTask] = useState<string | null>(null);
   const [leaving, setLeaving] = useState<Set<string>>(new Set());
   const [busyLeave, setBusyLeave] = useState<string | null>(null);
@@ -101,24 +101,22 @@ export function DashboardClient({
   async function completeTask(taskId: string) {
     setBusyTask(taskId);
     setLeaving((s) => new Set(s).add(taskId)); // start the collapse right away
-    await fetch("/api/operations", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ start: "form", name: "task.complete", args: { taskId } }),
-    });
+    const outcome = await op.run("task.complete", { taskId });
+    if (outcome.status !== "ran") {
+      // Refused or parked: bring the row back — it did not actually complete.
+      setLeaving((s) => {
+        const next = new Set(s);
+        next.delete(taskId);
+        return next;
+      });
+    }
     setBusyTask(null);
-    router.refresh();
   }
 
   async function approveLeave(leaveId: string) {
     setBusyLeave(leaveId);
-    await fetch("/api/operations", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ start: "form", name: "leave.approve", args: { leaveId } }),
-    });
+    await op.run("leave.approve", { leaveId });
     setBusyLeave(null);
-    router.refresh();
   }
 
   // Stagger: each top-level card enters 70ms after the previous one.
@@ -372,6 +370,14 @@ export function DashboardClient({
         <QuickLink href="/me" label="Profile & payslips" />
         <QuickLink href="/calendar" label="Open calendar" />
       </section>
+      <OpFeedback
+        error={op.error}
+        confirmation={op.confirmation}
+        busy={op.busy}
+        onConfirm={() => op.confirm()}
+        onCancel={op.cancel}
+        onDismiss={op.reset}
+      />
     </div>
   );
 }

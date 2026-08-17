@@ -1,10 +1,10 @@
 "use client";
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
 import { isAdminLike } from "@/server/roles";
 import { Icon } from "../ui/icons";
-import { inputCls, PriorityBadge } from "../ui/kit";
+import { inputCls, OpFeedback, PriorityBadge } from "../ui/kit";
+import { useOperation } from "@/components/ops/use-operation";
 
 interface Task {
   id: string;
@@ -36,11 +36,11 @@ export function TasksClient({
   people: Array<{ id: string; name: string }>;
   actorRole: string;
 }) {
-  const router = useRouter();
   const [tasks] = useState(initial);
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState({ title: "", assignedTo: "", priority: "medium", dueDate: "" });
-  const [busy, setBusy] = useState(false);
+  const op = useOperation();
+  const busy = op.busy;
   const [leaving, setLeaving] = useState<Set<string>>(new Set());
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editForm, setEditForm] = useState({ title: "", description: "", priority: "medium", dueDate: "" });
@@ -49,32 +49,32 @@ export function TasksClient({
   const canDelete = isAdminLike(actorRole);
   const today = new Date().toISOString().slice(0, 10);
 
-  async function run(name: string, args: Record<string, unknown>) {
-    setBusy(true);
-    await fetch("/api/operations", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ start: "form", name, args }),
-    });
-    setBusy(false);
-    router.refresh();
-  }
-
   async function runLeaving(taskId: string, name: string, args: Record<string, unknown>) {
     setLeaving((s) => new Set(s).add(taskId)); // collapse while the operation runs
-    await run(name, args);
+    const outcome = await op.run(name, args);
+    if (outcome.status !== "ran") {
+      // Refused or parked: bring the row back — it did not actually complete.
+      setLeaving((s) => {
+        const next = new Set(s);
+        next.delete(taskId);
+        return next;
+      });
+    }
   }
 
   async function createTask() {
     if (!form.title) return;
-    await run("task.create", {
+    const outcome = await op.run("task.create", {
       title: form.title,
       assignedTo: form.assignedTo || undefined,
       priority: form.priority,
       dueDate: form.dueDate || undefined,
     });
-    setShowForm(false);
-    setForm({ title: "", assignedTo: "", priority: "medium", dueDate: "" });
+    // Keep the form (and its input) when the gate refuses or parks it.
+    if (outcome.status === "ran") {
+      setShowForm(false);
+      setForm({ title: "", assignedTo: "", priority: "medium", dueDate: "" });
+    }
   }
 
   function startEdit(t: Task) {
@@ -175,7 +175,7 @@ export function TasksClient({
                               </div>
                               <div className="flex items-center gap-2 pt-1">
                                 <button
-                                  onClick={() => { run("task.edit", { taskId: t.id, title: editForm.title, description: editForm.description || undefined, priority: editForm.priority, dueDate: editForm.dueDate || undefined }); setEditingId(null); }}
+                                  onClick={() => { op.run("task.edit", { taskId: t.id, title: editForm.title, description: editForm.description || undefined, priority: editForm.priority, dueDate: editForm.dueDate || undefined }); setEditingId(null); }}
                                   disabled={busy}
                                   className="press rounded-lg bg-chrome px-3 py-1.5 text-xs font-semibold text-chrome-ink disabled:opacity-40"
                                 >
@@ -213,7 +213,7 @@ export function TasksClient({
                               <div className="mt-3 flex flex-wrap items-center gap-2 text-[11px]">
                                 <select
                                   value={t.assignedTo ?? ""}
-                                  onChange={(e) => run("task.assign", { taskId: t.id, assignedTo: e.target.value })}
+                                  onChange={(e) => op.run("task.assign", { taskId: t.id, assignedTo: e.target.value })}
                                   disabled={busy}
                                   className="rounded-lg border border-line bg-transparent px-1.5 py-0.5 text-[11px] font-medium text-ink-soft outline-none focus:border-accent-strong"
                                 >
@@ -246,6 +246,14 @@ export function TasksClient({
           );
         })}
       </div>
+      <OpFeedback
+        error={op.error}
+        confirmation={op.confirmation}
+        busy={op.busy}
+        onConfirm={() => op.confirm()}
+        onCancel={op.cancel}
+        onDismiss={op.reset}
+      />
     </div>
   );
 }

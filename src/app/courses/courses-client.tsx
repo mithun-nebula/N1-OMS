@@ -1,8 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
-import { Avatar, Bar, inputCls, Modal, SectionTitle } from "../ui/kit";
+import { Avatar, Bar, inputCls, Modal, OpFeedback, SectionTitle } from "../ui/kit";
+import { useOperation } from "@/components/ops/use-operation";
 
 interface Module {
   name: string;
@@ -47,23 +47,15 @@ export function CoursesClient({
   people: Array<{ id: string; name: string }>;
   actorRole: string;
 }) {
-  const router = useRouter();
-  const [busy, setBusy] = useState(false);
+  const op = useOperation();
+  const busy = op.busy;
   const [selected, setSelected] = useState<string | null>(null);
   const [noteDraft, setNoteDraft] = useState("");
 
   const canEdit = actorRole !== "intern";
 
   async function run(name: string, args: Record<string, unknown>) {
-    setBusy(true);
-    const res = await fetch("/api/operations", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ start: "form", name, args }),
-    });
-    await res.json();
-    setBusy(false);
-    router.refresh();
+    await op.run(name, args);
   }
 
   const sel = courses.find((c) => c.id === selected);
@@ -241,6 +233,14 @@ export function CoursesClient({
           </section>
         </Modal>
       )}
+      <OpFeedback
+        error={op.error}
+        confirmation={op.confirmation}
+        busy={op.busy}
+        onConfirm={() => op.confirm()}
+        onCancel={op.cancel}
+        onDismiss={op.reset}
+      />
     </div>
   );
 }

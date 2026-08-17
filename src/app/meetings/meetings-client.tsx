@@ -1,9 +1,9 @@
 "use client";
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
 import { Icon } from "../ui/icons";
-import { AccentButton, AvatarStack, ChromeButton, Empty, inputCls } from "../ui/kit";
+import { AccentButton, AvatarStack, ChromeButton, Empty, inputCls, OpFeedback } from "../ui/kit";
+import { useOperation } from "@/components/ops/use-operation";
 
 interface Meeting {
   id: string;
@@ -31,7 +31,8 @@ export function MeetingsClient({
   rooms: Array<{ id: string; name: string }>;
   people: Array<{ id: string; name: string }>;
 }) {
-  const router = useRouter();
+  const op = useOperation();
+  const busy = op.busy;
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState({
     title: "",
@@ -40,7 +41,6 @@ export function MeetingsClient({
     to: "",
     attendees: [] as string[],
   });
-  const [busy, setBusy] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editForm, setEditForm] = useState({ title: "", from: "", to: "" });
   const [addingTo, setAddingTo] = useState<string | null>(null);
@@ -57,39 +57,21 @@ export function MeetingsClient({
 
   async function createMeeting() {
     if (!form.title || !form.from || !form.to) return;
-    setBusy(true);
-    const res = await fetch("/api/operations", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        start: "form",
-        name: "meeting.create",
-        args: {
-          title: form.title,
-          kind: form.kind,
-          from: new Date(form.from).toISOString(),
-          to: new Date(form.to).toISOString(),
-          attendees: form.attendees,
-        },
-      }),
+    const outcome = await op.run("meeting.create", {
+      title: form.title,
+      kind: form.kind,
+      from: new Date(form.from).toISOString(),
+      to: new Date(form.to).toISOString(),
+      attendees: form.attendees,
     });
-    setBusy(false);
-    if ((await res.json()).status === "ran") {
+    if (outcome.status === "ran") {
       setShowForm(false);
       setForm({ title: "", kind: "online", from: "", to: "", attendees: [] });
-      router.refresh();
     }
   }
 
   async function run(name: string, args: Record<string, unknown>) {
-    setBusy(true);
-    await fetch("/api/operations", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ start: "form", name, args }),
-    });
-    setBusy(false);
-    router.refresh();
+    await op.run(name, args);
   }
 
   function startEdit(m: Meeting) {
@@ -250,6 +232,14 @@ export function MeetingsClient({
           })}
         </div>
       )}
+      <OpFeedback
+        error={op.error}
+        confirmation={op.confirmation}
+        busy={op.busy}
+        onConfirm={() => op.confirm()}
+        onCancel={op.cancel}
+        onDismiss={op.reset}
+      />
     </div>
   );
 }

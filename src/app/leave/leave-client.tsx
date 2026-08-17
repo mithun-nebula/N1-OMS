@@ -1,8 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
-import { AccentButton, ChromeButton, Empty, inputCls, SectionTitle, StatusBadge } from "../ui/kit";
+import { AccentButton, ChromeButton, Empty, inputCls, OpFeedback, SectionTitle, StatusBadge } from "../ui/kit";
+import { useOperation } from "@/components/ops/use-operation";
 
 interface LeaveEntry {
   id: string;
@@ -45,9 +45,9 @@ export function LeaveClient({
   isApprover: boolean;
   peopleForSelect: Array<{ id: string; name: string }>;
 }) {
-  const router = useRouter();
+  const op = useOperation();
+  const busy = op.busy;
   const [showForm, setShowForm] = useState(false);
-  const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [form, setForm] = useState({
     employeeId: currentUserId,
@@ -65,63 +65,31 @@ export function LeaveClient({
       setError("End date must be on or after the start date.");
       return;
     }
-    setBusy(true);
     setError(null);
-    const res = await fetch("/api/operations", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        start: "form",
-        name: "leave.request",
-        args: {
-          employeeId: form.employeeId,
-          fromDate: form.fromDate,
-          toDate: form.toDate,
-          type: form.type,
-          reason: form.reason || undefined,
-        },
-      }),
+    const outcome = await op.run("leave.request", {
+      employeeId: form.employeeId,
+      fromDate: form.fromDate,
+      toDate: form.toDate,
+      type: form.type,
+      reason: form.reason || undefined,
     });
-    const data = await res.json();
-    setBusy(false);
-    if (data.status === "ran") {
+    if (outcome.status === "ran") {
       setShowForm(false);
       setForm({ ...form, fromDate: "", toDate: "", reason: "" });
-      router.refresh();
-    } else {
-      setError(data.detail ?? data.opaqueMessage ?? "Could not submit that request.");
     }
   }
 
   async function approve(leaveId: string) {
-    setBusy(true);
-    const res = await fetch("/api/operations", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ start: "form", name: "leave.approve", args: { leaveId } }),
-    });
-    await res.json();
-    setBusy(false);
-    router.refresh();
+    await op.run("leave.approve", { leaveId });
   }
 
   async function decline(leaveId: string, reason: string) {
     if (!reason.trim()) return;
-    setBusy(true);
-    const res = await fetch("/api/operations", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        start: "form",
-        name: "leave.decline",
-        args: { leaveId, reason },
-      }),
-    });
-    await res.json();
-    setBusy(false);
-    setDecliningId(null);
-    setDeclineReason("");
-    router.refresh();
+    const outcome = await op.run("leave.decline", { leaveId, reason });
+    if (outcome.status === "ran") {
+      setDecliningId(null);
+      setDeclineReason("");
+    }
   }
 
   const labelCls = "block text-[10px] font-semibold uppercase tracking-widest text-ink-faint";
@@ -298,6 +266,14 @@ export function LeaveClient({
           </div>
         )}
       </section>
+      <OpFeedback
+        error={op.error}
+        confirmation={op.confirmation}
+        busy={op.busy}
+        onConfirm={() => op.confirm()}
+        onCancel={op.cancel}
+        onDismiss={op.reset}
+      />
     </div>
   );
 }
