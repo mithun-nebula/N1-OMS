@@ -88,10 +88,12 @@ export function roomBookHandler(
         ? { ok: true }
         : { ok: false, missing, detail: "title, from and to are required." };
     },
-    permission: (args) => ({
+    // The booking's id does not exist until execute runs, so the requirement
+    // names the type alone. (It used to put the ROOM's id on the BOOKING
+    // type — an id the operation never writes.)
+    permission: () => ({
       action: "create",
       nodeType: "booking",
-      recordNodeIds: args.roomId ? [args.roomId] : undefined,
     }),
     involvesMoneyOrPeople: () => false,
     execute: async (args, ctx) => {

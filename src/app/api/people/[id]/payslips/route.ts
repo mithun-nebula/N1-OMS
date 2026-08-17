@@ -1,10 +1,9 @@
 import { NextResponse } from "next/server";
 import { getSessionUser } from "@/server/auth";
-import { getPeopleService } from "@/server/runtime";
+import { getPeopleService, getWorld } from "@/server/runtime";
 
 export const dynamic = "force-dynamic";
 
-const PAY_ALLOWED_ROLES = new Set(["super-admin", "admin", "hr"]);
 
 export async function GET(
   _request: Request,
@@ -15,8 +14,12 @@ export async function GET(
     return NextResponse.json({ error: "Not authenticated." }, { status: 401 });
   }
   const { id } = await params;
+  // Ask the gate, not a private role list: whoever may view payslips in the
+  // permission policy may view them here — one authority, not two.
+  const { deps } = await getWorld();
   const selfOrPay =
-    user.id === id || PAY_ALLOWED_ROLES.has(user.role);
+    user.id === id ||
+    deps.permissions.can({ actor: user.id, action: "view", nodeType: "payslip" }).allowed;
   if (!selfOrPay) {
     return NextResponse.json(
       { error: "Pay information is not available." },

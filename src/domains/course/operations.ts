@@ -45,11 +45,16 @@ export function courseUpdateStageHandler(
       }
       return { ok: true };
     },
-    permission: (args) => ({
-      action: "edit",
-      nodeType: "course",
-      recordNodeIds: [args.courseId],
-    }),
+    // Editing the course also snapshots it — the version write is part of
+    // what the gate is asked about, not a side effect it never hears of.
+    permission: (args) => [
+      {
+        action: "edit",
+        nodeType: "course",
+        recordNodeIds: [args.courseId],
+      },
+      { action: "create", nodeType: "course-version" },
+    ],
     involvesMoneyOrPeople: () => false,
     execute: async (args, ctx) => {
       const before = await readCourse(graph, args.courseId);
@@ -97,11 +102,16 @@ export function courseSetModuleStateHandler(
         ? { ok: true }
         : { ok: false, missing, detail: "courseId, moduleIndex and state are required." };
     },
-    permission: (args) => ({
-      action: "edit",
-      nodeType: "course",
-      recordNodeIds: [args.courseId],
-    }),
+    // Editing the course also snapshots it — the version write is part of
+    // what the gate is asked about, not a side effect it never hears of.
+    permission: (args) => [
+      {
+        action: "edit",
+        nodeType: "course",
+        recordNodeIds: [args.courseId],
+      },
+      { action: "create", nodeType: "course-version" },
+    ],
     involvesMoneyOrPeople: () => false,
     execute: async (args, ctx) => {
       const before = await readCourse(graph, args.courseId);
@@ -157,11 +167,16 @@ export function courseSetProgressNoteHandler(
         ? { ok: true }
         : { ok: false, missing, detail: "courseId and note are required." };
     },
-    permission: (args) => ({
-      action: "edit",
-      nodeType: "course",
-      recordNodeIds: [args.courseId],
-    }),
+    // Editing the course also snapshots it — the version write is part of
+    // what the gate is asked about, not a side effect it never hears of.
+    permission: (args) => [
+      {
+        action: "edit",
+        nodeType: "course",
+        recordNodeIds: [args.courseId],
+      },
+      { action: "create", nodeType: "course-version" },
+    ],
     involvesMoneyOrPeople: () => false,
     execute: async (args, ctx) => {
       await graph.patchNode("course", args.courseId, {
@@ -195,11 +210,16 @@ export function courseAssignStageOwnerHandler(
         ? { ok: true }
         : { ok: false, missing, detail: "courseId, stage and owner are required." };
     },
-    permission: (args) => ({
-      action: "edit",
-      nodeType: "course",
-      recordNodeIds: [args.courseId],
-    }),
+    // Editing the course also snapshots it — the version write is part of
+    // what the gate is asked about, not a side effect it never hears of.
+    permission: (args) => [
+      {
+        action: "edit",
+        nodeType: "course",
+        recordNodeIds: [args.courseId],
+      },
+      { action: "create", nodeType: "course-version" },
+    ],
     involvesMoneyOrPeople: () => false,
     execute: async (args) => {
       const before = await readCourse(graph, args.courseId);

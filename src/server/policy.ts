@@ -202,6 +202,23 @@ export const DEMO_PERMISSION_RULES: PermissionRule[] = [
   ...adminRules(),
   ...workplaceRules(),
   ...n1GeneratedRules(),
+  // ── Course versions: written by every course edit, so every role that can
+  // edit a course can create a snapshot; reading history is open like the
+  // course modal that shows it. No edit/delete — versions are immutable.
+  ...(["super-admin", "admin", "hr", "manager", "employee", "intern"] as const).map((role) => ({
+    role,
+    nodeType: "course-version",
+    actions: ["view"] as PermissionAction[],
+    recordScope: { kind: "all" } as const,
+    fields: { kind: "all-visible" } as const,
+  })),
+  ...(["super-admin", "admin", "hr", "manager", "employee"] as const).map((role) => ({
+    role,
+    nodeType: "course-version",
+    actions: ["create"] as PermissionAction[],
+    recordScope: { kind: "all" } as const,
+    fields: { kind: "all-visible" } as const,
+  })),
   {
     role: "super-admin",
     nodeType: "task",

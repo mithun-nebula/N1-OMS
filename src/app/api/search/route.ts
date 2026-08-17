@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getSessionUser } from "@/server/auth";
-import { getSpine, getWorld } from "@/server/runtime";
+import { getSpine } from "@/server/runtime";
 import { directory } from "@/server/directory";
 
 export const dynamic = "force-dynamic";
@@ -23,7 +23,6 @@ export async function GET(request: Request) {
   if (q.length < 2) return NextResponse.json({ results: [] });
 
   const spine = await getSpine();
-  const graph = (await getWorld()).deps.graph;
   const results: Array<{ nodeType: string; nodeId: string; label: string; sub?: string }> = [];
 
   // Match on the real records, and only return the ones this actor may see.
@@ -42,19 +41,26 @@ export async function GET(request: Request) {
     });
   }
 
+  // Same non-disclosure as everywhere else: a record the actor may not view is
+  // simply not a search result. This used to read the graph directly.
   for (const { type, labelField, extra } of SEARCH_TYPES) {
-    for (const node of await graph.find(type as never, () => true)) {
-      const d = node.data as Record<string, unknown>;
-      const label = String(d[labelField] ?? node.id);
-      const haystack = [label, ...(extra ?? []).map((f) => String(d[f] ?? ""))].join(" ").toLowerCase();
-      if (haystack.includes(q)) {
-        results.push({
-          nodeType: type,
-          nodeId: node.id,
-          label,
-          sub: type === "course" && d.owner ? directory().nameOf(String(d.owner)) : type,
-        });
-      }
+    const visible = await spine.readMany({
+      actor: user.id,
+      nodeType: type,
+      filter: (d, nodeId) => {
+        const label = String(d[labelField] ?? nodeId);
+        const haystack = [label, ...(extra ?? []).map((f) => String(d[f] ?? ""))].join(" ").toLowerCase();
+        return haystack.includes(q);
+      },
+    });
+    for (const { nodeId, record } of visible) {
+      const d = record as Record<string, unknown>;
+      results.push({
+        nodeType: type,
+        nodeId,
+        label: String(d[labelField] ?? nodeId),
+        sub: type === "course" && d.owner ? directory().nameOf(String(d.owner)) : type,
+      });
     }
   }
 

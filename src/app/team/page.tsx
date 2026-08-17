@@ -43,25 +43,41 @@ export default async function TeamPage() {
     payRestricted: isRestricted(record.pay),
   }));
 
+  // Tasks and leave go through the spine, so the viewer's scope decides what
+  // the profile modal shows: your own leave, your team's if you manage it,
+  // everyone's if you are HR. This used to read the graph directly and hand
+  // every employee the whole organisation's leave dates.
+  const visibleTasks = await spine.readMany({
+    actor: user.id,
+    nodeType: "task",
+    filter: (d) => d.status !== "done",
+  });
+  const visibleLeave = await spine.readMany({ actor: user.id, nodeType: "leave" });
+
+  const tasksByAssignee = new Map<string, Array<{ title: string; priority: string; dueDate?: string }>>();
+  for (const { record } of visibleTasks) {
+    const d = record as Record<string, unknown>;
+    const assignee = String(d.assignedTo ?? "");
+    if (!assignee) continue;
+    const list = tasksByAssignee.get(assignee) ?? [];
+    list.push({ title: String(d.title ?? ""), priority: String(d.priority ?? "medium"), dueDate: d.dueDate ? String(d.dueDate) : undefined });
+    tasksByAssignee.set(assignee, list);
+  }
+  const leaveByEmployee = new Map<string, Array<{ fromDate: string; toDate: string; status: string }>>();
+  for (const { record } of visibleLeave) {
+    const d = record as Record<string, unknown>;
+    const employeeId = String(d.employeeId ?? d.employee ?? "");
+    if (!employeeId) continue;
+    const list = leaveByEmployee.get(employeeId) ?? [];
+    list.push({ fromDate: String(d.fromDate ?? ""), toDate: String(d.toDate ?? ""), status: String(d.status ?? "") });
+    leaveByEmployee.set(employeeId, list);
+  }
+
   const perPerson: Array<{ id: string; courses: Array<{ title: string; pct: number }>; tasks: Array<{ title: string; priority: string; dueDate?: string }>; leave: Array<{ fromDate: string; toDate: string; status: string }> }> = [];
   for (const id of directory().activeIds()) {
     const courses = (coursesByOwner.get(id) ?? []).map((c) => ({ title: c.title, pct: c.pct }));
-    const tasks = (await deps.graph
-      .find("task", (n) => {
-        const d = n.data as { assignedTo?: string; status?: string };
-        return d.assignedTo === id && d.status !== "done";
-      }))
-      .map((n) => {
-        const d = n.data as Record<string, unknown>;
-        return { title: String(d.title ?? ""), priority: String(d.priority ?? "medium"), dueDate: d.dueDate ? String(d.dueDate) : undefined };
-      });
-    const leave = (await deps.graph
-      .find("leave", (n) => (n.data as { employeeId?: string }).employeeId === id))
-      .map((n) => {
-        const d = n.data as Record<string, unknown>;
-        return { fromDate: String(d.fromDate ?? ""), toDate: String(d.toDate ?? ""), status: String(d.status ?? "") };
-      })
-      .sort((a, b) => (a.fromDate < b.fromDate ? 1 : -1));
+    const tasks = tasksByAssignee.get(id) ?? [];
+    const leave = (leaveByEmployee.get(id) ?? []).sort((a, b) => (a.fromDate < b.fromDate ? 1 : -1));
     perPerson.push({ id, courses, tasks, leave });
   }
 
