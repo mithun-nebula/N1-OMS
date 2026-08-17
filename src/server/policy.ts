@@ -3,6 +3,10 @@ import type { PermissionAction } from "@/spine/operation/registry";
 import { PermissionPolicy } from "@/spine/permission/policy";
 import type { PermissionRule, RoleProvider } from "@/spine/permission/types";
 import { SUPPORTED_DOCTYPES } from "@/domains/people/n1-doctypes";
+import {
+  CONFIDENTIAL_NODE_TYPES,
+  PERSON_SCOPED_NODE_TYPES,
+} from "@/domains/people/n1-classification";
 import { roleOfActor } from "./accounts";
 import { directory } from "./directory";
 
@@ -60,10 +64,17 @@ function adminRules(): PermissionRule[] {
 
 /**
  * Permission rules generated from the N1 DocType registry.
- * - Sensitive node types (payroll/payslip/appraisal/tax…): hr/admin/super-admin view+export.
- * - Non-sensitive node types: all six roles view; hr/admin/super-admin edit.
- * Employees still reach their own pay/payslips via the dedicated PeopleRecordService
- * (self-scoped API), not via a generic graph rule.
+ *
+ * Four classes:
+ * - Sensitive (payroll/payslip/appraisal/tax…): hr view+export, admins manage. Unchanged.
+ * - Person-scoped (attendance, leave, per-employee records): own record for
+ *   everyone, own team for a manager, organisation for hr/admins.
+ * - Confidential (recruitment, bulk tools): hr and admins only.
+ * - Reference (leave types, holiday lists, shift types…): all six roles view;
+ *   hr/admins manage — the old default, now only for records about nobody.
+ *
+ * Employees still reach their own pay/payslips via the dedicated
+ * PeopleRecordService (self-scoped API), not via a generic graph rule.
  */
 function n1GeneratedRules(): PermissionRule[] {
   const rules: PermissionRule[] = [];
@@ -83,7 +94,52 @@ function n1GeneratedRules(): PermissionRule[] {
           fields: { kind: "all-visible" },
         });
       }
+    } else if (PERSON_SCOPED_NODE_TYPES.has(m.nodeType)) {
+      // The record names one employee. Nobody browses a colleague's day.
+      for (const role of ["employee", "intern"] as const) {
+        rules.push({
+          role,
+          nodeType: m.nodeType,
+          actions: ["view"],
+          recordScope: { kind: "self" },
+          fields: { kind: "all-visible" },
+        });
+      }
+      rules.push({
+        role: "manager",
+        nodeType: m.nodeType,
+        actions: ["view"],
+        recordScope: { kind: "own-team" },
+        fields: { kind: "all-visible" },
+      });
+      for (const role of ["hr", "admin", "super-admin"] as const) {
+        rules.push({
+          role,
+          nodeType: m.nodeType,
+          actions:
+            role === "super-admin"
+              ? ["view", "create", "edit", "delete", "export", "approve"]
+              : ["view", "create", "edit", "export", "approve"],
+          recordScope: { kind: "all" },
+          fields: { kind: "all-visible" },
+        });
+      }
+    } else if (CONFIDENTIAL_NODE_TYPES.has(m.nodeType)) {
+      // Candidates never consented to colleagues reading their file.
+      for (const role of ["hr", "admin", "super-admin"] as const) {
+        rules.push({
+          role,
+          nodeType: m.nodeType,
+          actions:
+            role === "super-admin"
+              ? ["view", "create", "edit", "delete", "export"]
+              : ["view", "create", "edit", "export"],
+          recordScope: { kind: "all" },
+          fields: { kind: "all-visible" },
+        });
+      }
     } else {
+      // Reference data: about nobody, useful to everybody.
       for (const role of ["super-admin", "admin", "hr", "manager", "employee", "intern"] as const) {
         const canManage = role === "super-admin" || role === "admin" || role === "hr";
         const canDelete = role === "super-admin" || role === "admin";
@@ -412,9 +468,10 @@ export class DemoRoleProvider implements RoleProvider {
     }
     if (nodeType === "attendance") {
       // att_<employee>_<YYYY-MM-DD> — the owner travels in the id because the
-      // gate is synchronous and cannot look the record up.
+      // gate is synchronous and cannot look the record up. N1-shaped
+      // attendance ids are opaque, so they fall through to the index.
       const m = /^att_(.+)_(\d{4}-\d{2}-\d{2})$/.exec(recordNodeId);
-      return m?.[1];
+      if (m) return m[1];
     }
     return this.owners.get(`${nodeType}:${recordNodeId}`);
   }

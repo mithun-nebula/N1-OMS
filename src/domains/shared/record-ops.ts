@@ -1,3 +1,7 @@
+import {
+  PERSON_SCOPED_NODE_TYPES,
+  ownerOfRecordData,
+} from "@/domains/people/n1-classification";
 import type { OperationHandler, OperationResult } from "@/spine/operation/registry";
 import type { RecordData, RecordStore } from "@/spine/record/types";
 import { n1Mode } from "@/config/env";
@@ -39,6 +43,22 @@ function touchesMoneyOrPeople(nodeType: string, data?: RecordData): boolean {
 }
 
 /**
+ * Keep the person-scope owner index current: a person-scoped record created or
+ * edited at runtime must resolve its owner without waiting for the next
+ * restart's hydration pass. Unknown owner fails closed (record hidden).
+ */
+function registerOwner(
+  owners: Map<string, string> | undefined,
+  nodeType: string,
+  nodeId: string,
+  data: Record<string, unknown>,
+): void {
+  if (!owners || !PERSON_SCOPED_NODE_TYPES.has(nodeType)) return;
+  const owner = ownerOfRecordData(data);
+  if (owner) owners.set(`${nodeType}:${nodeId}`, owner);
+}
+
+/**
  * Generic record operations — let any mapped DocType be created, edited, and
  * deleted from the /records browser. All three go through the gate (permission
  * + activity log + undo). In live N1 mode they also write back to Frappe.
@@ -46,6 +66,7 @@ function touchesMoneyOrPeople(nodeType: string, data?: RecordData): boolean {
 
 export function recordCreateHandler(
   graph: RecordStore,
+  owners?: Map<string, string>,
 ): OperationHandler<{ nodeType: string; data: RecordData; id?: string }> {
   return {
     name: "record.create",
@@ -65,6 +86,7 @@ export function recordCreateHandler(
     execute: async (args) => {
       const id = args.id ?? `${args.nodeType}_${Date.now().toString(36)}`;
       await graph.putNode(args.nodeType, id, args.data);
+      registerOwner(owners, args.nodeType, id, args.data);
       await n1WriteThrough(args.nodeType, id, args.data, "create");
       const result: OperationResult = {
         changes: [{ nodeType: args.nodeType, nodeId: id, after: args.data }],
@@ -81,6 +103,7 @@ export function recordCreateHandler(
 
 export function recordUpdateHandler(
   graph: RecordStore,
+  owners?: Map<string, string>,
 ): OperationHandler<{ nodeType: string; nodeId: string; data: RecordData }> {
   return {
     name: "record.update",
@@ -108,6 +131,7 @@ export function recordUpdateHandler(
       const before = await graph.getNode(args.nodeType, args.nodeId);
       if (!before) throw new Error(`No ${args.nodeType}:${args.nodeId}`);
       await graph.patchNode(args.nodeType, args.nodeId, args.data);
+      registerOwner(owners, args.nodeType, args.nodeId, args.data);
       await n1WriteThrough(args.nodeType, args.nodeId, args.data, "update");
       const result: OperationResult = {
         changes: [{

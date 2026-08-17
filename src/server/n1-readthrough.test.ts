@@ -53,12 +53,19 @@ describe("permission gating — sensitive N1 node types", () => {
     expect(deps.permissions.can({ actor: "priya", action: "export", nodeType: "payslip" }).allowed).toBe(false);
   });
 
-  it("any role can view a non-sensitive DocType; only hr/admin edit", async () => {
+  it("any role can view REFERENCE DocTypes; only hr/admin edit", async () => {
     const { deps } = await buildDemoWorld();
     expect(deps.permissions.can({ actor: "ravi", action: "view", nodeType: "leave-type" }).allowed).toBe(true);
-    expect(deps.permissions.can({ actor: "priya", action: "view", nodeType: "job-applicant" }).allowed).toBe(true);
     expect(deps.permissions.can({ actor: "shruti", action: "edit", nodeType: "leave-type" }).allowed).toBe(true);
     expect(deps.permissions.can({ actor: "priya", action: "edit", nodeType: "leave-type" }).allowed).toBe(false);
+  });
+
+  it("recruitment is confidential: hr yes, employees no", async () => {
+    // This used to assert the opposite — any role could view job applicants.
+    // The person-scoping split made recruitment HR/admin-only.
+    const { deps } = await buildDemoWorld();
+    expect(deps.permissions.can({ actor: "priya", action: "view", nodeType: "job-applicant" }).allowed).toBe(false);
+    expect(deps.permissions.can({ actor: "shruti", action: "view", nodeType: "job-applicant" }).allowed).toBe(true);
   });
 
   it("spine.read hides payslips from an employee (opaque refusal)", async () => {

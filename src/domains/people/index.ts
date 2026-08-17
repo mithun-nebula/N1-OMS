@@ -33,7 +33,7 @@ export const peopleDomain: DomainModule = {
   register(ctx: DomainContext) {
     ctx.registry.register(attendanceCheckInHandler(ctx.graph));
     ctx.registry.register(attendanceCheckOutHandler(ctx.graph));
-    ctx.registry.register(leaveRequestHandler(ctx.graph));
+    ctx.registry.register(leaveRequestHandler(ctx.graph, ctx.owners));
     ctx.registry.register(leaveApproveHandler(ctx.graph));
     ctx.registry.register(leaveDeclineHandler(ctx.graph));
     ctx.registry.register(employeeUpdateContactHandler(ctx.graph));

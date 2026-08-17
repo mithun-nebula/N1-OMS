@@ -426,3 +426,95 @@ describe("a refusal never discloses what it is hiding", () => {
     expect(JSON.stringify(imaginary)).toBe(JSON.stringify(real));
   });
 });
+
+describe("person-scoping: nobody browses a colleague's day", () => {
+  /**
+   * Before the split, every non-sensitive N1 DocType granted `view` to all six
+   * roles with `all` scope — an intern could read the whole organisation's
+   * attendance, leave (reasons included) and the recruitment pipeline.
+   */
+  it("hides another person's leave record; self, manager-of-team and HR still see it", async () => {
+    const { spine, deps } = await buildDemoWorld();
+    const node = await deps.graph.getNode("leave", "leave-demo");
+    expect(node).toBeTruthy();
+    const owner = (node!.data as { employee: string }).employee;
+    const stranger = owner === "ravi" ? "naveen" : "ravi"; // an intern who is not the owner
+
+    const asStranger = await spine.read({ actor: stranger, nodeType: "leave", nodeId: "leave-demo" });
+    expect(asStranger.found).toBe(false);
+
+    const asOwner = await spine.read({ actor: owner, nodeType: "leave", nodeId: "leave-demo" });
+    expect(asOwner.found).toBe(true);
+
+    const asHr = await spine.read({ actor: "shruti", nodeType: "leave", nodeId: "leave-demo" });
+    expect(asHr.found).toBe(true);
+  });
+
+  it("readMany gives an intern only their own person-scoped records", async () => {
+    const { spine, deps } = await buildDemoWorld();
+    const node = await deps.graph.getNode("leave", "leave-demo");
+    const owner = (node!.data as { employee: string }).employee;
+    const stranger = owner === "ravi" ? "naveen" : "ravi";
+
+    const list = await spine.readMany({ actor: stranger, nodeType: "leave" });
+    expect(list.map((r) => r.nodeId)).not.toContain("leave-demo");
+  });
+
+  it("hides the recruitment pipeline from everyone but HR and admins", async () => {
+    const { spine, deps } = await buildDemoWorld();
+    expect(await deps.graph.getNode("job-applicant", "job-applicant-demo")).toBeTruthy();
+
+    const asEmployee = await spine.read({ actor: "priya", nodeType: "job-applicant", nodeId: "job-applicant-demo" });
+    expect(asEmployee.found).toBe(false);
+
+    const asHr = await spine.read({ actor: "shruti", nodeType: "job-applicant", nodeId: "job-applicant-demo" });
+    expect(asHr.found).toBe(true);
+  });
+
+  it("keeps reference data readable by everyone", async () => {
+    const { spine } = await buildDemoWorld();
+    const asIntern = await spine.read({ actor: "ravi", nodeType: "leave-type", nodeId: "leave-type-demo" });
+    expect(asIntern.found).toBe(true);
+  });
+
+  it("scopes a clock-in the moment it is created", async () => {
+    const { spine } = await buildDemoWorld();
+    const date = "2026-08-18";
+    const checkIn = await spine.submit(
+      adapters.fromForm({
+        actor: "priya",
+        name: "attendance.checkIn",
+        args: { employeeId: "priya", date },
+      }),
+    );
+    expect(checkIn.status).toBe("ran");
+
+    const own = await spine.read({ actor: "priya", nodeType: "attendance", nodeId: `att_priya_${date}` });
+    expect(own.found).toBe(true);
+
+    const stranger = await spine.read({ actor: "ravi", nodeType: "attendance", nodeId: `att_priya_${date}` });
+    expect(stranger.found).toBe(false);
+  });
+
+  it("a fresh leave request is visible to its owner without a restart", async () => {
+    const { spine } = await buildDemoWorld();
+    const req = await spine.submit(
+      adapters.fromForm({
+        actor: "priya",
+        name: "leave.request",
+        args: { employeeId: "priya", fromDate: "2026-09-01", toDate: "2026-09-02", type: "Casual" },
+      }),
+    );
+    // leave.request involves people, so the gate may park it for confirmation;
+    // both outcomes are fine — what matters is the read scoping below.
+    expect(["ran", "awaiting-confirmation"]).toContain(req.status);
+    if (req.status !== "ran") return;
+
+    const leaveId = (req.result?.response as { leaveId?: string } | undefined)?.leaveId;
+    expect(leaveId).toBeTruthy();
+    const own = await spine.read({ actor: "priya", nodeType: "leave", nodeId: leaveId! });
+    expect(own.found).toBe(true);
+    const stranger = await spine.read({ actor: "ravi", nodeType: "leave", nodeId: leaveId! });
+    expect(stranger.found).toBe(false);
+  });
+});

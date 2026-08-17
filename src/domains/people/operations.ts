@@ -23,6 +23,7 @@ async function readLeave(graph: RecordStore, leaveId: string): Promise<LeaveNode
 
 export function leaveRequestHandler(
   graph: RecordStore,
+  owners?: Map<string, string>,
 ): OperationHandler<{
   employeeId: string;
   fromDate: string;
@@ -68,6 +69,9 @@ export function leaveRequestHandler(
         clashes,
       };
       await graph.putNode("leave", leaveId, data);
+      // Self/own-team visibility of this fresh request must not wait for the
+      // next restart's owner hydration.
+      owners?.set(`leave:${leaveId}`, args.employeeId);
       await graph.addEdge({ from: args.employeeId, to: leaveId, type: "requests" });
       const approver = teamLeadOf(args.employeeId);
       const result: OperationResult = {

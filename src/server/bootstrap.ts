@@ -12,6 +12,10 @@ import type { RecordStore } from "@/spine/record/types";
 import { Spine, type SpineDeps } from "@/spine/spine";
 import { DOMAINS, type DomainContext } from "@/domains";
 import { DEMO_PEOPLE } from "@/domains/shared/people-roster";
+import {
+  PERSON_SCOPED_NODE_TYPES,
+  ownerOfRecordData,
+} from "@/domains/people/n1-classification";
 import { buildDemoPermissionPolicy } from "./policy";
 import { getQuestionLimiter } from "./limiter";
 import { PostgresRecordStore } from "./store-pg-record";
@@ -97,8 +101,8 @@ export async function buildDemoWorld(): Promise<DemoWorld> {
   for (const domain of DOMAINS) {
     domain.register(ctx);
   }
-  ctx.registry.register(recordCreateHandler(ctx.graph));
-  ctx.registry.register(recordUpdateHandler(ctx.graph));
+  ctx.registry.register(recordCreateHandler(ctx.graph, ctx.owners));
+  ctx.registry.register(recordUpdateHandler(ctx.graph, ctx.owners));
   ctx.registry.register(recordDeleteHandler(ctx.graph));
   if (env().seedDemo) {
     await seedIfEmpty(ctx, graph);
@@ -151,5 +155,17 @@ async function hydrateOwners(owners: Map<string, ActorId>, graph: RecordStore): 
   for (const c of courses) {
     const owner = (c.data as { owner?: string }).owner;
     if (owner) owners.set(`course:${c.id}`, owner);
+  }
+  // Person-scoped HR records: the owner travels in the record's own fields
+  // (`employee` from N1, `employeeId` internally). Resolved here once so the
+  // synchronous gate never has to read the database. Records that arrive
+  // after boot are registered by the write paths; a record with no resolvable
+  // owner fails closed (hidden from self/own-team scopes, visible to HR).
+  for (const nodeType of PERSON_SCOPED_NODE_TYPES) {
+    const nodes = await graph.find(nodeType, () => true);
+    for (const n of nodes) {
+      const owner = ownerOfRecordData(n.data as Record<string, unknown>);
+      if (owner) owners.set(`${nodeType}:${n.id}`, owner);
+    }
   }
 }
