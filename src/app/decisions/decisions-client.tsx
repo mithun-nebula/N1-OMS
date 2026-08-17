@@ -111,7 +111,7 @@ export function DecisionsClient({
                 {d.reason}
               </div>
               <div className="mt-2 text-[11px] text-ink-faint">
-                decided by {d.decidedBy} · {new Date(d.decidedAt).toLocaleDateString()}
+                decided by {d.decidedBy} · {String(d.decidedAt).slice(0, 10)}
                 {d.linkedRecords.length > 0 &&
                   ` · links: ${d.linkedRecords.map((l) => `${l.nodeType}:${l.nodeId}`).join(", ")}`}
               </div>

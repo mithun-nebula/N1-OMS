@@ -236,7 +236,7 @@ export function DashboardClient({
             {dayOver ? "Good work, " : "Hello, "}
             <span className="font-extrabold">{firstName}</span>
           </h1>
-          <p className="mt-1 text-sm text-ink-soft">{dateLine} — here&apos;s your day.</p>
+          <p className="mt-1 text-sm text-ink-soft" suppressHydrationWarning>{dateLine} — here&apos;s your day.</p>
         </div>
         <div className="flex items-center gap-2.5">
           {day && !day.attendance.checkInAt && (
