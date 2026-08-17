@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { isAdminLike } from "@/server/roles";
 import { Icon } from "../ui/icons";
+import { inputCls, PriorityBadge } from "../ui/kit";
 
 interface Task {
   id: string;
@@ -25,8 +26,6 @@ const COLUMNS = [
 
 const PRIORITIES = ["low", "medium", "high"];
 
-const inputCls =
-  "rounded-xl border border-line bg-surface px-3 py-1.5 text-xs font-medium text-ink outline-none transition-colors placeholder:font-normal placeholder:text-ink-faint focus:border-accent-strong";
 
 export function TasksClient({
   tasks: initial,
@@ -276,15 +275,3 @@ function IconAction({
   );
 }
 
-function PriorityBadge({ priority }: { priority: string }) {
-  const styles: Record<string, string> = {
-    high: "bg-rose text-rose-strong",
-    medium: "bg-peach text-peach-strong",
-    low: "bg-raised text-ink-faint",
-  };
-  return (
-    <span className={`rounded-full px-2 py-0.5 font-semibold ${styles[priority] ?? styles.low}`}>
-      {priority}
-    </span>
-  );
-}

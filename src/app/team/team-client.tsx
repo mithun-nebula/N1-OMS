@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { Avatar, Bar, Empty, Modal, PriorityBadge, SectionTitle, StatusBadge } from "../ui/kit";
 
 interface PersonRow {
   id: string;
@@ -31,111 +32,136 @@ export function TeamClient({
   const selRow = rows.find((r) => r.id === selected);
 
   return (
-    <div className="space-y-6 p-6">
-      <section>
-        <h2 className="mb-3 text-sm font-medium uppercase tracking-wide text-zinc-500">Directory</h2>
-        <div className="overflow-hidden rounded-xl border border-black/[.08] dark:border-white/[.12]">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-black/[.08] bg-zinc-50 text-left text-xs uppercase tracking-wide text-zinc-400 dark:border-white/[.1] dark:bg-zinc-900">
-                <th className="px-4 py-2">Name</th>
-                <th className="px-4 py-2">Role</th>
-                <th className="px-4 py-2">Contact</th>
-                <th className="px-4 py-2">Pay</th>
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((r) => (
-                <tr key={r.id} onClick={() => setSelected(r.id)} className="cursor-pointer border-b border-black/[.04] last:border-0 hover:bg-teal-700/5 dark:border-white/[.04]">
-                  <td className="px-4 py-2 font-medium text-teal-700 dark:text-teal-400">{r.name}</td>
-                  <td className="px-4 py-2 text-zinc-500">{r.role}</td>
-                  <td className="px-4 py-2 text-zinc-500">{r.contact ?? "—"}</td>
-                  <td className="px-4 py-2">{r.payRestricted ? <span className="text-xs text-zinc-400">🔒 Restricted</span> : <span className="text-zinc-400">visible</span>}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-        <p className="mt-2 text-xs text-zinc-400">Click a person for their courses, tasks and leave.</p>
-      </section>
-
-      <section>
-        <h2 className="mb-3 text-sm font-medium uppercase tracking-wide text-zinc-500">Building now</h2>
-        <div className="space-y-2">
-          {coursesByOwner.map(({ ownerId, ownerName, courses }) => (
-            <div key={ownerId} className="rounded-lg border border-black/[.08] p-3 dark:border-white/[.12]">
-              <div className="mb-2 text-sm font-medium text-black dark:text-zinc-50">{ownerName}</div>
-              {courses.map((c) => (
-                <div key={c.title} className="mb-1.5 flex items-center gap-3">
-                  <span className="w-40 truncate text-xs text-zinc-500">{c.title}</span>
-                  <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-zinc-200 dark:bg-zinc-800">
-                    <div className="h-full rounded-full bg-teal-600" style={{ width: `${c.pct}%` }} />
-                  </div>
-                  <span className="w-8 text-right text-xs text-zinc-400">{c.pct}%</span>
+    <div className="mx-auto max-w-5xl space-y-5 p-4 sm:p-6">
+      {/* ============ Directory as cards ============ */}
+      <section className="rise" style={{ animationDelay: "60ms" }}>
+        <SectionTitle>Directory</SectionTitle>
+        <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          {rows.map((r, i) => (
+            <button
+              key={r.id}
+              onClick={() => setSelected(r.id)}
+              style={{ animationDelay: `${100 + i * 40}ms` }}
+              className="rise lift press flex items-center gap-3 rounded-2xl bg-surface p-3.5 text-left shadow-card"
+            >
+              <Avatar name={r.name} size={38} />
+              <div className="min-w-0 flex-1">
+                <div className="truncate text-sm font-semibold text-ink">{r.name}</div>
+                <div className="truncate text-[11px] capitalize text-ink-soft">
+                  {r.role}
+                  {r.contact ? ` · ${r.contact}` : ""}
                 </div>
-              ))}
-            </div>
+              </div>
+              {r.payRestricted && (
+                <span className="rounded-full bg-raised px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider text-ink-faint" title="Pay details restricted">
+                  pay 🔒
+                </span>
+              )}
+            </button>
           ))}
         </div>
+        <p className="mt-2 text-[11px] text-ink-faint">Select a person for their courses, tasks and leave.</p>
       </section>
 
-      {sel && selRow && (
-        <div className="fixed inset-0 z-40 flex items-end justify-center bg-black/40 p-4 sm:items-center" onClick={() => setSelected(null)}>
-          <div className="max-h-[85vh] w-full max-w-xl overflow-y-auto rounded-2xl bg-white p-6 dark:bg-black" onClick={(e) => e.stopPropagation()}>
-            <div className="mb-4 flex items-start justify-between">
-              <div>
-                <h2 className="text-lg font-semibold text-black dark:text-zinc-50">{selRow.name}</h2>
-                <p className="text-xs text-zinc-400">{selRow.role}{selRow.contact ? ` · ${selRow.contact}` : ""}</p>
+      {/* ============ Building now ============ */}
+      <section className="rise rounded-3xl bg-surface p-5 shadow-card" style={{ animationDelay: "180ms" }}>
+        <SectionTitle>Building now</SectionTitle>
+        {coursesByOwner.length === 0 ? (
+          <Empty icon="projects" text="Nothing in build right now." />
+        ) : (
+          <div className="mt-3 space-y-4">
+            {coursesByOwner.map(({ ownerId, ownerName, courses }) => (
+              <div key={ownerId}>
+                <div className="mb-1.5 flex items-center gap-2">
+                  <Avatar name={ownerName} size={22} />
+                  <span className="text-[13px] font-semibold text-ink">{ownerName}</span>
+                </div>
+                <div className="space-y-1.5">
+                  {courses.map((c) => (
+                    <div key={c.title} className="flex items-center gap-3">
+                      <span className="w-44 truncate text-xs text-ink-soft">{c.title}</span>
+                      <Bar pct={c.pct} />
+                      <span className="w-9 text-right text-xs font-semibold text-ink-soft">{c.pct}%</span>
+                    </div>
+                  ))}
+                </div>
               </div>
-              <button onClick={() => setSelected(null)} className="text-xs text-zinc-400">Close</button>
-            </div>
-
-            <section className="mb-4">
-              <h3 className="mb-2 text-xs font-medium uppercase tracking-wide text-zinc-400">Courses ({sel.courses.length})</h3>
-              {sel.courses.length === 0 ? <p className="text-xs text-zinc-400">None.</p> : (
-                <div className="space-y-1">
-                  {sel.courses.map((c) => (
-                    <div key={c.title} className="flex items-center gap-2 text-xs">
-                      <span className="w-32 truncate text-zinc-600 dark:text-zinc-300">{c.title}</span>
-                      <div className="h-1 flex-1 overflow-hidden rounded-full bg-zinc-200 dark:bg-zinc-800">
-                        <div className="h-full rounded-full bg-teal-600" style={{ width: `${c.pct}%` }} />
-                      </div>
-                      <span className="text-zinc-400">{c.pct}%</span>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </section>
-
-            <section className="mb-4">
-              <h3 className="mb-2 text-xs font-medium uppercase tracking-wide text-zinc-400">Open tasks ({sel.tasks.length})</h3>
-              {sel.tasks.length === 0 ? <p className="text-xs text-zinc-400">None.</p> : (
-                <div className="space-y-1">
-                  {sel.tasks.map((t, i) => (
-                    <div key={i} className="flex items-center justify-between text-xs">
-                      <span className="text-zinc-600 dark:text-zinc-300">{t.title}</span>
-                      <span className="text-zinc-400">{t.priority}{t.dueDate ? ` · ${t.dueDate}` : ""}</span>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </section>
-
-            <section>
-              <h3 className="mb-2 text-xs font-medium uppercase tracking-wide text-zinc-400">Leave ({sel.leave.length})</h3>
-              {sel.leave.length === 0 ? <p className="text-xs text-zinc-400">No leave requests.</p> : (
-                <div className="space-y-1">
-                  {sel.leave.map((l, i) => (
-                    <div key={i} className="flex items-center justify-between text-xs">
-                      <span className="text-zinc-600 dark:text-zinc-300">{l.fromDate} → {l.toDate}</span>
-                      <span className={`rounded-full px-2 py-0.5 ${l.status === "Approved" ? "bg-teal-100 text-teal-700" : l.status === "Declined" ? "bg-rose-100 text-rose-700" : "bg-amber-100 text-amber-700"}`}>{l.status}</span>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </section>
+            ))}
           </div>
-        </div>
+        )}
+      </section>
+
+      {/* ============ Person detail ============ */}
+      {sel && selRow && (
+        <Modal onClose={() => setSelected(null)}>
+          <div className="mb-5 flex items-start justify-between">
+            <div className="flex items-center gap-3">
+              <Avatar name={selRow.name} size={44} />
+              <div>
+                <h2 className="text-lg font-extrabold text-ink">{selRow.name}</h2>
+                <p className="text-xs capitalize text-ink-soft">
+                  {selRow.role}
+                  {selRow.contact ? ` · ${selRow.contact}` : ""}
+                </p>
+              </div>
+            </div>
+            <button onClick={() => setSelected(null)} className="press text-xs font-medium text-ink-faint hover:text-ink">
+              Close
+            </button>
+          </div>
+
+          <section className="mb-5">
+            <SectionTitle>Courses ({sel.courses.length})</SectionTitle>
+            {sel.courses.length === 0 ? (
+              <p className="mt-2 text-xs text-ink-faint">None.</p>
+            ) : (
+              <div className="mt-2 space-y-1.5">
+                {sel.courses.map((c) => (
+                  <div key={c.title} className="flex items-center gap-3">
+                    <span className="w-36 truncate text-xs text-ink-soft">{c.title}</span>
+                    <Bar pct={c.pct} />
+                    <span className="text-xs font-semibold text-ink-soft">{c.pct}%</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </section>
+
+          <section className="mb-5">
+            <SectionTitle>Open tasks ({sel.tasks.length})</SectionTitle>
+            {sel.tasks.length === 0 ? (
+              <p className="mt-2 text-xs text-ink-faint">None.</p>
+            ) : (
+              <div className="mt-2 space-y-1.5">
+                {sel.tasks.map((t, i) => (
+                  <div key={i} className="flex items-center justify-between gap-2 rounded-xl bg-raised px-3 py-2">
+                    <span className="truncate text-xs font-medium text-ink">{t.title}</span>
+                    <span className="flex shrink-0 items-center gap-2 text-[11px] text-ink-faint">
+                      {t.dueDate}
+                      <PriorityBadge priority={t.priority} />
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </section>
+
+          <section>
+            <SectionTitle>Leave ({sel.leave.length})</SectionTitle>
+            {sel.leave.length === 0 ? (
+              <p className="mt-2 text-xs text-ink-faint">No leave requests.</p>
+            ) : (
+              <div className="mt-2 space-y-1.5">
+                {sel.leave.map((l, i) => (
+                  <div key={i} className="flex items-center justify-between rounded-xl bg-raised px-3 py-2 text-xs">
+                    <span className="text-ink-soft">{l.fromDate} → {l.toDate}</span>
+                    <StatusBadge status={l.status} />
+                  </div>
+                ))}
+              </div>
+            )}
+          </section>
+        </Modal>
       )}
     </div>
   );

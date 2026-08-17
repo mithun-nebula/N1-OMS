@@ -62,10 +62,12 @@ export default async function CoursesPage() {
 
   return (
     <Shell>
-      <header className="flex items-center justify-between border-b border-black/[.08] px-6 py-4 dark:border-white/[.1]">
+      <header className="rise flex flex-wrap items-center justify-between gap-3 px-4 pt-6 sm:px-6">
         <div>
-          <h1 className="text-xl font-semibold text-black dark:text-zinc-50">Course pipeline</h1>
-          <p className="text-sm text-zinc-400">Move stages · edit modules · version history</p>
+          <h1 className="text-2xl font-light tracking-tight text-ink sm:text-3xl">
+            Course <span className="font-extrabold">pipeline</span>
+          </h1>
+          <p className="mt-1 text-sm text-ink-soft">Move stages · edit modules · version history.</p>
         </div>
         <ExportButton type="course" canExport={spine.canExport(user.id, "course")} />
       </header>

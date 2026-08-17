@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Icon } from "../ui/icons";
+import { inputCls } from "../ui/kit";
 
 interface CalendarCell {
   date: string;
@@ -35,8 +36,6 @@ const KIND_STYLE: Record<string, { bg: string; edge: string; text: string; pill:
 };
 const KIND_DEFAULT = KIND_STYLE.meeting;
 
-const inputCls =
-  "rounded-xl border border-line bg-raised px-3 py-1.5 text-xs font-medium text-ink outline-none transition-colors placeholder:font-normal placeholder:text-ink-faint focus:border-accent-strong focus:bg-surface";
 
 export function CalendarClient({
   year,

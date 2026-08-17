@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { isApprover as roleIsApprover } from "@/server/roles";
 import { Icon } from "../ui/icons";
 import { CountUp, ProgressRing } from "../ui/progress-ring";
+import { Empty, PriorityBadge } from "../ui/kit";
 
 interface TaskItem {
   id: string;
@@ -455,16 +456,6 @@ function QuickLink({ href, label }: { href: string; label: string }) {
   );
 }
 
-function Empty({ icon, text }: { icon: "check" | "calendar"; text: string }) {
-  return (
-    <div className="fade-in mt-3 flex flex-col items-center gap-2 rounded-2xl bg-raised px-4 py-7 text-center">
-      <span className="grid h-9 w-9 place-items-center rounded-full bg-accent-soft text-accent-strong">
-        <Icon name={icon} className="h-4 w-4" />
-      </span>
-      <p className="text-xs text-ink-faint">{text}</p>
-    </div>
-  );
-}
 
 function Spinner() {
   return (
@@ -472,15 +463,3 @@ function Spinner() {
   );
 }
 
-function PriorityBadge({ priority }: { priority: string }) {
-  const styles: Record<string, string> = {
-    high: "bg-rose text-rose-strong",
-    medium: "bg-peach text-peach-strong",
-    low: "bg-raised text-ink-faint",
-  };
-  return (
-    <span className={`rounded-full px-2.5 py-0.5 text-[11px] font-semibold ${styles[priority] ?? styles.low}`}>
-      {priority}
-    </span>
-  );
-}

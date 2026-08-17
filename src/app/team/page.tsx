@@ -67,11 +67,11 @@ export default async function TeamPage() {
 
   return (
     <Shell>
-      <header className="border-b border-black/[.08] px-6 py-4 dark:border-white/[.1]">
-        <div className="flex items-center justify-between">
-          <h1 className="text-xl font-semibold text-black dark:text-zinc-50">Team</h1>
-          <ExportButton type="employee" canExport={spine.canExport(user.id, "employee")} />
-        </div>
+      <header className="rise flex items-center justify-between px-4 pt-6 sm:px-6">
+        <h1 className="text-2xl font-light tracking-tight text-ink sm:text-3xl">
+          The <span className="font-extrabold">team</span>
+        </h1>
+        <ExportButton type="employee" canExport={spine.canExport(user.id, "employee")} />
       </header>
       <TeamClient
         rows={rows}
