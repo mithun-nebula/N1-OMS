@@ -105,8 +105,8 @@ export function VoiceButton() {
     <>
       <button
         onClick={listening ? stopListening : startListening}
-        className={`fixed bottom-6 right-6 z-40 h-14 w-14 rounded-full text-2xl text-white shadow-lg transition-colors ${
-          listening ? "animate-pulse bg-rose-600" : "bg-teal-700"
+        className={`press fixed bottom-20 right-4 z-40 h-12 w-12 rounded-full text-xl text-chrome-ink shadow-lift transition-colors md:bottom-6 md:right-6 md:h-14 md:w-14 md:text-2xl ${
+          listening ? "animate-pulse bg-danger" : "bg-chrome-card hover:bg-chrome"
         }`}
         aria-label="Hold to speak"
       >

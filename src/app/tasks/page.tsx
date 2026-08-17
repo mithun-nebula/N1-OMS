@@ -31,8 +31,12 @@ export default async function TasksPage() {
 
   return (
     <Shell>
-      <header className="flex items-center justify-between border-b border-black/[.08] px-6 py-4 dark:border-white/[.1]">
-        <h1 className="text-xl font-semibold text-black dark:text-zinc-50">Tasks</h1>
+      <header className="rise flex items-center justify-between px-4 pt-6 sm:px-6">
+        <div>
+          <h1 className="text-2xl font-light tracking-tight text-ink sm:text-3xl">
+            Task <span className="font-extrabold">board</span>
+          </h1>
+        </div>
         <ExportButton type="task" canExport={spine.canExport(user.id, "task")} />
       </header>
       <TasksClient tasks={tasks} people={people} actorRole={user.role} />

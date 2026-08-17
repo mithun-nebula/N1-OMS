@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { Icon } from "../ui/icons";
 
 interface Notification {
   id: number;
@@ -41,23 +42,28 @@ export function NotificationsBell() {
     <div className="relative">
       <button
         onClick={() => { setOpen(!open); if (!open) refresh(); }}
-        className="relative text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300"
+        className="press relative grid h-8 w-8 place-items-center rounded-full text-chrome-soft transition-colors hover:bg-white/[.06] hover:text-chrome-ink"
         title="Notifications"
       >
-        <span className="text-base">🔔</span>
+        <Icon name="bell" className="h-4.5 w-4.5" />
         {items.length > 0 && (
-          <span className="absolute -right-1 -top-1 flex h-3.5 w-3.5 items-center justify-center rounded-full bg-rose-500 text-[8px] font-bold text-white">
+          <span className="pulse-dot absolute right-0.5 top-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-accent text-[8px] font-bold text-chrome">
             {items.length > 9 ? "9" : items.length}
           </span>
         )}
       </button>
       {open && (
-        <div className="absolute right-0 z-50 mt-2 max-h-80 w-72 overflow-y-auto rounded-xl border border-black/[.1] bg-white shadow-lg dark:border-white/[.15] dark:bg-black">
+        <div className="pop-in absolute bottom-full right-0 z-50 mb-2 max-h-80 w-72 overflow-y-auto rounded-2xl bg-surface shadow-lift md:bottom-auto md:top-full md:mb-0 md:mt-2">
+          <div className="px-4 pb-1 pt-3 text-[10px] font-semibold uppercase tracking-widest text-ink-faint">
+            Notifications
+          </div>
           {items.length === 0 ? (
-            <p className="px-3 py-4 text-center text-xs text-zinc-400">No notifications.</p>
+            <p className="px-4 py-5 text-center text-xs text-ink-faint">
+              Nothing needs you right now.
+            </p>
           ) : (
             items.map((n) => (
-              <div key={n.id} className="border-b border-black/[.04] px-3 py-2 text-xs text-zinc-600 last:border-0 dark:border-white/[.06] dark:text-zinc-300">
+              <div key={n.id} className="border-b border-line px-4 py-2.5 text-xs text-ink-soft last:border-0">
                 {n.message}
               </div>
             ))

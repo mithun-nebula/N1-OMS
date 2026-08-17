@@ -61,18 +61,18 @@ export function GlobalSearch() {
         onChange={(e) => { setQ(e.target.value); setOpen(true); }}
         onFocus={() => setOpen(true)}
         placeholder="Search people, courses, tasks…"
-        className="w-full rounded-lg border border-black/[.1] bg-black/[.03] px-3 py-1.5 text-xs text-black placeholder:text-zinc-400 focus:border-teal-700 focus:outline-none dark:border-white/[.15] dark:bg-white/[.04] dark:text-zinc-50"
+        className="w-full rounded-xl border border-chrome-line bg-white/[.06] px-3 py-2 text-xs text-chrome-ink transition-colors placeholder:text-chrome-soft focus:border-accent focus:bg-white/[.09] focus:outline-none"
       />
       {open && results.length > 0 && (
-        <div className="absolute z-50 mt-1 w-full overflow-hidden rounded-lg border border-black/[.1] bg-white shadow-lg dark:border-white/[.15] dark:bg-black">
+        <div className="pop-in absolute z-50 mt-1.5 w-full overflow-hidden rounded-xl bg-surface shadow-lift">
           {results.map((r, i) => (
             <button
               key={i}
               onClick={() => go(r)}
-              className="block w-full px-3 py-2 text-left text-xs hover:bg-teal-700/5 dark:hover:bg-white/[.05]"
+              className="block w-full px-3 py-2 text-left text-xs transition-colors hover:bg-accent-soft"
             >
-              <span className="font-medium text-black dark:text-zinc-50">{r.label}</span>
-              <span className="ml-2 text-zinc-400">{r.nodeType}{r.sub ? ` · ${r.sub}` : ""}</span>
+              <span className="font-medium text-ink">{r.label}</span>
+              <span className="ml-2 text-ink-faint">{r.nodeType}{r.sub ? ` · ${r.sub}` : ""}</span>
             </button>
           ))}
         </div>

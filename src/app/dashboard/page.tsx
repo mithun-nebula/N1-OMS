@@ -21,6 +21,12 @@ export default async function DashboardPage() {
       return { id: n.id, title: d.title, priority: d.priority, dueDate: d.dueDate, projectId: d.projectId };
     });
 
+  const doneCount = (await deps.graph
+    .find("task", (n) => {
+      const d = n.data as { assignedTo?: string; status?: string };
+      return d.assignedTo === user.id && d.status === "done";
+    })).length;
+
   const myMeetings = (await deps.graph
     .find("meeting", (n) => {
       const d = n.data as { cancelled?: boolean; attendees?: string[]; from?: string };
@@ -85,13 +91,11 @@ export default async function DashboardPage() {
 
   return (
     <Shell>
-      <header className="border-b border-black/[.08] px-6 py-4 dark:border-white/[.1]">
-        <h1 className="text-xl font-semibold text-black dark:text-zinc-50">Dashboard</h1>
-        <p className="text-sm text-zinc-400">Welcome back, {user.displayName}</p>
-      </header>
       <DashboardClient
+        displayName={user.displayName}
         role={user.role}
         tasks={myTasks}
+        doneCount={doneCount}
         meetings={myMeetings}
         pendingApprovals={pendingApprovals}
         courseCount={courseCount}

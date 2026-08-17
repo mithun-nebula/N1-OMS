@@ -58,15 +58,21 @@ export default async function CalendarPage({
 
   return (
     <Shell>
-      <header className="flex items-center justify-between border-b border-black/[.08] px-6 py-4 dark:border-white/[.1]">
-        <h1 className="text-xl font-semibold text-black dark:text-zinc-50">
-          {MONTHS[month - 1]} {year}
+      <header className="rise flex flex-wrap items-center justify-between gap-3 px-4 pt-6 sm:px-6">
+        <h1 className="text-2xl font-light tracking-tight text-ink sm:text-3xl">
+          {MONTHS[month - 1]} <span className="font-extrabold">{year}</span>
         </h1>
         <div className="flex gap-2">
-          <a href={`/calendar?year=${prevYear}&month=${prevMonth}`} className="rounded-lg border border-black/[.1] px-3 py-1 text-sm text-zinc-600 hover:bg-black/[.04] dark:border-white/[.2] dark:text-zinc-300">
+          <a
+            href={`/calendar?year=${prevYear}&month=${prevMonth}`}
+            className="press rounded-full bg-surface px-4 py-1.5 text-xs font-semibold text-ink-soft shadow-card transition-colors hover:text-ink"
+          >
             ← {MONTHS[prevMonth - 1]}
           </a>
-          <a href={`/calendar?year=${nextYear}&month=${nextMonth}`} className="rounded-lg border border-black/[.1] px-3 py-1 text-sm text-zinc-600 hover:bg-black/[.04] dark:border-white/[.2] dark:text-zinc-300">
+          <a
+            href={`/calendar?year=${nextYear}&month=${nextMonth}`}
+            className="press rounded-full bg-surface px-4 py-1.5 text-xs font-semibold text-ink-soft shadow-card transition-colors hover:text-ink"
+          >
             {MONTHS[nextMonth - 1]} →
           </a>
         </div>

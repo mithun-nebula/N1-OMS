@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { isAdminLike } from "@/server/roles";
+import { Icon } from "../ui/icons";
 
 interface Task {
   id: string;
@@ -15,13 +16,17 @@ interface Task {
   description?: string;
 }
 
+/* Each column owns a category color, T1-style. */
 const COLUMNS = [
-  { id: "todo", label: "To Do" },
-  { id: "in-progress", label: "In Progress" },
-  { id: "done", label: "Done" },
+  { id: "todo", label: "To Do", dot: "bg-peach-strong", count: "bg-peach text-peach-strong", bar: "bg-peach-strong" },
+  { id: "in-progress", label: "In Progress", dot: "bg-lilac-strong", count: "bg-lilac text-lilac-strong", bar: "bg-lilac-strong" },
+  { id: "done", label: "Done", dot: "bg-mint-strong", count: "bg-mint text-mint-strong", bar: "bg-mint-strong" },
 ];
 
 const PRIORITIES = ["low", "medium", "high"];
+
+const inputCls =
+  "rounded-xl border border-line bg-surface px-3 py-1.5 text-xs font-medium text-ink outline-none transition-colors placeholder:font-normal placeholder:text-ink-faint focus:border-accent-strong";
 
 export function TasksClient({
   tasks: initial,
@@ -37,6 +42,7 @@ export function TasksClient({
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState({ title: "", assignedTo: "", priority: "medium", dueDate: "" });
   const [busy, setBusy] = useState(false);
+  const [leaving, setLeaving] = useState<Set<string>>(new Set());
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editForm, setEditForm] = useState({ title: "", description: "", priority: "medium", dueDate: "" });
   const [filters, setFilters] = useState({ assignee: "", project: "", priority: "" });
@@ -53,6 +59,11 @@ export function TasksClient({
     });
     setBusy(false);
     router.refresh();
+  }
+
+  async function runLeaving(taskId: string, name: string, args: Record<string, unknown>) {
+    setLeaving((s) => new Set(s).add(taskId)); // collapse while the operation runs
+    await run(name, args);
   }
 
   async function createTask() {
@@ -82,101 +93,198 @@ export function TasksClient({
   const projects = [...new Set(tasks.map((t) => t.projectId).filter(Boolean))] as string[];
 
   return (
-    <div className="p-6">
-      <div className="mb-4 flex flex-wrap items-center gap-3">
-        <select value={filters.assignee} onChange={(e) => setFilters({ ...filters, assignee: e.target.value })} className="rounded-lg border border-black/[.12] px-2 py-1 text-xs dark:border-white/[.2] dark:bg-black dark:text-zinc-50">
+    <div className="mx-auto max-w-6xl p-4 sm:p-6">
+      {/* ============ Filters + new task ============ */}
+      <div className="rise mb-4 flex flex-wrap items-center gap-2" style={{ animationDelay: "60ms" }}>
+        <select value={filters.assignee} onChange={(e) => setFilters({ ...filters, assignee: e.target.value })} className={inputCls}>
           <option value="">All assignees</option>
           {people.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
         </select>
-        <select value={filters.project} onChange={(e) => setFilters({ ...filters, project: e.target.value })} className="rounded-lg border border-black/[.12] px-2 py-1 text-xs dark:border-white/[.2] dark:bg-black dark:text-zinc-50">
+        <select value={filters.project} onChange={(e) => setFilters({ ...filters, project: e.target.value })} className={inputCls}>
           <option value="">All projects</option>
           {projects.map((p) => <option key={p} value={p}>{p}</option>)}
         </select>
-        <select value={filters.priority} onChange={(e) => setFilters({ ...filters, priority: e.target.value })} className="rounded-lg border border-black/[.12] px-2 py-1 text-xs dark:border-white/[.2] dark:bg-black dark:text-zinc-50">
+        <select value={filters.priority} onChange={(e) => setFilters({ ...filters, priority: e.target.value })} className={inputCls}>
           <option value="">All priorities</option>
           {PRIORITIES.map((p) => <option key={p} value={p}>{p}</option>)}
         </select>
-        <p className="ml-auto text-sm text-zinc-400">{filtered.length} tasks</p>
-        <button onClick={() => setShowForm(!showForm)} className="rounded-lg bg-teal-700 px-4 py-1.5 text-sm font-medium text-white">
+        <p className="ml-auto text-xs font-medium text-ink-faint">{filtered.length} tasks</p>
+        <button
+          onClick={() => setShowForm(!showForm)}
+          className="press rounded-full bg-chrome px-4 py-2 text-xs font-semibold text-chrome-ink transition-colors hover:bg-chrome-card"
+        >
           {showForm ? "Cancel" : "+ New task"}
         </button>
       </div>
 
+      {/* ============ Create form ============ */}
       {showForm && (
-        <div className="mb-6 rounded-xl border border-dashed border-black/[.12] p-4 dark:border-white/[.15]">
-          <div className="flex flex-wrap items-end gap-3">
-            <input value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} placeholder="Task title" className="flex-1 rounded-lg border border-black/[.12] px-3 py-1.5 text-sm dark:border-white/[.2] dark:bg-black dark:text-zinc-50" />
-            <select value={form.assignedTo} onChange={(e) => setForm({ ...form, assignedTo: e.target.value })} className="rounded-lg border border-black/[.12] px-3 py-1.5 text-sm dark:border-white/[.2] dark:bg-black dark:text-zinc-50">
+        <div className="pop-in mb-5 rounded-3xl bg-surface p-4 shadow-card">
+          <div className="flex flex-wrap items-end gap-2.5">
+            <input value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} placeholder="Task title" className={`${inputCls} min-w-40 flex-1 bg-raised py-2`} />
+            <select value={form.assignedTo} onChange={(e) => setForm({ ...form, assignedTo: e.target.value })} className={`${inputCls} bg-raised py-2`}>
               <option value="">Unassigned</option>
               {people.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
             </select>
-            <select value={form.priority} onChange={(e) => setForm({ ...form, priority: e.target.value })} className="rounded-lg border border-black/[.12] px-3 py-1.5 text-sm dark:border-white/[.2] dark:bg-black dark:text-zinc-50">
+            <select value={form.priority} onChange={(e) => setForm({ ...form, priority: e.target.value })} className={`${inputCls} bg-raised py-2`}>
               {PRIORITIES.map((p) => <option key={p} value={p}>{p}</option>)}
             </select>
-            <input type="date" value={form.dueDate} onChange={(e) => setForm({ ...form, dueDate: e.target.value })} className="rounded-lg border border-black/[.12] px-3 py-1.5 text-sm dark:border-white/[.2] dark:bg-black dark:text-zinc-50" />
-            <button onClick={createTask} disabled={busy || !form.title} className="rounded-lg bg-black px-4 py-1.5 text-sm font-medium text-white disabled:opacity-40 dark:bg-white dark:text-black">Create</button>
+            <input type="date" value={form.dueDate} onChange={(e) => setForm({ ...form, dueDate: e.target.value })} className={`${inputCls} bg-raised py-2`} />
+            <button
+              onClick={createTask}
+              disabled={busy || !form.title}
+              className="press rounded-xl bg-accent-strong px-4 py-2 text-xs font-semibold text-white transition-colors hover:bg-accent disabled:opacity-40"
+            >
+              Create task
+            </button>
           </div>
         </div>
       )}
 
+      {/* ============ Board ============ */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-        {COLUMNS.map((col) => {
+        {COLUMNS.map((col, ci) => {
           const colTasks = filtered.filter((t) => t.status === col.id);
           return (
-            <div key={col.id} className="rounded-xl bg-zinc-100 p-3 dark:bg-zinc-900">
-              <div className="mb-3 flex items-center justify-between px-1">
-                <span className="text-sm font-semibold text-zinc-700 dark:text-zinc-200">{col.label}</span>
-                <span className="text-xs text-zinc-400">{colTasks.length}</span>
+            <div key={col.id} className="rise" style={{ animationDelay: `${120 + ci * 80}ms` }}>
+              <div className="mb-2.5 flex items-center gap-2 px-1">
+                <span className={`h-2 w-2 rounded-full ${col.dot}`} />
+                <span className="text-sm font-bold text-ink">{col.label}</span>
+                <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${col.count}`}>
+                  {colTasks.length}
+                </span>
               </div>
-              <div className="space-y-2">
-                {colTasks.map((t) => {
+              <div className="space-y-2.5 rounded-3xl bg-raised/60 p-2.5">
+                {colTasks.map((t, i) => {
                   const overdue = t.status !== "done" && t.dueDate && t.dueDate < today;
                   return (
-                    <div key={t.id} className="rounded-lg border border-black/[.08] bg-white p-3 dark:border-white/[.12] dark:bg-black">
-                      {editingId === t.id ? (
-                        <div className="space-y-2">
-                          <input value={editForm.title} onChange={(e) => setEditForm({ ...editForm, title: e.target.value })} className="w-full rounded border border-black/[.12] px-2 py-1 text-sm dark:border-white/[.2] dark:bg-black dark:text-zinc-50" />
-                          <input value={editForm.description} onChange={(e) => setEditForm({ ...editForm, description: e.target.value })} placeholder="Description" className="w-full rounded border border-black/[.12] px-2 py-1 text-xs dark:border-white/[.2] dark:bg-black dark:text-zinc-50" />
-                          <div className="flex gap-2">
-                            <select value={editForm.priority} onChange={(e) => setEditForm({ ...editForm, priority: e.target.value })} className="rounded border border-black/[.12] px-2 py-1 text-xs dark:border-white/[.2] dark:bg-black dark:text-zinc-50">
-                              {PRIORITIES.map((p) => <option key={p} value={p}>{p}</option>)}
-                            </select>
-                            <input type="date" value={editForm.dueDate} onChange={(e) => setEditForm({ ...editForm, dueDate: e.target.value })} className="rounded border border-black/[.12] px-2 py-1 text-xs dark:border-white/[.2] dark:bg-black dark:text-zinc-50" />
-                          </div>
-                          <div className="flex gap-2">
-                            <button onClick={() => { run("task.edit", { taskId: t.id, title: editForm.title, description: editForm.description || undefined, priority: editForm.priority, dueDate: editForm.dueDate || undefined }); setEditingId(null); }} disabled={busy} className="rounded bg-teal-700 px-2 py-1 text-xs font-medium text-white disabled:opacity-40">Save</button>
-                            <button onClick={() => setEditingId(null)} className="text-xs text-zinc-500">Cancel</button>
-                          </div>
-                        </div>
-                      ) : (
-                        <>
-                          <div className="flex items-start justify-between">
-                            <span className="text-sm font-medium text-black dark:text-zinc-50">{t.title}</span>
-                            <div className="flex gap-2">
-                              {t.status !== "done" && <button onClick={() => run("task.complete", { taskId: t.id })} disabled={busy} className="text-xs text-teal-600 underline">done</button>}
-                              <button onClick={() => startEdit(t)} className="text-xs text-zinc-400 hover:text-teal-600">edit</button>
-                              {canDelete && <button onClick={() => run("task.delete", { taskId: t.id })} disabled={busy} className="text-xs text-zinc-400 hover:text-rose-600">del</button>}
+                    <div key={t.id} className="row-collapse" data-leaving={leaving.has(t.id)}>
+                      <div>
+                        <div
+                          className="rise lift group rounded-2xl bg-surface p-3.5 shadow-card"
+                          style={{ animationDelay: `${180 + ci * 80 + i * 45}ms` }}
+                        >
+                          {editingId === t.id ? (
+                            <div className="pop-in space-y-2">
+                              <input value={editForm.title} onChange={(e) => setEditForm({ ...editForm, title: e.target.value })} className={`${inputCls} w-full bg-raised`} />
+                              <input value={editForm.description} onChange={(e) => setEditForm({ ...editForm, description: e.target.value })} placeholder="Description" className={`${inputCls} w-full bg-raised`} />
+                              <div className="flex gap-2">
+                                <select value={editForm.priority} onChange={(e) => setEditForm({ ...editForm, priority: e.target.value })} className={`${inputCls} bg-raised`}>
+                                  {PRIORITIES.map((p) => <option key={p} value={p}>{p}</option>)}
+                                </select>
+                                <input type="date" value={editForm.dueDate} onChange={(e) => setEditForm({ ...editForm, dueDate: e.target.value })} className={`${inputCls} bg-raised`} />
+                              </div>
+                              <div className="flex items-center gap-2 pt-1">
+                                <button
+                                  onClick={() => { run("task.edit", { taskId: t.id, title: editForm.title, description: editForm.description || undefined, priority: editForm.priority, dueDate: editForm.dueDate || undefined }); setEditingId(null); }}
+                                  disabled={busy}
+                                  className="press rounded-lg bg-chrome px-3 py-1.5 text-xs font-semibold text-chrome-ink disabled:opacity-40"
+                                >
+                                  Save changes
+                                </button>
+                                <button onClick={() => setEditingId(null)} className="text-xs font-medium text-ink-faint hover:text-ink">
+                                  Cancel
+                                </button>
+                              </div>
                             </div>
-                          </div>
-                          <div className="mt-2 flex items-center gap-2 text-xs text-zinc-400">
-                            <select value={t.assignedTo ?? ""} onChange={(e) => run("task.assign", { taskId: t.id, assignedTo: e.target.value })} disabled={busy} className="rounded border border-black/[.08] bg-transparent text-xs dark:border-white/[.1]">
-                              <option value="">Unassigned</option>
-                              {people.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-                            </select>
-                            {t.dueDate && <span className={overdue ? "font-medium text-rose-600" : ""}>{t.dueDate}{overdue ? " · overdue" : ""}</span>}
-                            <span className={`rounded-full px-1.5 py-0.5 ${t.priority === "high" ? "bg-rose-100 text-rose-600" : t.priority === "medium" ? "bg-amber-100 text-amber-600" : "bg-zinc-100 text-zinc-400"}`}>{t.priority}</span>
-                          </div>
-                        </>
-                      )}
+                          ) : (
+                            <>
+                              <div className="flex items-start justify-between gap-2">
+                                <span className="text-[13px] font-semibold leading-snug text-ink">{t.title}</span>
+                                {/* Actions reveal on hover; always visible on touch (no hover state). */}
+                                <div className="flex shrink-0 gap-1 opacity-100 transition-opacity duration-200 sm:opacity-0 sm:group-hover:opacity-100">
+                                  {t.status !== "done" && (
+                                    <IconAction title="Mark done" onClick={() => runLeaving(t.id, "task.complete", { taskId: t.id })} disabled={busy} tone="hover:bg-mint hover:text-mint-strong">
+                                      <Icon name="check" className="h-3.5 w-3.5" />
+                                    </IconAction>
+                                  )}
+                                  <IconAction title="Edit" onClick={() => startEdit(t)} disabled={busy} tone="hover:bg-accent-soft hover:text-accent-strong">
+                                    <span className="text-[11px] font-bold leading-none">✎</span>
+                                  </IconAction>
+                                  {canDelete && (
+                                    <IconAction title="Delete" onClick={() => runLeaving(t.id, "task.delete", { taskId: t.id })} disabled={busy} tone="hover:bg-danger-soft hover:text-danger">
+                                      <span className="text-[13px] leading-none">×</span>
+                                    </IconAction>
+                                  )}
+                                </div>
+                              </div>
+                              {t.description && (
+                                <p className="mt-1 line-clamp-2 text-xs text-ink-soft">{t.description}</p>
+                              )}
+                              <div className="mt-3 flex flex-wrap items-center gap-2 text-[11px]">
+                                <select
+                                  value={t.assignedTo ?? ""}
+                                  onChange={(e) => run("task.assign", { taskId: t.id, assignedTo: e.target.value })}
+                                  disabled={busy}
+                                  className="rounded-lg border border-line bg-transparent px-1.5 py-0.5 text-[11px] font-medium text-ink-soft outline-none focus:border-accent-strong"
+                                >
+                                  <option value="">Unassigned</option>
+                                  {people.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+                                </select>
+                                {t.dueDate && (
+                                  <span className={`flex items-center gap-1 ${overdue ? "font-semibold text-danger" : "text-ink-faint"}`}>
+                                    <Icon name="clock" className="h-3 w-3" />
+                                    {t.dueDate}
+                                    {overdue ? " · overdue" : ""}
+                                  </span>
+                                )}
+                                <PriorityBadge priority={t.priority} />
+                              </div>
+                            </>
+                          )}
+                        </div>
+                      </div>
                     </div>
                   );
                 })}
-                {colTasks.length === 0 && <p className="px-1 py-4 text-center text-xs text-zinc-300">Empty</p>}
+                {colTasks.length === 0 && (
+                  <p className="fade-in rounded-2xl px-2 py-8 text-center text-xs text-ink-faint">
+                    Nothing here yet.
+                  </p>
+                )}
               </div>
             </div>
           );
         })}
       </div>
     </div>
+  );
+}
+
+function IconAction({
+  title,
+  onClick,
+  disabled,
+  tone,
+  children,
+}: {
+  title: string;
+  onClick: () => void;
+  disabled?: boolean;
+  tone: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      title={title}
+      onClick={onClick}
+      disabled={disabled}
+      className={`press grid h-6 w-6 place-items-center rounded-lg text-ink-faint transition-colors disabled:opacity-40 ${tone}`}
+    >
+      {children}
+    </button>
+  );
+}
+
+function PriorityBadge({ priority }: { priority: string }) {
+  const styles: Record<string, string> = {
+    high: "bg-rose text-rose-strong",
+    medium: "bg-peach text-peach-strong",
+    low: "bg-raised text-ink-faint",
+  };
+  return (
+    <span className={`rounded-full px-2 py-0.5 font-semibold ${styles[priority] ?? styles.low}`}>
+      {priority}
+    </span>
   );
 }

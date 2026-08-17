@@ -7,22 +7,24 @@ import { VoiceButton } from "./voice-input";
 import { GlobalSearch } from "./chrome/global-search";
 import { NotificationsBell } from "./chrome/notifications";
 import { ThemeToggle } from "./chrome/theme-toggle";
+import { Icon, type IconName } from "./ui/icons";
 
 interface NavItem {
   href: string;
   label: string;
+  icon?: IconName;
   roles?: string[];
 }
 
 const PRIMARY: NavItem[] = [
-  { href: "/dashboard", label: "Dashboard" },
-  { href: "/tasks", label: "Tasks" },
-  { href: "/meetings", label: "Meetings" },
-  { href: "/booking", label: "Booking" },
-  { href: "/courses", label: "Projects" },
-  { href: "/calendar", label: "Calendar" },
-  { href: "/team", label: "Team" },
-  { href: "/leave", label: "Leave" },
+  { href: "/dashboard", label: "Dashboard", icon: "home" },
+  { href: "/tasks", label: "Tasks", icon: "tasks" },
+  { href: "/meetings", label: "Meetings", icon: "meetings" },
+  { href: "/booking", label: "Booking", icon: "booking" },
+  { href: "/courses", label: "Projects", icon: "projects" },
+  { href: "/calendar", label: "Calendar", icon: "calendar" },
+  { href: "/team", label: "Team", icon: "team" },
+  { href: "/leave", label: "Leave", icon: "leave" },
 ];
 
 const SECONDARY: NavItem[] = [
@@ -86,6 +88,12 @@ export function ShellClient({
   const role = user?.role ?? "";
   const navItems = visible(PRIMARY, role);
   const secondary = visible(SECONDARY, role);
+  const initials = (user?.displayName ?? "…")
+    .split(/\s+/)
+    .map((w) => w[0])
+    .slice(0, 2)
+    .join("")
+    .toUpperCase();
 
   async function logout() {
     await fetch("/api/auth/logout", { method: "POST" });
@@ -93,38 +101,51 @@ export function ShellClient({
   }
 
   return (
-    <div className="flex min-h-screen bg-zinc-50 dark:bg-black">
-      <aside className="hidden w-64 shrink-0 flex-col border-r border-black/[.08] bg-white dark:border-white/[.1] dark:bg-black md:flex">
-        <div className="px-5 py-5">
-          <div className="text-xs font-medium uppercase tracking-widest text-teal-700 dark:text-teal-400">
-            Organization A
+    <div className="flex min-h-screen bg-base">
+      {/* ============ Desktop sidebar — deep teal chrome ============ */}
+      <aside className="sticky top-0 hidden h-screen w-64 shrink-0 flex-col bg-chrome text-chrome-ink md:flex">
+        <div className="px-5 pb-4 pt-6">
+          <div className="flex items-center gap-2.5">
+            <span className="grid h-8 w-8 place-items-center rounded-xl bg-accent text-chrome">
+              <Icon name="spark" className="h-4.5 w-4.5" />
+            </span>
+            <div>
+              <div className="text-sm font-bold tracking-tight">Organization A</div>
+              <div className="text-[10px] uppercase tracking-widest text-chrome-soft">
+                Operations
+              </div>
+            </div>
           </div>
-          <div className="mt-3">
+          <div className="mt-4">
             <GlobalSearch />
           </div>
         </div>
+
         <nav className="flex-1 space-y-0.5 overflow-y-auto px-3 pb-4">
           {navItems.map((item) => (
             <NavLink key={item.href} item={item} active={pathname === item.href} />
           ))}
-          <div className="px-3 pb-1 pt-4 text-[10px] font-medium uppercase tracking-widest text-zinc-300 dark:text-zinc-600">
-            More
-          </div>
-          {secondary.map((item) => (
-            <NavLink key={item.href} item={item} active={pathname === item.href} />
-          ))}
+          <MoreSection items={secondary} pathname={pathname} />
         </nav>
-        <div className="border-t border-black/[.08] px-5 py-4 dark:border-white/[.1]">
-          <div className="flex items-center justify-between">
-            <div>
-              <div className="text-sm font-medium text-black dark:text-zinc-50">{user?.displayName ?? "…"}</div>
-              <div className="text-xs text-zinc-400">{user?.role}</div>
+
+        <div className="border-t border-chrome-line px-4 py-4">
+          <div className="flex items-center gap-3">
+            <span className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-chrome-card text-xs font-bold text-accent">
+              {initials}
+            </span>
+            <div className="min-w-0 flex-1">
+              <div className="truncate text-sm font-semibold">{user?.displayName ?? "…"}</div>
+              <div className="truncate text-[11px] capitalize text-chrome-soft">{user?.role}</div>
             </div>
             <NotificationsBell />
           </div>
-          <div className="mt-3 flex items-center gap-3">
+          <div className="mt-3 flex items-center justify-between">
             <ThemeToggle />
-            <button onClick={logout} className="text-xs font-medium text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300">
+            <button
+              onClick={logout}
+              className="press flex items-center gap-1.5 rounded-lg px-2 py-1 text-xs font-medium text-chrome-soft transition-colors hover:bg-white/[.06] hover:text-chrome-ink"
+            >
+              <Icon name="logout" className="h-3.5 w-3.5" />
               Sign out
             </button>
           </div>
@@ -132,19 +153,28 @@ export function ShellClient({
       </aside>
 
       <div className="flex-1 overflow-x-hidden">
-        <div className="border-b border-black/[.06] px-6 py-3 dark:border-white/[.06] md:hidden">
+        {/* ============ Mobile top bar ============ */}
+        <div className="sticky top-0 z-20 bg-chrome px-4 py-3 text-chrome-ink md:hidden">
           <div className="flex items-center justify-between">
-            <span className="text-sm font-semibold text-black dark:text-zinc-50">Organization A</span>
+            <div className="flex items-center gap-2">
+              <span className="grid h-7 w-7 place-items-center rounded-lg bg-accent text-chrome">
+                <Icon name="spark" className="h-3.5 w-3.5" />
+              </span>
+              <span className="text-sm font-bold">Organization A</span>
+            </div>
             <div className="flex items-center gap-3">
               <NotificationsBell />
-              <button onClick={logout} className="text-xs text-zinc-500">Sign out</button>
+              <button onClick={logout} title="Sign out" className="press text-chrome-soft">
+                <Icon name="logout" className="h-4 w-4" />
+              </button>
             </div>
           </div>
-          <div className="mt-2">
+          <div className="mt-2.5">
             <GlobalSearch />
           </div>
         </div>
-        {children}
+
+        <main className="pb-24 md:pb-0">{children}</main>
       </div>
 
       <MobileBottomNav role={role} />
@@ -153,17 +183,71 @@ export function ShellClient({
   );
 }
 
+function MoreSection({ items, pathname }: { items: NavItem[]; pathname: string }) {
+  const containsCurrent = items.some((i) => i.href === pathname);
+  // Open when the current page lives inside it, so the active item is never hidden.
+  const [open, setOpen] = useState(containsCurrent);
+  const [prevPath, setPrevPath] = useState(pathname);
+  if (prevPath !== pathname) {
+    // Adjust-state-during-render: reopen when navigating into a hidden item.
+    setPrevPath(pathname);
+    if (containsCurrent && !open) setOpen(true);
+  }
+
+  return (
+    <div className="pt-4">
+      <button
+        onClick={() => setOpen((o) => !o)}
+        aria-expanded={open}
+        className="press flex w-full items-center justify-between rounded-xl px-3 py-2 text-[10px] font-semibold uppercase tracking-widest text-chrome-soft/80 transition-colors hover:bg-white/[.06] hover:text-chrome-ink"
+      >
+        More
+        <span
+          className={`transition-transform duration-300 ${open ? "rotate-90" : ""}`}
+        >
+          <Icon name="arrow" className="h-3 w-3" />
+        </span>
+      </button>
+      <div
+        className="grid transition-[grid-template-rows] duration-300 ease-out"
+        style={{ gridTemplateRows: open ? "1fr" : "0fr" }}
+      >
+        <div className="min-h-0 space-y-0.5 overflow-hidden">
+          {items.map((item, i) => (
+            <div
+              key={item.href}
+              className={open ? "rise" : ""}
+              style={open ? { animationDelay: `${Math.min(i * 25, 250)}ms` } : undefined}
+            >
+              <NavLink item={item} active={pathname === item.href} />
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function NavLink({ item, active }: { item: NavItem; active: boolean }) {
   return (
     <Link
       href={item.href}
-      className={`block rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
+      className={`group flex items-center gap-2.5 rounded-xl px-3 py-2 text-[13px] font-medium transition-all duration-200 ${
         active
-          ? "bg-teal-700/10 text-teal-700 dark:text-teal-300"
-          : "text-zinc-600 hover:bg-black/[.04] dark:text-zinc-400 dark:hover:bg-white/[.06]"
+          ? "bg-accent text-chrome shadow-[0_4px_14px_-4px_rgb(240_154_62/0.55)]"
+          : "text-chrome-soft hover:bg-white/[.06] hover:text-chrome-ink"
       }`}
     >
+      {item.icon && (
+        <Icon
+          name={item.icon}
+          className={`h-4 w-4 transition-transform duration-200 ${
+            active ? "" : "group-hover:-translate-y-px group-hover:scale-105"
+          }`}
+        />
+      )}
       {item.label}
+      {active && <span className="ml-auto h-1.5 w-1.5 rounded-full bg-chrome/70" />}
     </Link>
   );
 }
@@ -171,40 +255,93 @@ function NavLink({ item, active }: { item: NavItem; active: boolean }) {
 function MobileBottomNav({ role }: { role: string }) {
   const pathname = usePathname();
   const [openMore, setOpenMore] = useState(false);
-  const items = [
-    { href: "/dashboard", label: "Home", icon: "▢" },
-    { href: "/calendar", label: "Calendar", icon: "▦" },
-    { href: "/team", label: "Team", icon: "◔" },
+
+  const items: NavItem[] = [
+    { href: "/dashboard", label: "Home", icon: "home" },
+    { href: "/calendar", label: "Calendar", icon: "calendar" },
+    { href: "/tasks", label: "Tasks", icon: "tasks" },
+    { href: "/team", label: "Team", icon: "team" },
   ];
-  const more = visible(SECONDARY, role).concat(visible(PRIMARY, role).filter((p) => !items.some((i) => i.href === p.href)));
+  const everything = visible(PRIMARY, role)
+    .concat(visible(SECONDARY, role))
+    .filter((m, i, arr) => arr.findIndex((x) => x.href === m.href) === i);
 
   return (
-    <nav className="fixed bottom-0 left-0 right-0 z-30 flex items-center justify-around border-t border-black/[.08] bg-white py-1.5 dark:border-white/[.1] dark:bg-black md:hidden">
-      {items.map((it) => (
-        <Link key={it.href} href={it.href} className={`flex flex-col items-center px-3 py-1 text-[10px] ${pathname === it.href ? "text-teal-700 dark:text-teal-400" : "text-zinc-400"}`}>
-          <span className="text-base">{it.icon}</span>
-          {it.label}
-        </Link>
-      ))}
-      <Link href="/dashboard" className="flex flex-col items-center px-3 py-1 text-[10px] text-teal-700 dark:text-teal-400">
-        <span className="flex h-7 w-7 items-center justify-center rounded-full bg-teal-700 text-sm text-white">✦</span>
-      </Link>
-      <button onClick={() => setOpenMore(!openMore)} className="flex flex-col items-center px-3 py-1 text-[10px] text-zinc-400">
-        <span className="text-base">≡</span>
-        More
-      </button>
+    <>
+      {/* Floating pill nav with a center action button. */}
+      <nav className="fixed bottom-3 left-1/2 z-40 flex -translate-x-1/2 items-center gap-1 rounded-full bg-chrome/95 px-3 py-1.5 text-chrome-ink shadow-lift backdrop-blur md:hidden">
+        {items.slice(0, 2).map((it) => (
+          <MobileTab key={it.href} item={it} active={pathname === it.href} />
+        ))}
+        <button
+          onClick={() => setOpenMore(true)}
+          aria-label="All destinations"
+          className="press mx-1 grid h-11 w-11 place-items-center rounded-full bg-accent text-chrome shadow-[0_6px_16px_-4px_rgb(240_154_62/0.6)]"
+        >
+          <Icon name="grid" className="h-5 w-5" />
+        </button>
+        {items.slice(2).map((it) => (
+          <MobileTab key={it.href} item={it} active={pathname === it.href} />
+        ))}
+      </nav>
+
+      {/* Slide-up sheet with every destination. */}
       {openMore && (
-        <div className="absolute bottom-14 right-2 w-48 overflow-hidden rounded-xl border border-black/[.1] bg-white shadow-lg dark:border-white/[.15] dark:bg-black">
-          {more.map((m) => (
-            <Link key={m.href} href={m.href} onClick={() => setOpenMore(false)} className="block px-3 py-2 text-xs text-zinc-600 hover:bg-teal-700/5 dark:text-zinc-300">
-              {m.label}
-            </Link>
-          ))}
-          <div className="border-t border-black/[.06] px-3 py-2 dark:border-white/[.06]">
-            <ThemeToggle />
+        <div className="fixed inset-0 z-50 md:hidden" role="dialog" aria-modal>
+          <button
+            aria-label="Close menu"
+            onClick={() => setOpenMore(false)}
+            className="fade-in absolute inset-0 bg-chrome-deep/60 backdrop-blur-sm"
+          />
+          <div className="sheet-up absolute inset-x-0 bottom-0 max-h-[75vh] overflow-y-auto rounded-t-3xl bg-surface p-5 pb-8 shadow-lift">
+            <div className="mx-auto mb-4 h-1 w-10 rounded-full bg-line" />
+            <div className="mb-3 text-xs font-semibold uppercase tracking-widest text-ink-faint">
+              Go to
+            </div>
+            <div className="grid grid-cols-3 gap-2">
+              {everything.map((m, i) => (
+                <Link
+                  key={m.href}
+                  href={m.href}
+                  onClick={() => setOpenMore(false)}
+                  style={{ animationDelay: `${Math.min(i * 22, 300)}ms` }}
+                  className={`rise press flex flex-col items-center gap-1.5 rounded-2xl px-2 py-3 text-center text-[11px] font-medium ${
+                    pathname === m.href
+                      ? "bg-accent-soft text-accent-ink"
+                      : "bg-raised text-ink-soft"
+                  }`}
+                >
+                  {m.icon ? (
+                    <Icon name={m.icon} className="h-5 w-5" />
+                  ) : (
+                    <span className="grid h-5 w-5 place-items-center text-sm font-bold">
+                      {m.label[0]}
+                    </span>
+                  )}
+                  {m.label}
+                </Link>
+              ))}
+            </div>
+            <div className="mt-4 flex justify-center border-t border-line pt-4">
+              <ThemeToggle />
+            </div>
           </div>
         </div>
       )}
-    </nav>
+    </>
+  );
+}
+
+function MobileTab({ item, active }: { item: NavItem; active: boolean }) {
+  return (
+    <Link
+      href={item.href}
+      className={`press flex flex-col items-center gap-0.5 rounded-full px-3 py-1.5 text-[9.5px] font-medium transition-colors ${
+        active ? "text-accent" : "text-chrome-soft"
+      }`}
+    >
+      {item.icon && <Icon name={item.icon} className="h-5 w-5" />}
+      {item.label}
+    </Link>
   );
 }
