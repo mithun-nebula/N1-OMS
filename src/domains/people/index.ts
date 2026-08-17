@@ -21,12 +21,18 @@ import {
   employeeSetPayHandler,
   employeeUpdateHandler,
 } from "./employee";
+import {
+  attendanceCheckInHandler,
+  attendanceCheckOutHandler,
+} from "./attendance";
 import { seedPeople } from "./seed";
 
 export const peopleDomain: DomainModule = {
   id: "people",
   phase: 2,
   register(ctx: DomainContext) {
+    ctx.registry.register(attendanceCheckInHandler(ctx.graph));
+    ctx.registry.register(attendanceCheckOutHandler(ctx.graph));
     ctx.registry.register(leaveRequestHandler(ctx.graph));
     ctx.registry.register(leaveApproveHandler(ctx.graph));
     ctx.registry.register(leaveDeclineHandler(ctx.graph));

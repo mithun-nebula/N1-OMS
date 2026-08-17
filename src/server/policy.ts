@@ -344,6 +344,35 @@ export const DEMO_PERMISSION_RULES: PermissionRule[] = [
     recordScope: { kind: "all" },
     fields: { kind: "all-visible" },
   },
+
+  // ── Attendance: personal by default ──────────────────────────────────────
+  //
+  // Everyone clocks themselves in and out (`self` scope; the operations also
+  // refuse acting-for-others outright). HR and admins see the org, a manager
+  // sees their team — nobody else sees anyone's day but their own.
+  ...(["super-admin", "admin", "hr", "manager", "employee", "intern"] as const).map(
+    (role) => ({
+      role,
+      nodeType: "attendance",
+      actions: ["view", "create", "edit"] as PermissionAction[],
+      recordScope: { kind: "self" } as const,
+      fields: { kind: "all-visible" } as const,
+    }),
+  ),
+  {
+    role: "manager",
+    nodeType: "attendance",
+    actions: ["view"],
+    recordScope: { kind: "own-team" },
+    fields: { kind: "all-visible" },
+  },
+  ...(["super-admin", "admin", "hr"] as const).map((role) => ({
+    role,
+    nodeType: "attendance",
+    actions: ["view", "export"] as PermissionAction[],
+    recordScope: { kind: "all" } as const,
+    fields: { kind: "all-visible" } as const,
+  })),
 ];
 
 export class DemoRoleProvider implements RoleProvider {
@@ -380,6 +409,12 @@ export class DemoRoleProvider implements RoleProvider {
     if (nodeType === "onboarding" || nodeType === "offboarding") {
       const sep = recordNodeId.indexOf(":");
       return sep >= 0 ? recordNodeId.slice(sep + 1) : recordNodeId;
+    }
+    if (nodeType === "attendance") {
+      // att_<employee>_<YYYY-MM-DD> — the owner travels in the id because the
+      // gate is synchronous and cannot look the record up.
+      const m = /^att_(.+)_(\d{4}-\d{2}-\d{2})$/.exec(recordNodeId);
+      return m?.[1];
     }
     return this.owners.get(`${nodeType}:${recordNodeId}`);
   }

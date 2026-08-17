@@ -119,6 +119,36 @@ export function taskCompleteHandler(
   };
 }
 
+export function taskStartHandler(
+  graph: RecordStore,
+): OperationHandler<{ taskId: string }> {
+  return {
+    name: "task.start",
+    validate: (args) =>
+      args.taskId
+        ? { ok: true }
+        : { ok: false, missing: ["taskId"], detail: "A task id is required." },
+    permission: (args) => ({ action: "edit", nodeType: "task", recordNodeIds: [args.taskId] }),
+    involvesMoneyOrPeople: () => false,
+    execute: async (args) => {
+      const node = await graph.getNode("task", args.taskId);
+      const before = node?.data as TaskData | undefined;
+      if (!before) throw new Error(`No task ${args.taskId}`);
+      if (before.status === "done") {
+        throw new Error(`Task ${args.taskId} is already done — reopen it via undo instead.`);
+      }
+      await graph.putNode("task", args.taskId, { ...before, status: "in-progress" });
+      return {
+        changes: [{ nodeType: "task", nodeId: args.taskId, after: { status: "in-progress" } }],
+        undo: {
+          description: `Put task ${args.taskId} back to ${before.status}.`,
+          revert: async () => { await graph.putNode("task", args.taskId, before); },
+        },
+      };
+    },
+  };
+}
+
 export function taskEditHandler(
   graph: RecordStore,
 ): OperationHandler<{

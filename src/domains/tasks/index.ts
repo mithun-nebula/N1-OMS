@@ -5,6 +5,7 @@ import {
   taskCreateHandler,
   taskDeleteHandler,
   taskEditHandler,
+  taskStartHandler,
 } from "./operations";
 import { seedTasks } from "./seed";
 
@@ -14,6 +15,7 @@ export const tasksDomain: DomainModule = {
   register(ctx: DomainContext) {
     ctx.registry.register(taskCreateHandler(ctx.graph));
     ctx.registry.register(taskAssignHandler(ctx.graph));
+    ctx.registry.register(taskStartHandler(ctx.graph));
     ctx.registry.register(taskCompleteHandler(ctx.graph));
     ctx.registry.register(taskEditHandler(ctx.graph));
     ctx.registry.register(taskDeleteHandler(ctx.graph));
