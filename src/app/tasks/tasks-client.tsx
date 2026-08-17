@@ -192,6 +192,11 @@ export function TasksClient({
                                 <span className="text-[13px] font-semibold leading-snug text-ink">{t.title}</span>
                                 {/* Actions reveal on hover; always visible on touch (no hover state). */}
                                 <div className="flex shrink-0 gap-1 opacity-100 transition-opacity duration-200 sm:opacity-0 sm:group-hover:opacity-100">
+                                  {t.status === "todo" && (
+                                    <IconAction title="Start task" onClick={() => runLeaving(t.id, "task.start", { taskId: t.id })} disabled={busy} tone="hover:bg-lilac hover:text-lilac-strong">
+                                      <span className="text-[10px] leading-none">▶</span>
+                                    </IconAction>
+                                  )}
                                   {t.status !== "done" && (
                                     <IconAction title="Mark done" onClick={() => runLeaving(t.id, "task.complete", { taskId: t.id })} disabled={busy} tone="hover:bg-mint hover:text-mint-strong">
                                       <Icon name="check" className="h-3.5 w-3.5" />

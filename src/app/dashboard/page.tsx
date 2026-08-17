@@ -92,6 +92,7 @@ export default async function DashboardPage() {
   return (
     <Shell>
       <DashboardClient
+        userId={user.id}
         displayName={user.displayName}
         role={user.role}
         tasks={myTasks}

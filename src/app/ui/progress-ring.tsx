@@ -42,6 +42,72 @@ export function ProgressRing({
   );
 }
 
+/**
+ * Three concentric activity rings, iOS-fitness style, for the day card.
+ * Outer = finished ÷ committed · middle = finished inside estimate ÷ finished ·
+ * inner = how full the day is. Each draws from 0 on mount via a
+ * stroke-dashoffset transition.
+ */
+export function ThreeRings({
+  outer,
+  middle,
+  inner,
+  size = 132,
+}: {
+  outer: number;
+  middle: number;
+  inner: number;
+  size?: number;
+}) {
+  const [drawn, setDrawn] = useState(false);
+  useEffect(() => {
+    const id = requestAnimationFrame(() => setDrawn(true));
+    return () => cancelAnimationFrame(id);
+  }, []);
+
+  const stroke = size * 0.085;
+  const gap = stroke * 1.35;
+  const c = size / 2;
+  const rings = [
+    { r: c - stroke / 2, pct: outer, color: "var(--accent)", track: "rgba(255,255,255,0.10)" },
+    { r: c - stroke / 2 - gap, pct: middle, color: "var(--mint-strong)", track: "rgba(255,255,255,0.10)" },
+    { r: c - stroke / 2 - gap * 2, pct: inner, color: "var(--lilac-strong)", track: "rgba(255,255,255,0.10)" },
+  ];
+
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox={`0 0 ${size} ${size}`}
+      role="img"
+      aria-label={`Rings: ${Math.round(outer)}% finished, ${Math.round(middle)}% on time, day ${Math.round(inner)}% full`}
+    >
+      {rings.map((ring, i) => {
+        const circ = 2 * Math.PI * ring.r;
+        const pct = Math.max(0, Math.min(100, ring.pct));
+        const offset = drawn ? circ * (1 - pct / 100) : circ;
+        return (
+          <g key={i} transform={`rotate(-90 ${c} ${c})`}>
+            <circle cx={c} cy={c} r={ring.r} fill="none" stroke={ring.track} strokeWidth={stroke} />
+            <circle
+              cx={c}
+              cy={c}
+              r={ring.r}
+              fill="none"
+              stroke={ring.color}
+              strokeWidth={stroke}
+              strokeLinecap="round"
+              strokeDasharray={circ}
+              strokeDashoffset={offset}
+              style={{ transition: `stroke-dashoffset 1.1s cubic-bezier(0.22, 1, 0.36, 1) ${i * 120}ms` }}
+            />
+          </g>
+        );
+      })}
+    </svg>
+  );
+}
+
 /** Counts up to `target` on mount; respects prefers-reduced-motion. */
 export function useCountUp(target: number, duration = 750): number {
   const [value, setValue] = useState(0);
