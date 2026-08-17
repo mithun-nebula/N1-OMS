@@ -45,6 +45,8 @@ interface RunOptions {
   refresh?: boolean;
   /** How the action was started. Default "form". */
   start?: StartKind;
+  /** Extra top-level fields for the submit body (e.g. a voice transcript). */
+  extra?: Record<string, unknown>;
 }
 
 interface SubmitResponse {
@@ -137,7 +139,7 @@ export function useOperation() {
         const res = await fetch("/api/operations", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ start: options.start ?? "form", name, args }),
+          body: JSON.stringify({ start: options.start ?? "form", name, args, ...options.extra }),
         });
         return await handle(res, options.refresh ?? true);
       } catch {

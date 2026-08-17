@@ -9,7 +9,7 @@ import { DashboardClient } from "./dashboard-client";
 export default async function DashboardPage() {
   const user = await getSessionUser();
   if (!user) redirect("/login");
-  const { deps, registry } = await getWorld();
+  const { deps } = await getWorld();
 
   const myTasks = (await deps.graph
     .find("task", (n) => {
@@ -67,8 +67,10 @@ export default async function DashboardPage() {
   const courseCount = (await deps.graph.find("course", () => true)).length;
   const teamSize = directory().activeIds().length;
 
-  const isHr = user.role === "hr";
-  const isAdmin = isAdminLike(user.role);
+  // Admins and HR both carry the people block; there is deliberately no
+  // system-health block here — "admin" is the head of the organisation, not a
+  // sysadmin. Provider status stays on /admin.
+  const isHr = user.role === "hr" || isAdminLike(user.role);
 
   const hrAttention = isHr
     ? {
@@ -78,14 +80,6 @@ export default async function DashboardPage() {
           return sum + (d.audience ?? []).filter((a) => !(d.acknowledged ?? []).includes(a)).length;
         }, 0),
         expiringDocs: (await deps.graph.find("document", (n) => Boolean((n.data as { required?: boolean }).required))).length,
-      }
-    : null;
-
-  const adminAttention = isAdmin
-    ? {
-        userCount: teamSize,
-        rules: registry.list().length,
-        operationCount: registry.list().length,
       }
     : null;
 
@@ -102,7 +96,6 @@ export default async function DashboardPage() {
         courseCount={courseCount}
         teamSize={teamSize}
         hrAttention={hrAttention}
-        adminAttention={adminAttention}
       />
     </Shell>
   );

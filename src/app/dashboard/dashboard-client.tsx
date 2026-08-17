@@ -88,7 +88,6 @@ export function DashboardClient({
   courseCount,
   teamSize,
   hrAttention,
-  adminAttention,
 }: {
   userId: string;
   displayName: string;
@@ -100,7 +99,6 @@ export function DashboardClient({
   courseCount: number;
   teamSize: number;
   hrAttention: { activeOnboardings: number; outstandingAcks: number; expiringDocs: number } | null;
-  adminAttention: { userCount: number; rules: number; operationCount: number } | null;
 }) {
   const op = useOperation();
   const [day, setDay] = useState<TodayState | null>(null);
@@ -598,21 +596,6 @@ export function DashboardClient({
             <AttentionStat href="/hr" tone="text-peach-strong" value={hrAttention.activeOnboardings} label="active onboardings" />
             <AttentionStat href="/announcements" tone="text-mint-strong" value={hrAttention.outstandingAcks} label="outstanding acks" />
             <AttentionStat href="/documents" tone="text-rose-strong" value={hrAttention.expiringDocs} label="required docs" />
-          </div>
-        </section>
-      )}
-
-      {adminAttention && (
-        <section className="rise rounded-3xl bg-surface p-5 shadow-card" style={stagger(7)}>
-          <div className="flex items-center justify-between">
-            <h2 className="text-[11px] font-semibold uppercase tracking-widest text-ink-faint">System</h2>
-            <Link href="/admin" className="press flex items-center gap-1 text-xs font-medium text-accent-strong hover:underline">
-              Admin panel <Icon name="arrow" className="h-3 w-3" />
-            </Link>
-          </div>
-          <div className="mt-3 grid grid-cols-2 gap-3">
-            <AttentionStat tone="text-ink" value={adminAttention.userCount} label="users" />
-            <AttentionStat tone="text-ink" value={adminAttention.operationCount} label="registered operations" />
           </div>
         </section>
       )}

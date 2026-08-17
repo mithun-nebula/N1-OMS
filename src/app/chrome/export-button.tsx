@@ -20,7 +20,7 @@ export function ExportButton({ type, canExport }: { type: string; canExport: boo
   return (
     <button
       onClick={exportCsv}
-      className="rounded-lg border border-black/[.1] px-3 py-1 text-xs font-medium text-zinc-600 hover:bg-black/[.04] dark:border-white/[.2] dark:text-zinc-300"
+      className="press rounded-full bg-surface px-3.5 py-1.5 text-xs font-semibold text-ink-soft shadow-card transition-colors hover:text-ink"
     >
       ⤓ Export CSV
     </button>
