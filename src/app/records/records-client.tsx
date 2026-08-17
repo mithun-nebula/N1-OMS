@@ -161,28 +161,11 @@ export function RecordsClient({ actorRole }: { actorRole: string }) {
     setNewValue("");
   }
 
-  function exportCsv() {
-    if (records.length === 0) return;
-    const keys = Object.keys(records[0].data);
-    const header = ["id", ...keys].join(",");
-    const rows = records.map((r) =>
-      ["id", ...keys]
-        .map((k) => {
-          const val = k === "id" ? r.id : r.data[k];
-          const s = val === null || val === undefined ? "" : typeof val === "object" ? JSON.stringify(val) : String(val);
-          return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
-        })
-        .join(","),
-    );
-    const csv = [header, ...rows].join("\n");
-    const blob = new Blob([csv], { type: "text/csv" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `${selected}-export.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
-  }
+  // The CSV export that used to live here built the file in the browser from
+  // records already on the page, so it bypassed `canExport` entirely — and the
+  // button rendered for every role, including interns. Exporting is a separate
+  // right from viewing (non-negotiable #5), so it cannot be done client-side.
+  // If export returns, it goes through /api/export, which asks the gate.
 
   const columns = records.length > 0 ? pickColumns(records[0].data) : [];
 
@@ -243,9 +226,6 @@ export function RecordsClient({ actorRole }: { actorRole: string }) {
                   + New
                 </button>
               )}
-              <button onClick={exportCsv} className="rounded-lg border border-black/[.1] px-3 py-1 text-xs font-medium text-zinc-600 dark:border-white/[.2] dark:text-zinc-300">
-                ⤓ CSV
-              </button>
             </div>
             <div className="overflow-x-auto rounded-xl border border-black/[.08] dark:border-white/[.12]">
               <table className="w-full text-sm">

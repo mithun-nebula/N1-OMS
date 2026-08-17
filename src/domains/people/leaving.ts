@@ -2,6 +2,8 @@ import type { OperationHandler, OperationResult } from "@/spine/operation/regist
 import type { NodeId } from "@/spine/operation/types";
 import type { RecordStore } from "@/spine/record/types";
 import { teamLeadOf } from "./leave";
+import { directory } from "@/server/directory";
+import { setAccountEnabled } from "@/server/accounts";
 
 export interface HandoverItem {
   id: string;
@@ -226,16 +228,54 @@ export function leavingApplySeparationHandler(
   return {
     name: "leaving.applySeparation",
     category: "leaving-org",
-    validate: (args) =>
-      args.employeeId
-        ? { ok: true }
-        : { ok: false, missing: ["employeeId"], detail: "An employee id is required." },
-    permission: (args) => ({
-      action: "edit",
-      nodeType: "offboarding",
-      recordNodeIds: [offboardingIdFor(args.employeeId)],
-    }),
-    involvesMoneyOrPeople: () => false,
+    validate: async (args) => {
+      if (!args.employeeId) {
+        return { ok: false, missing: ["employeeId"], detail: "An employee id is required." };
+      }
+      const person = (await graph.getNode("employee", args.employeeId))?.data as
+        | { name?: string; status?: string }
+        | undefined;
+      if (!person) {
+        return {
+          ok: false,
+          missing: ["employeeId"],
+          detail: `No employee ${args.employeeId}.`,
+        };
+      }
+      // The same guard `employee.deactivate` applies. Without it this operation
+      // was a way around it: separate a manager and their reports are left
+      // pointing at somebody who no longer works here, and approvals routed to
+      // them go nowhere.
+      const reports = directory().reportsOf(args.employeeId);
+      if (reports.length > 0) {
+        return {
+          ok: false,
+          missing: ["reassignReports"],
+          detail: `${person.name ?? args.employeeId} still manages ${reports.length} ${
+            reports.length === 1 ? "person" : "people"
+          }. Reassign them first.`,
+        };
+      }
+      return { ok: true };
+    },
+    // Two requirements, because this writes two records. It used to ask only
+    // about `offboarding` while writing `employee.status` — the same shape as
+    // the pay hole: permission on record X, write on record Y.
+    permission: (args) => [
+      {
+        action: "edit",
+        nodeType: "offboarding",
+        recordNodeIds: [offboardingIdFor(args.employeeId)],
+      },
+      {
+        action: "edit",
+        nodeType: "employee",
+        recordNodeIds: [args.employeeId],
+        fields: ["status"],
+      },
+    ],
+    // Somebody leaving the organisation is people-data by definition.
+    involvesMoneyOrPeople: () => true,
     execute: async (args, ctx) => {
       const offboarding = await readOffboarding(graph, args.employeeId);
       if (offboarding) {
@@ -249,6 +289,11 @@ export function leavingApplySeparationHandler(
         separatedAt: ctx.now(),
         suspendedRules: true,
       });
+      // Their login has to stop working. Marking the record separated used to
+      // leave the account fully usable, so "no rule outlives its owner" did not
+      // hold and a departed employee kept a valid session for up to a week.
+      await setAccountEnabled(args.employeeId, false);
+
       const result: OperationResult = {
         changes: [
           {

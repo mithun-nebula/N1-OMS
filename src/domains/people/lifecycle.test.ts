@@ -199,7 +199,33 @@ describe("leaving.applySeparation — auto-suspend hook (Phase 6 stub)", () => {
       }),
     );
     expect(res.status).toBe("awaiting-confirmation");
-    expect(res.reason).toBe("never-graduate");
+    // Two of the gate's checks now catch this, and money-or-people is asked
+    // first: separating somebody is people-data, and it is also a `leaving-org`
+    // category that can never graduate. Either reason is a correct refusal, so
+    // assert the property that matters rather than which check fired.
+    expect(["money-or-people", "never-graduate"]).toContain(res.reason);
+  });
+
+  it("stays parked no matter how many clean approvals the rule has", async () => {
+    // The stronger statement the test above was reaching for: leaving-org is in
+    // NEVER_GRADUATE, so no amount of good behaviour lets it run unattended.
+    const { spine, autonomy } = await world();
+    autonomy.declare("auto-separate-2", "shruti", "leaving.applySeparation", "leaving-org");
+    const state = autonomy.get("auto-separate-2")!;
+    state.status = "graduated";
+    state.cleanCount = 999;
+    autonomy.set(state);
+
+    const res = await spine.submit(
+      adapters.fromSchedule({
+        scheduleId: "sep-tick",
+        ruleId: "auto-separate-2",
+        ruleAuthor: "shruti",
+        name: "leaving.applySeparation",
+        args: { employeeId: "meena" },
+      }),
+    );
+    expect(res.status).toBe("awaiting-confirmation");
   });
 });
 

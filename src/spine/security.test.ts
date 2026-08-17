@@ -115,6 +115,50 @@ describe("delegated authority cannot be forged", () => {
   });
 });
 
+describe("reactivate is not a way to take over an account", () => {
+  /**
+   * `employee.reactivate` sets the account's password to a value the caller
+   * chooses. Its `validate` never checked that the person was actually inactive,
+   * and a manager holds `edit` on `employee` with `own-team` scope — so calling
+   * it on an *active* teammate was account takeover.
+   */
+  it("refuses to reactivate somebody who is already active", async () => {
+    const { spine } = await buildDemoWorld();
+    const attack = await spine.submit(
+      adapters.fromForm({
+        actor: "james", // manager; priya is on his team and is active
+        name: "employee.reactivate",
+        args: { employeeId: "priya", temporaryPassword: "taken-over-123" },
+      }),
+    );
+    expect(attack.status).not.toBe("ran");
+    // The password must be untouched.
+    const { verifyCredentials } = await import("@/server/accounts");
+    expect(verifyCredentials("employee", "taken-over-123")).toBeNull();
+  });
+
+  it("still works on somebody who genuinely left", async () => {
+    const { spine } = await buildDemoWorld();
+    const gone = await spine.submit(
+      adapters.fromForm({
+        actor: "shruti",
+        name: "employee.deactivate",
+        args: { employeeId: "priya", lastWorkingDay: "2026-09-30", reason: "Resigned" },
+      }),
+    );
+    expect(gone.status).toBe("ran");
+
+    const back = await spine.submit(
+      adapters.fromForm({
+        actor: "shruti",
+        name: "employee.reactivate",
+        args: { employeeId: "priya", temporaryPassword: "welcome-back-123" },
+      }),
+    );
+    expect(back.status).toBe("ran");
+  });
+});
+
 describe("an earned right is scoped to the operation that earned it", () => {
   /**
    * `hasEarnedRight(ruleId)` ignored the operation name the gate passes it, so
@@ -130,6 +174,165 @@ describe("an earned right is scoped to the operation that earned it", () => {
     expect(deps.autonomy.hasEarnedRight("announce-rule", "announcement.send")).toBe(true);
     expect(deps.autonomy.hasEarnedRight("announce-rule", "record.update")).toBe(false);
     expect(deps.autonomy.hasEarnedRight("announce-rule", "task.create")).toBe(false);
+  });
+});
+
+describe("a manager cannot promote or pay themselves", () => {
+  /**
+   * `teamCircleOf` includes the actor, so the single manager rule — edit, own
+   * team, every field visible — quietly covered their own record. That made a
+   * manager able to set their own pay, and to write their own `role`, which
+   * combined with `employee.create` reading the directory before the account
+   * into a path to minting a super-admin login.
+   */
+  it("refuses a manager setting their own pay", async () => {
+    const { spine, deps } = await buildDemoWorld();
+    const before = (await deps.graph.getNode("employee", "james"))?.data as { pay: number };
+
+    const attack = await spine.submit(
+      adapters.fromForm({
+        actor: "james",
+        name: "employee.setPay",
+        args: { employeeId: "james", pay: 9_999_999, effectiveFrom: "2026-09-01" },
+      }),
+    );
+    expect(attack.status).toBe("forbidden");
+    expect((await deps.graph.getNode("employee", "james"))?.data).toMatchObject({
+      pay: before.pay,
+    });
+  });
+
+  it("refuses a manager setting a teammate's pay", async () => {
+    const { spine } = await buildDemoWorld();
+    const attack = await spine.submit(
+      adapters.fromForm({
+        actor: "james",
+        name: "employee.setPay",
+        args: { employeeId: "priya", pay: 1, effectiveFrom: "2026-09-01" },
+      }),
+    );
+    expect(attack.status).toBe("forbidden");
+  });
+
+  it("refuses a manager writing their own role", async () => {
+    const { spine, deps } = await buildDemoWorld();
+    const attack = await spine.submit(
+      adapters.fromForm({
+        actor: "james",
+        name: "record.update",
+        args: { nodeType: "employee", nodeId: "james", data: { role: "super-admin" } },
+      }),
+    );
+    expect(attack.status).toBe("forbidden");
+    expect((await deps.graph.getNode("employee", "james"))?.data).toMatchObject({
+      role: "manager",
+    });
+  });
+
+  it("refuses an employee inflating their own leave balance", async () => {
+    const { spine, deps } = await buildDemoWorld();
+    const before = (await deps.graph.getNode("employee", "priya"))?.data as {
+      leaveBalance: number;
+    };
+
+    const attack = await spine.submit(
+      adapters.fromForm({
+        actor: "priya",
+        name: "record.update",
+        args: { nodeType: "employee", nodeId: "priya", data: { leaveBalance: 365 } },
+      }),
+    );
+    expect(attack.status).toBe("forbidden");
+    expect((await deps.graph.getNode("employee", "priya"))?.data).toMatchObject({
+      leaveBalance: before.leaveBalance,
+    });
+  });
+});
+
+/**
+ * The positive half. Every pre-existing employee test runs as `shruti` — HR,
+ * scope `all`, who can do everything — which is exactly why the manager write
+ * path went unguarded and the self-pay hole survived. These assert a manager can
+ * still do their actual job.
+ */
+describe("a manager can still do their job", () => {
+  it("approves a report's leave, and the balance moves", async () => {
+    const { spine, deps } = await buildDemoWorld();
+    const requested = await spine.submit(
+      adapters.fromForm({
+        actor: "priya",
+        name: "leave.request",
+        args: { employeeId: "priya", fromDate: "2026-09-10", toDate: "2026-09-11" },
+      }),
+    );
+    expect(requested.status).toBe("ran");
+    const leaveId = (requested.result?.response as { leaveId?: string })?.leaveId as string;
+
+    const before = (await deps.graph.getNode("employee", "priya"))?.data as {
+      leaveBalance: number;
+    };
+    const approved = await spine.submit(
+      adapters.fromForm({ actor: "james", name: "leave.approve", args: { leaveId } }),
+    );
+    expect(approved.status).toBe("ran");
+    const after = (await deps.graph.getNode("employee", "priya"))?.data as {
+      leaveBalance: number;
+    };
+    expect(after.leaveBalance).toBeLessThan(before.leaveBalance);
+  });
+
+  it("cannot approve their own leave", async () => {
+    const { spine } = await buildDemoWorld();
+    const requested = await spine.submit(
+      adapters.fromForm({
+        actor: "james",
+        name: "leave.request",
+        args: { employeeId: "james", fromDate: "2026-09-10", toDate: "2026-09-11" },
+      }),
+    );
+    const leaveId = (requested.result?.response as { leaveId?: string })?.leaveId as string;
+    const own = await spine.submit(
+      adapters.fromForm({ actor: "james", name: "leave.approve", args: { leaveId } }),
+    );
+    expect(own.status).toBe("forbidden");
+  });
+
+  it("can still update a report's contact details", async () => {
+    const { spine } = await buildDemoWorld();
+    const edit = await spine.submit(
+      adapters.fromForm({
+        actor: "james",
+        name: "employee.update",
+        args: { employeeId: "priya", patch: { contact: "priya@team.example" } },
+      }),
+    );
+    expect(edit.status).toBe("ran");
+  });
+
+  it("an intern can request their own leave", async () => {
+    // They could not before: interns had no `edit` rule on `employee` at all,
+    // so this was refused — silently, because the refusal is opaque.
+    const { spine } = await buildDemoWorld();
+    const requested = await spine.submit(
+      adapters.fromForm({
+        actor: "ravi",
+        name: "leave.request",
+        args: { employeeId: "ravi", fromDate: "2026-09-10", toDate: "2026-09-10" },
+      }),
+    );
+    expect(requested.status).toBe("ran");
+  });
+
+  it("but not somebody else's", async () => {
+    const { spine } = await buildDemoWorld();
+    const attack = await spine.submit(
+      adapters.fromForm({
+        actor: "ravi",
+        name: "leave.request",
+        args: { employeeId: "priya", fromDate: "2026-09-10", toDate: "2026-09-10" },
+      }),
+    );
+    expect(attack.status).toBe("forbidden");
   });
 });
 

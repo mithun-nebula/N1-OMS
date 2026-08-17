@@ -4,7 +4,16 @@ import type { PermissionAction } from "../operation/registry";
 export type RecordScope =
   | { kind: "all" }
   | { kind: "self" }
+  /** My team, **including me**. Right for reads: "my team's records". */
   | { kind: "own-team" }
+  /**
+   * My team, **excluding me**. Right for writes.
+   *
+   * `own-team` on a write is how a manager came to be able to set their own pay
+   * and their own role: the team circle includes the actor, so "edit my team's
+   * employee records" silently included their own.
+   */
+  | { kind: "team-others" }
   | { kind: "explicit"; nodeIds: NodeId[] };
 
 export type FieldPolicy =

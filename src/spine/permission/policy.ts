@@ -49,26 +49,33 @@ export class PermissionPolicy {
     if (matching.length === 0) {
       return { allowed: false };
     }
-    if (input.recordNodeId !== undefined) {
-      const inScope = matching.some((rule) =>
-        this.recordInScope({
-          actor: input.actor,
-          scope: rule.recordScope,
-          nodeType: input.nodeType,
-          recordNodeId: input.recordNodeId as NodeId,
-        }),
-      );
-      if (!inScope) {
-        return { allowed: false };
-      }
-    }
-    if (input.requiredFields && input.requiredFields.length > 0) {
-      const fieldsCovered = matching.some((rule) =>
-        this.fieldsVisible(rule.fields, input.requiredFields as string[]),
-      );
-      if (!fieldsCovered) {
-        return { allowed: false };
-      }
+
+    // ── One rule must satisfy BOTH the scope and the fields ─────────────────
+    //
+    // Scope and fields used to be checked with two independent `some(...)`
+    // passes, so rule A could satisfy the scope while rule B satisfied the
+    // fields — and neither rule permitted the operation on its own.
+    //
+    // Nothing exploits that today only because almost no role holds two rules
+    // on one node type. Person-scoping deliberately creates that shape (an
+    // employee will hold a `self` rule and read through an `own-team` one), so
+    // this has to be right before those rules exist.
+    //
+    // Strictly narrowing: with a single matching rule the result is identical.
+    const satisfied = matching.some(
+      (rule) =>
+        (input.recordNodeId === undefined ||
+          this.recordInScope({
+            actor: input.actor,
+            scope: rule.recordScope,
+            nodeType: input.nodeType,
+            recordNodeId: input.recordNodeId as NodeId,
+          })) &&
+        (!input.requiredFields?.length ||
+          this.fieldsVisible(rule.fields, input.requiredFields)),
+    );
+    if (!satisfied) {
+      return { allowed: false };
     }
     return { allowed: true };
   }
@@ -144,6 +151,13 @@ export class PermissionPolicy {
       case "own-team": {
         const owner = this.roles.ownerOf(nodeType, recordNodeId);
         if (owner === undefined) return false;
+        return this.roles.teamOf(actor).includes(owner);
+      }
+      case "team-others": {
+        const owner = this.roles.ownerOf(nodeType, recordNodeId);
+        // Unknown owner fails closed, and the actor's own record is excluded —
+        // that exclusion is the whole point of this scope.
+        if (owner === undefined || owner === actor) return false;
         return this.roles.teamOf(actor).includes(owner);
       }
     }

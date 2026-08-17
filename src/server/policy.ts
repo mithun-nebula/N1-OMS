@@ -129,12 +129,64 @@ export const DEMO_PERMISSION_RULES: PermissionRule[] = [
     recordScope: { kind: "all" },
     fields: { kind: "all-visible" },
   },
+  // ── A manager's reach over their team, split three ways ───────────────────
+  //
+  // This was one rule: view + edit + approve, `own-team`, all fields visible.
+  // Two problems followed from it. `teamCircleOf` includes the actor, so
+  // "my team" included themselves — and with every field visible, a manager
+  // could set **their own pay** and **their own role**. Writing your own role
+  // then mattered twice over, because `employee.create` read the directory
+  // before the account when deciding what you may hand out.
+  //
+  // Reads stay wide, writes narrow.
   {
+    // Reads: the whole team, including themselves, every field. Keeping ONE
+    // all-visible rule here is deliberate — `effectiveFieldPolicy` merges to
+    // all-visible if any applicable rule is, which is what keeps pay readable
+    // on /team and in readMany. Do not "tidy" this into per-field.
     role: "manager",
     nodeType: "employee",
-    actions: ["view", "edit", "approve"],
+    actions: ["view"],
     recordScope: { kind: "own-team" },
     fields: { kind: "all-visible" },
+  },
+  {
+    // Approving is always about somebody else. A manager approving their own
+    // leave was possible before and should not be.
+    role: "manager",
+    nodeType: "employee",
+    actions: ["approve"],
+    recordScope: { kind: "team-others" },
+    fields: { kind: "all-visible" },
+  },
+  {
+    // Writes: their reports only, and only the fields a manager has business
+    // changing. `restricted` here is not cosmetic — `fieldsVisible` requires
+    // every written field to appear in `visible`, so pay, performance and role
+    // are refused outright rather than masked.
+    //
+    // `leaveBalance` is visible because `leave.approve` decrements it.
+    role: "manager",
+    nodeType: "employee",
+    actions: ["edit"],
+    recordScope: { kind: "team-others" },
+    fields: {
+      kind: "per-field",
+      visible: [
+        "name",
+        "contact",
+        "team",
+        "managerId",
+        "departmentId",
+        "designationId",
+        "leaveBalance",
+        "pendingLeave",
+        "status",
+        "lastWorkingDay",
+        "deactivationReason",
+      ],
+      restricted: ["pay", "performance", "role", "password"],
+    },
   },
   {
     // Managers add their own team members. Scope is `all` because there is no
@@ -166,14 +218,35 @@ export const DEMO_PERMISSION_RULES: PermissionRule[] = [
     },
   },
   {
+    // What somebody may change on their own record.
+    //
+    // `leaveBalance` used to be in `visible` here, which made it **writable**:
+    // `record.update` on your own record with `{leaveBalance: 365}` passed the
+    // gate. A whitelist meant for a read filter was being honoured as a write
+    // grant. Your balance is a consequence of approved leave, never something
+    // you set — so it is restricted, and `leave.approve` changes it instead.
     role: "employee",
     nodeType: "employee",
     actions: ["edit"],
     recordScope: { kind: "self" },
     fields: {
       kind: "per-field",
-      visible: ["leaveBalance", "pendingLeave"],
-      restricted: ["pay", "performance"],
+      visible: ["contact", "pendingLeave"],
+      restricted: ["pay", "performance", "role", "leaveBalance", "status", "team"],
+    },
+  },
+  {
+    // Interns can request their own leave. They had no `edit` rule on
+    // `employee` at all, so `leave.request` was refused for them — invisible,
+    // because the leave form lists everyone and the refusal is opaque.
+    role: "intern",
+    nodeType: "employee",
+    actions: ["edit"],
+    recordScope: { kind: "self" },
+    fields: {
+      kind: "per-field",
+      visible: ["contact", "pendingLeave"],
+      restricted: ["pay", "performance", "role", "leaveBalance", "status", "team"],
     },
   },
   {

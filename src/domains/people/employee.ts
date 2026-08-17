@@ -6,6 +6,7 @@ import {
   accountOfActor,
   findAccount,
   removeAccount,
+  roleOfActor,
   setAccountEnabled,
 } from "@/server/accounts";
 import { directory } from "@/server/directory";
@@ -175,7 +176,14 @@ export function employeeCreateHandler(
 
       // Nobody may create a role above their own — otherwise "managers can add
       // people" is a one-step privilege escalation.
-      const creatorRole = directory().roleOf(ctx.actor) ?? accountOfActor(ctx.actor)?.role;
+      //
+      // Read the role from `roleOfActor`, which asks the **account** first. This
+      // used to read the directory first, which is rebuilt from employee records
+      // — so writing `role: "super-admin"` onto your own employee record and
+      // waiting for a refresh was enough to mint a super-admin login. The rule
+      // split now refuses that write, and this makes the escalation impossible
+      // even if some other path ever allows it.
+      const creatorRole = roleOfActor(ctx.actor);
       if (!canAssignRole(creatorRole, args.role)) {
         throw new Error(`You cannot create a ${args.role}.`);
       }
@@ -474,7 +482,7 @@ export function employeeReactivateHandler(
   return {
     name: "employee.reactivate",
     category: "people",
-    validate: (args) => {
+    validate: async (args) => {
       const missing: string[] = [];
       if (!args.employeeId) missing.push("employeeId");
       if (!args.temporaryPassword) missing.push("temporaryPassword");
@@ -486,13 +494,49 @@ export function employeeReactivateHandler(
           detail: "The temporary password must be at least 6 characters.",
         };
       }
+
+      // This operation sets the account's password to a value the caller chose.
+      // Without this guard, calling it on an ACTIVE colleague was account
+      // takeover — and a manager holds `edit` on `employee` across their own
+      // team, so it was reachable by every manager.
+      const person = (await graph.getNode("employee", args.employeeId))?.data as
+        | EmployeeData
+        | undefined;
+      if (!person) {
+        return {
+          ok: false,
+          missing: ["employeeId"],
+          detail: `No employee ${args.employeeId}.`,
+        };
+      }
+      if (person.status === "active") {
+        return {
+          ok: false,
+          missing: ["employeeId"],
+          detail:
+            "That person is already active. Reactivate only applies to someone who left — use a password reset instead.",
+        };
+      }
       return { ok: true };
     },
-    permission: (args) => ({
-      action: "edit",
-      nodeType: "employee",
-      recordNodeIds: [args.employeeId],
-    }),
+    // Two requirements: bringing someone back edits their status, and it also
+    // sets a password. Declaring `password` separately means a role whose
+    // field policy does not include it is refused — so the ability to restore
+    // an ex-colleague does not carry the ability to choose their password.
+    permission: (args) => [
+      {
+        action: "edit",
+        nodeType: "employee",
+        recordNodeIds: [args.employeeId],
+        fields: ["status"],
+      },
+      {
+        action: "edit",
+        nodeType: "employee",
+        recordNodeIds: [args.employeeId],
+        fields: ["password"],
+      },
+    ],
     involvesMoneyOrPeople: () => true,
     execute: async (args) => {
       const node = await graph.getNode("employee", args.employeeId);
