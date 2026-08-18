@@ -37,6 +37,8 @@ export interface DemoWorld {
   registry: OperationRegistry;
   autonomy: AutonomyStore;
   people: Record<string, { name: string; role: string; team?: string }>;
+  /** Shared Postgres pool when DATABASE_URL is set; undefined in stub mode. */
+  pool?: import("pg").Pool;
 }
 
 /** Returns a shared Postgres pool when DATABASE_URL is set, else undefined. */
@@ -130,7 +132,7 @@ export async function buildDemoWorld(): Promise<DemoWorld> {
   };
   const spine = new Spine(deps);
 
-  return { spine, deps, registry, autonomy: autonomyStore, people: DEMO_PEOPLE };
+  return { spine, deps, registry, autonomy: autonomyStore, people: DEMO_PEOPLE, pool };
 }
 
 /**

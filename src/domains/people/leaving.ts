@@ -171,12 +171,28 @@ export function leavingCompleteHandoverHandler(
     permission: async (args) => {
       const offboarding = await readOffboarding(graph, args.employeeId);
       const item = offboarding?.handovers.find((h) => h.id === args.handoverId);
-      return {
-        action: "edit",
-        nodeType: "offboarding",
-        recordNodeIds: [offboardingIdFor(args.employeeId)],
-        allowedActors: item ? [item.to] : undefined,
-      };
+      const allowedActors = item ? [item.to] : undefined;
+      // Completing a handover reassigns the course/equipment itself — declare
+      // that write too, so the gate (and the conformance harness) sees the
+      // operation's full reach, not just the offboarding checklist.
+      return [
+        {
+          action: "edit",
+          nodeType: "offboarding",
+          recordNodeIds: [offboardingIdFor(args.employeeId)],
+          allowedActors,
+        },
+        ...(item
+          ? [
+              {
+                action: "edit" as const,
+                nodeType: item.type === "course" ? "course" : "equipment",
+                recordNodeIds: [item.nodeId],
+                allowedActors,
+              },
+            ]
+          : []),
+      ];
     },
     involvesMoneyOrPeople: () => true,
     execute: async (args, ctx) => {

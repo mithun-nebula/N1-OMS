@@ -4,7 +4,12 @@ import { createQuestionLimiter } from "@/domains/workplace/shared/limiter";
 import { enforceAppendixD } from "./appendix-d";
 import { peopleSpecialist, type AssistantCtx } from "./specialists";
 import { DayPlanService } from "./day-plan/service";
-import { DayPlanStore } from "./day-plan/store";
+import {
+  DayPlanStore,
+  type DayPlan,
+  type DayPlanPersistence,
+  type StreakRecord,
+} from "./day-plan/store";
 
 let world: DemoWorld;
 let store: DayPlanStore;
@@ -199,5 +204,87 @@ describe("A6 — a meeting arriving during the day interrupts work", () => {
       end: "2026-08-08T12:00:00Z",
     });
     expect(store.get("james", "2026-08-08")!.plan.find((p) => p.id === id)?.interrupted).toBe(true);
+  });
+});
+
+describe("day-plan persistence — a restart does not lose the day", () => {
+  class FakePersistence implements DayPlanPersistence {
+    plans = new Map<string, DayPlan>();
+    streaks = new Map<string, StreakRecord>();
+    estimates = new Map<string, { estimate: number; actuals: number[] }>();
+    async savePlan(p: DayPlan) {
+      this.plans.set(`${p.actor}:${p.date}`, JSON.parse(JSON.stringify(p)) as DayPlan);
+    }
+    async loadPlan(actor: string, date: string) {
+      return this.plans.get(`${actor}:${date}`);
+    }
+    async saveStreak(actor: string, s: StreakRecord) {
+      this.streaks.set(actor, JSON.parse(JSON.stringify(s)) as StreakRecord);
+    }
+    async loadStreak(actor: string) {
+      return this.streaks.get(actor);
+    }
+    async saveEstimate(key: string, estimate: number, actuals: number[]) {
+      this.estimates.set(key, { estimate, actuals: [...actuals] });
+    }
+    async loadEstimate(key: string) {
+      return this.estimates.get(key);
+    }
+    async loadAllEstimates() {
+      return [...this.estimates].map(([key, v]) => ({ key, ...v }));
+    }
+  }
+
+  function serviceOn(s: DayPlanStore): DayPlanService {
+    return new DayPlanService(s, {
+      graph: world.deps.graph,
+      limiter: createQuestionLimiter(),
+      actorLookup: () => ({ spine: world.spine }),
+    });
+  }
+
+  // Writes are fire-and-forget; let the queued microtasks land.
+  const flush = () => new Promise((r) => setTimeout(r, 0));
+
+  it("a committed plan and its streak come back through a fresh store", async () => {
+    const persistence = new FakePersistence();
+    const storeA = new DayPlanStore(persistence);
+    const svcA = serviceOn(storeA);
+    await svcA.startDay("james", "2026-08-08");
+    svcA.selectItem("james", "2026-08-08", { label: "Review", estimateMinutes: 60 });
+    svcA.commitPlan("james", "2026-08-08");
+    await flush();
+
+    const storeB = new DayPlanStore(persistence); // "after the restart"
+    await storeB.load("james", "2026-08-08");
+    const plan = storeB.get("james", "2026-08-08");
+    expect(plan?.phase).toBe("planned");
+    expect(plan?.plan.map((p) => p.label)).toEqual(["Review"]);
+    expect(storeB.streakFor("james").dayPlanned).toBe(1);
+  });
+
+  it("learned estimates survive the restart", async () => {
+    const persistence = new FakePersistence();
+    const storeA = new DayPlanStore(persistence);
+    storeA.recordEstimate("task:t1", 60, 90);
+    storeA.recordEstimate("task:t1", 60, 110);
+    await flush();
+
+    const storeB = new DayPlanStore(persistence);
+    await storeB.load("james", "2026-08-08");
+    expect(storeB.learnedAdjustment("task:t1")).toBe(100);
+  });
+
+  it("a second load never clobbers newer in-memory state", async () => {
+    const persistence = new FakePersistence();
+    const storeA = new DayPlanStore(persistence);
+    const svcA = serviceOn(storeA);
+    await storeA.load("james", "2026-08-08");
+    await svcA.startDay("james", "2026-08-08");
+    const id = svcA.selectItem("james", "2026-08-08", { label: "Draft", estimateMinutes: 30 }).item!.id;
+    svcA.commitPlan("james", "2026-08-08");
+    await svcA.tick("james", "2026-08-08", id, {});
+    await storeA.load("james", "2026-08-08"); // hydrated → must be a no-op
+    expect(storeA.get("james", "2026-08-08")!.plan[0].done).toBe(true);
   });
 });

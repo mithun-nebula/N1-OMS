@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import { buildDemoWorld } from "@/server/bootstrap";
 import * as adapters from "@/spine/adapters";
 import type { PermissionRequirement } from "@/spine/operation/registry";
+import { ownerOfRecordData } from "@/domains/people/n1-classification";
 
 /**
  * Write-conformance: every record an operation touches must appear in what it
@@ -23,6 +24,8 @@ interface Write {
   kind: "put" | "patch" | "remove";
   nodeType: string;
   nodeId: string;
+  /** Effective record data after the write, for person-owner resolution. */
+  data?: Record<string, unknown>;
 }
 
 async function declaredFor(
@@ -38,11 +41,24 @@ async function declaredFor(
 
 function conforms(write: Write, declared: PermissionRequirement[]): boolean {
   if (write.nodeType === "calendar-entry") return true;
-  return declared.some((req) => {
-    if (req.nodeType !== write.nodeType) return false;
-    const ids = (req as { recordNodeIds?: string[] }).recordNodeIds;
-    return !ids || ids.length === 0 || ids.includes(write.nodeId);
-  });
+  const covers = (nodeType: string, nodeId: string) =>
+    declared.some((req) => {
+      if (req.nodeType !== nodeType) return false;
+      const ids = (req as { recordNodeIds?: string[] }).recordNodeIds;
+      return !ids || ids.length === 0 || ids.includes(nodeId);
+    });
+  if (covers(write.nodeType, write.nodeId)) return true;
+  // Person-equivalence: HR records are person-scoped — the unit of authority
+  // is the person, so `leave.approve` declares "approve employee:priya" and
+  // the gate resolves it against her manager's own-team rule. A write to a
+  // record OWNED by that person is inside the authority the gate checked.
+  // The applySeparation class is still caught: a write to a record whose
+  // owner (or the record itself) was never declared stays a violation.
+  if (write.nodeType !== "employee" && write.data) {
+    const owner = ownerOfRecordData(write.data);
+    if (owner && covers("employee", owner)) return true;
+  }
+  return false;
 }
 
 describe("write-conformance: operations only touch what they declared", () => {
@@ -56,11 +72,14 @@ describe("write-conformance: operations only touch what they declared", () => {
     const origPatch = graph.patchNode.bind(graph);
     const origRemove = graph.removeNode.bind(graph);
     graph.putNode = async (nodeType, nodeId, data) => {
-      writes.push({ kind: "put", nodeType, nodeId: String(nodeId) });
+      writes.push({ kind: "put", nodeType, nodeId: String(nodeId), data: data as Record<string, unknown> });
       return origPut(nodeType, nodeId, data);
     };
     graph.patchNode = async (nodeType, nodeId, data) => {
-      writes.push({ kind: "patch", nodeType, nodeId: String(nodeId) });
+      // A patch may not carry the owner field — resolve it from the merged record.
+      const existing = await graph.getNode(nodeType, nodeId);
+      const merged = { ...(existing?.data as Record<string, unknown> | undefined), ...(data as Record<string, unknown>) };
+      writes.push({ kind: "patch", nodeType, nodeId: String(nodeId), data: merged });
       return origPatch(nodeType, nodeId, data);
     };
     graph.removeNode = async (nodeType, nodeId) => {
@@ -74,7 +93,14 @@ describe("write-conformance: operations only touch what they declared", () => {
     const anyEquipment = (await deps.graph.find("equipment", () => true))[0];
     const anyCourse = (await deps.graph.find("course", () => true))[0];
 
-    const battery: Array<{ actor: string; name: string; args: Record<string, unknown> }> = [
+    interface BatteryOp {
+      actor: string;
+      name: string;
+      /** A thunk defers args that depend on an earlier op's response. */
+      args: Record<string, unknown> | (() => Record<string, unknown>);
+      after?: (outcome: { result?: { response?: unknown } }) => void;
+    }
+    const battery: BatteryOp[] = [
       { actor: "james", name: "task.create", args: { title: "Conformance task", assignedTo: "priya" } },
       ...(anyTask
         ? [
@@ -120,20 +146,59 @@ describe("write-conformance: operations only touch what they declared", () => {
       battery.push({ actor: "james", name: "course.setModuleState", args: { courseId: anyCourse.id, moduleIndex: 0, state: "draft" } });
     }
 
+    // Phase 3 — the money/people flows: leave lifecycle, employee lifecycle,
+    // joining and leaving. Ids that only exist after an earlier op ran arrive
+    // through thunked args.
+    let approveLeaveId: string | undefined;
+    let declineLeaveId: string | undefined;
+    const leaveIdOf = (o: { result?: { response?: unknown } }) =>
+      (o.result?.response as { leaveId?: string } | undefined)?.leaveId;
+    battery.push(
+      { actor: "shruti", name: "employee.create", args: { employeeId: "conform1", name: "Conform Ance", role: "employee", username: "conform1", temporaryPassword: "TempPass2026", team: "courses" } },
+      { actor: "priya", name: "leave.request", args: { employeeId: "priya", fromDate: "2026-09-03", toDate: "2026-09-04" }, after: (o) => { approveLeaveId = leaveIdOf(o); } },
+      { actor: "james", name: "leave.approve", args: () => ({ leaveId: approveLeaveId }) },
+      { actor: "priya", name: "leave.request", args: { employeeId: "priya", fromDate: "2026-09-10", toDate: "2026-09-11" }, after: (o) => { declineLeaveId = leaveIdOf(o); } },
+      { actor: "james", name: "leave.decline", args: () => ({ leaveId: declineLeaveId, reason: "No cover that week." }) },
+      { actor: "shruti", name: "employee.update", args: { employeeId: "conform1", patch: { contact: "conform1@example.org" } } },
+      { actor: "shruti", name: "employee.setPay", args: { employeeId: "conform1", pay: 50000, effectiveFrom: "2026-09-01" } },
+      { actor: "shruti", name: "employee.updateContact", args: { employeeId: "shruti", contact: "shruti@example.org" } },
+      { actor: "shruti", name: "joining.start", args: { employeeId: "ravi" } },
+      { actor: "ravi", name: "joining.completeStep", args: { employeeId: "ravi", stepId: "policy-ack" } },
+      { actor: "shruti", name: "leaving.start", args: { employeeId: "conform1", separationDate: "2026-09-30" } },
+      { actor: "shruti", name: "employee.deactivate", args: { employeeId: "conform1", lastWorkingDay: "2026-09-30", reason: "Resigned" } },
+      { actor: "shruti", name: "leaving.applySeparation", args: { employeeId: "conform1" } },
+      // Meena holds two laptops and owns a course — her offboarding exercises
+      // the handover reassignment path, which writes course/equipment nodes.
+      { actor: "shruti", name: "leaving.start", args: { employeeId: "meena", separationDate: "2026-10-01" } },
+      { actor: "james", name: "leaving.completeHandover", args: { employeeId: "meena", handoverId: "h-course-ai-basics" } },
+    );
+
     const violations: string[] = [];
+    const ranOps = new Set<string>();
     for (const op of battery) {
       writes.length = 0;
-      const outcome = await spine.submit(
-        adapters.fromForm({ actor: op.actor, name: op.name, args: op.args }),
+      const args = typeof op.args === "function" ? op.args() : op.args;
+      let outcome = await spine.submit(
+        adapters.fromForm({ actor: op.actor, name: op.name, args }),
       );
-      // A refused or parked op that wrote anything is its own violation.
+      // A parked money/people op must not write until it is confirmed. The
+      // confirmed run's writes are then held to the same declaration.
+      if (outcome.status === "awaiting-confirmation") {
+        if (writes.length > 0) {
+          violations.push(`${op.name}: wrote ${writes.length} record(s) while parked for confirmation`);
+        }
+        outcome = await spine.confirm(outcome.pendingId, op.actor);
+      }
+      // A refused op that wrote anything is its own violation.
       if (outcome.status !== "ran") {
         if (writes.length > 0) {
           violations.push(`${op.name}: wrote ${writes.length} record(s) despite status ${outcome.status}`);
         }
         continue;
       }
-      const declared = await declaredFor((n) => registry.get(n), op.name, op.args);
+      ranOps.add(op.name);
+      op.after?.(outcome);
+      const declared = await declaredFor((n) => registry.get(n), op.name, args);
       for (const w of writes) {
         if (!conforms(w, declared)) {
           violations.push(
@@ -144,5 +209,16 @@ describe("write-conformance: operations only touch what they declared", () => {
     }
 
     expect(violations, violations.join("\n")).toEqual([]);
+
+    // A battery op that silently never ran proves nothing — the flows this
+    // harness exists for must actually have executed.
+    for (const mustRun of [
+      "task.create", "meeting.create", "attendance.checkIn", "room.book",
+      "employee.create", "leave.request", "leave.approve", "leave.decline",
+      "employee.setPay", "joining.start", "joining.completeStep", "leaving.start",
+      "leaving.completeHandover", "employee.deactivate",
+    ]) {
+      expect(ranOps.has(mustRun), `${mustRun} never ran — its conformance was not tested`).toBe(true);
+    }
   });
 });

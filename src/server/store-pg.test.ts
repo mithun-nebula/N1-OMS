@@ -264,3 +264,37 @@ describe("orga_autonomy_rules — graduation durability", { skip: !DATABASE_URL 
     await p1.end();
   });
 });
+
+describe("orga_day_plans — day-plan durability", { skip: !DATABASE_URL }, () => {
+  itIfDb("plan, streak and estimates round-trip through a fresh persistence", async () => {
+    const { PostgresDayPlanPersistence } = await import("./store-pg-dayplan");
+    const p1 = pool();
+    const a = new PostgresDayPlanPersistence(p1);
+    await a.savePlan({
+      actor: "pg-test-actor",
+      date: "2026-08-18",
+      phase: "planned",
+      brief: { changed: [], needsYou: [], atRisk: [] },
+      briefStep: 0,
+      plan: [{ id: "i1", label: "Survive restart", estimateMinutes: 45 }],
+      meetings: [],
+      streak: { clean: 2, bestClean: 3, finishedWithinTime: 5, dayPlanned: 4 },
+    });
+    await a.saveStreak("pg-test-actor", { clean: 2, bestClean: 3, finishedWithinTime: 5, dayPlanned: 4 });
+    await a.saveEstimate("task:pg-test", 60, [80, 100]);
+
+    const b = new PostgresDayPlanPersistence(pool());
+    const plan = await b.loadPlan("pg-test-actor", "2026-08-18");
+    expect(plan?.phase).toBe("planned");
+    expect(plan?.plan[0].label).toBe("Survive restart");
+    expect((await b.loadStreak("pg-test-actor"))?.bestClean).toBe(3);
+    expect(await b.loadEstimate("task:pg-test")).toEqual({ estimate: 60, actuals: [80, 100] });
+    const all = await b.loadAllEstimates();
+    expect(all.some((e) => e.key === "task:pg-test")).toBe(true);
+
+    await p1.query("DELETE FROM orga_day_plans WHERE actor=$1", ["pg-test-actor"]);
+    await p1.query("DELETE FROM orga_day_streaks WHERE actor=$1", ["pg-test-actor"]);
+    await p1.query("DELETE FROM orga_day_estimates WHERE key=$1", ["task:pg-test"]);
+    await p1.end();
+  });
+});

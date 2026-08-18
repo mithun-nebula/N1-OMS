@@ -68,12 +68,16 @@ export interface DayPlanPersistence {
   loadStreak(actor: ActorId): Promise<StreakRecord | undefined>;
   saveEstimate(key: string, estimate: number, actuals: number[]): Promise<void>;
   loadEstimate(key: string): Promise<{ estimate: number; actuals: number[] } | undefined>;
+  /** Bulk-hydrate the estimate learning table on first load after a restart. */
+  loadAllEstimates?(): Promise<Array<{ key: string; estimate: number; actuals: number[] }>>;
 }
 
 export class DayPlanStore {
   private plans = new Map<string, DayPlan>();
   private streaks = new Map<ActorId, StreakRecord>();
   private learning = new Map<string, { estimate: number; actuals: number[] }>();
+  private hydrated = new Set<string>();
+  private estimatesHydrated = false;
 
   /** Without persistence the store is memory-only, as the tests use it. */
   constructor(private readonly persistence?: DayPlanPersistence) {}
@@ -98,6 +102,11 @@ export class DayPlanStore {
    */
   async load(actor: string, date: string): Promise<void> {
     if (!this.persistence) return;
+    // Once hydrated, memory is the source of truth — a second load must not
+    // clobber in-memory state with a stale fire-and-forget snapshot.
+    const key = this.key(actor, date);
+    if (this.hydrated.has(key)) return;
+    this.hydrated.add(key);
     const [plan, streak] = await Promise.all([
       this.persistence.loadPlan(actor, date),
       this.persistence.loadStreak(actor),
@@ -105,8 +114,19 @@ export class DayPlanStore {
     if (streak) this.streaks.set(actor, streak);
     if (plan) {
       // A streak loaded from its own row is more current than the copy
-      // embedded in the plan snapshot.
-      this.plans.set(this.key(actor, date), { ...plan, streak: streak ?? plan.streak });
+      // embedded in the plan snapshot. Keep them the same object so later
+      // streak mutations flow into the plan snapshot on save, as in startDay.
+      const s = this.streaks.get(actor) ?? plan.streak;
+      this.streaks.set(actor, s);
+      this.plans.set(key, { ...plan, streak: s });
+    }
+    if (!this.estimatesHydrated && this.persistence.loadAllEstimates) {
+      this.estimatesHydrated = true;
+      for (const e of await this.persistence.loadAllEstimates()) {
+        if (!this.learning.has(e.key)) {
+          this.learning.set(e.key, { estimate: e.estimate, actuals: e.actuals });
+        }
+      }
     }
   }
 

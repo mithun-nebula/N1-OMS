@@ -88,7 +88,15 @@ export async function getOrgMemoryService(): Promise<OrgMemoryService> {
 export async function getDayPlanService(): Promise<DayPlanService> {
   if (!dayPlanService) {
     const world = await getWorld();
-    dayPlanStore ??= new DayPlanStore();
+    if (!dayPlanStore) {
+      // Durable against restarts when the app runs on Postgres; the store
+      // itself stays synchronous (writes are fire-and-forget, reads hydrate
+      // once per actor-day via load() before anything touches the plan).
+      const { PostgresDayPlanPersistence } = await import("./store-pg-dayplan");
+      dayPlanStore = new DayPlanStore(
+        world.pool ? new PostgresDayPlanPersistence(world.pool) : undefined,
+      );
+    }
     dayPlanService = new DayPlanService(dayPlanStore, {
       graph: world.deps.graph,
       limiter: getQuestionLimiter(),

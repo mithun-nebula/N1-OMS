@@ -43,6 +43,9 @@ async function stateFor(actor: string): Promise<TodayState> {
   const date = today();
   const { deps } = await getWorld();
   const service = await getDayPlanService();
+  // Recover this person's day (and streak) after a restart. No-op once
+  // hydrated, and a no-op entirely in stub mode.
+  await service.getStore().load(actor, date);
 
   const attNode = await deps.graph.getNode("attendance", attendanceId(actor, date));
   const att: Partial<AttendanceData> = (attNode?.data as AttendanceData | undefined) ?? {};
@@ -101,6 +104,7 @@ export async function POST(request: Request) {
   if (!user) return NextResponse.json({ error: "Not authenticated." }, { status: 401 });
   const service = await getDayPlanService();
   const date = today();
+  await service.getStore().load(user.id, date);
 
   let body: Record<string, unknown> = {};
   try {
