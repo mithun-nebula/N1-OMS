@@ -27,7 +27,9 @@ interface CalendarEntry {
 
 interface UndoableAction {
   message: string;
+  /** Empty after a failed undo — the toast then only reports, no retry target. */
   activityId: string;
+  failed?: boolean;
 }
 
 /* Category coding shared with the dashboard: meetings mint, events peach. */
@@ -101,10 +103,25 @@ export function CalendarClient({
   async function undoLast() {
     if (!undo) return;
     setUndoBusy(true);
-    await fetch(`/api/activity/${undo.activityId}/undo`, { method: "POST" });
-    setUndoBusy(false);
-    setUndo(null);
-    router.refresh();
+    try {
+      const res = await fetch(`/api/activity/${undo.activityId}/undo`, { method: "POST" });
+      if (!res.ok) {
+        // A closed toast on a failed undo looks like success — say what happened.
+        let message = "Couldn't undo that.";
+        try {
+          const data = (await res.json()) as { error?: string };
+          if (data.error) message = data.error;
+        } catch {}
+        setUndo({ message, activityId: "", failed: true });
+        return;
+      }
+      setUndo(null);
+      router.refresh();
+    } catch {
+      setUndo({ message: "Couldn't reach the server to undo.", activityId: "", failed: true });
+    } finally {
+      setUndoBusy(false);
+    }
   }
 
   async function createEntry() {
@@ -438,13 +455,15 @@ export function CalendarClient({
       {undo && (
         <div className="sheet-up fixed bottom-20 left-1/2 z-50 flex -translate-x-1/2 items-center gap-3 rounded-2xl bg-chrome px-4 py-3 text-sm text-chrome-ink shadow-lift md:bottom-6">
           <span className="text-[13px]">{undo.message}</span>
-          <button
-            onClick={undoLast}
-            disabled={undoBusy}
-            className="press rounded-full bg-accent px-3.5 py-1 text-xs font-bold text-chrome transition-colors hover:bg-accent-strong disabled:opacity-40"
-          >
-            Undo
-          </button>
+          {!undo.failed && (
+            <button
+              onClick={undoLast}
+              disabled={undoBusy}
+              className="press rounded-full bg-accent px-3.5 py-1 text-xs font-bold text-chrome transition-colors hover:bg-accent-strong disabled:opacity-40"
+            >
+              Undo
+            </button>
+          )}
           <button onClick={() => setUndo(null)} className="text-xs text-chrome-soft transition-colors hover:text-chrome-ink">
             OK
           </button>

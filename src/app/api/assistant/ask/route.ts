@@ -18,6 +18,6 @@ export async function POST(request: Request) {
   } catch {
     return NextResponse.json({ error: "Invalid JSON body." }, { status: 400 });
   }
-  const answer = assistantAsk(user.id, body.message ?? "");
+  const answer = await assistantAsk(user.id, body.message ?? "");
   return NextResponse.json(answer);
 }

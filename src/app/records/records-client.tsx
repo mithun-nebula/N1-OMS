@@ -48,16 +48,26 @@ export function RecordsClient({ actorRole }: { actorRole: string }) {
   const [newKey, setNewKey] = useState("");
   const [newValue, setNewValue] = useState("");
 
-  const canManage = isHrLike(actorRole);
+  const [loadError, setLoadError] = useState<string | null>(null);
+
+  // The policy gives HR view/export only on SENSITIVE doctypes (pay, expenses…);
+  // offering "+ New record" there would end in an opaque refusal. Admins manage
+  // everything; HR manages the non-sensitive types.
+  const canManage =
+    isAdminLike(actorRole) || (isHrLike(actorRole) && meta?.sensitive !== true);
   const canDelete = isAdminLike(actorRole);
 
   useEffect(() => {
     fetch("/api/n1-doctypes")
-      .then((r) => r.json())
+      .then((r) => {
+        if (!r.ok) throw new Error(String(r.status));
+        return r.json();
+      })
       .then((d) => {
         setCatalog(d.catalog ?? []);
         setN1Mode(d.n1Mode ?? "stub");
-      });
+      })
+      .catch(() => setLoadError("Couldn't load the record catalog — reload to try again."));
   }, []);
 
   useEffect(() => {
@@ -65,11 +75,18 @@ export function RecordsClient({ actorRole }: { actorRole: string }) {
     const t = setTimeout(async () => {
       setLoading(true);
       setRecords([]);
-      const res = await fetch(`/api/records-list?type=${encodeURIComponent(selected)}`);
-      const d = await res.json();
-      setRecords(d.records ?? []);
-      setMeta({ doctype: d.doctype, category: d.category, sensitive: d.sensitive });
-      setLoading(false);
+      setLoadError(null);
+      try {
+        const res = await fetch(`/api/records-list?type=${encodeURIComponent(selected)}`);
+        if (!res.ok) throw new Error(String(res.status));
+        const d = await res.json();
+        setRecords(d.records ?? []);
+        setMeta({ doctype: d.doctype, category: d.category, sensitive: d.sensitive });
+      } catch {
+        setLoadError("Couldn't load those records.");
+      } finally {
+        setLoading(false);
+      }
     }, 0);
     return () => clearTimeout(t);
   }, [selected]);
@@ -81,8 +98,12 @@ export function RecordsClient({ actorRole }: { actorRole: string }) {
   function refresh() {
     if (selected) {
       fetch(`/api/records-list?type=${encodeURIComponent(selected)}`)
-        .then((r) => r.json())
-        .then((d) => setRecords(d.records ?? []));
+        .then((r) => {
+          if (!r.ok) throw new Error(String(r.status));
+          return r.json();
+        })
+        .then((d) => setRecords(d.records ?? []))
+        .catch(() => setLoadError("Couldn't refresh those records."));
     }
   }
 
@@ -197,7 +218,11 @@ export function RecordsClient({ actorRole }: { actorRole: string }) {
       </aside>
 
       <section className="rise" style={{ animationDelay: "120ms" }}>
-        {!selected ? (
+        {loadError ? (
+          <div role="alert" className="shake rounded-3xl border border-danger/40 bg-danger-soft/40 p-6 text-center text-sm font-medium text-danger">
+            {loadError}
+          </div>
+        ) : !selected ? (
           <Empty icon="search" text="Select a DocType on the left to browse its records." />
         ) : loading ? (
           <p className="fade-in text-sm text-ink-faint">Loading…</p>

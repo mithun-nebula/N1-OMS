@@ -38,7 +38,7 @@ export async function POST(request: Request) {
     case "accept-suggestion":
       return NextResponse.json({ ok: engine.acceptSuggestion(body.suggestionId!) });
     case "detect-routines":
-      return NextResponse.json({ suggestions: engine.detectRoutines() });
+      return NextResponse.json({ suggestions: await engine.detectRoutines() });
     default:
       return NextResponse.json({ error: `Unknown action: ${body.action}` }, { status: 400 });
   }

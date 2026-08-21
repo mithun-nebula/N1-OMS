@@ -45,10 +45,12 @@ export class PeopleRecordService {
         await this.graph.putNode("attendance", mapped.nodeId, mapped.data);
       }
     }
-    return this.graph.find(
-      "attendance",
-      (n) => (n.data as { employee?: string }).employee === employeeId,
-    );
+    // Records written by attendance.checkIn use `employeeId`; rows synced
+    // from N1 use `employee`. Match either, or /me shows an empty history.
+    return this.graph.find("attendance", (n) => {
+      const d = n.data as { employee?: string; employeeId?: string };
+      return d.employeeId === employeeId || d.employee === employeeId;
+    });
   }
 
   async listPaySlips(employeeId: string): Promise<RecordNode[]> {
@@ -59,9 +61,10 @@ export class PeopleRecordService {
         await this.graph.putNode("payslip", id, { employeeId, ...(rec.data as object) });
       }
     }
-    return this.graph.find(
-      "payslip",
-      (n) => (n.data as { employeeId?: string }).employeeId === employeeId,
-    );
+    // Seeded/N1 payslips carry `employee`; live-synced ones get `employeeId`.
+    return this.graph.find("payslip", (n) => {
+      const d = n.data as { employee?: string; employeeId?: string };
+      return d.employeeId === employeeId || d.employee === employeeId;
+    });
   }
 }

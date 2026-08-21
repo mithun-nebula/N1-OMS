@@ -36,7 +36,16 @@ export function TasksClient({
   people: Array<{ id: string; name: string }>;
   actorRole: string;
 }) {
-  const [tasks] = useState(initial);
+  // After any mutation, useOperation's router.refresh() re-renders the server
+  // page and hands down a fresh `tasks` prop. Sync it into state during render
+  // (React's adjust-state-during-render pattern) — a plain useState(initial)
+  // would pin the board to its first snapshot forever.
+  const [tasks, setTasks] = useState(initial);
+  const [prevInitial, setPrevInitial] = useState(initial);
+  if (initial !== prevInitial) {
+    setPrevInitial(initial);
+    setTasks(initial);
+  }
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState({ title: "", assignedTo: "", priority: "medium", dueDate: "" });
   const op = useOperation();

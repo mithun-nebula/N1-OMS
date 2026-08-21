@@ -56,18 +56,25 @@ export function SettingsClient({
       return;
     }
     setPwBusy(true);
-    const res = await fetch("/api/settings/password", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ current: pw.current, next: pw.next }),
-    });
-    setPwBusy(false);
-    const data = await res.json();
-    if (data.ok) {
-      setPwMsg({ ok: true, text: "Password changed." });
-      setPw({ current: "", next: "", confirm: "" });
-    } else {
-      setPwMsg({ ok: false, text: data.error ?? "Could not change password." });
+    try {
+      const res = await fetch("/api/settings/password", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ current: pw.current, next: pw.next }),
+      });
+      // A non-JSON 500 must land as a message, not an unhandled throw that
+      // leaves the spinner stopping with no explanation.
+      const data = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string };
+      if (res.ok && data.ok) {
+        setPwMsg({ ok: true, text: "Password changed." });
+        setPw({ current: "", next: "", confirm: "" });
+      } else {
+        setPwMsg({ ok: false, text: data.error ?? "Could not change password." });
+      }
+    } catch {
+      setPwMsg({ ok: false, text: "Couldn't reach the server — try again." });
+    } finally {
+      setPwBusy(false);
     }
   }
 
