@@ -41,9 +41,17 @@ export type IconName =
   | "check"
   | "spark"
   | "clock"
-  | "arrow";
+  | "arrow"
+  | "chat";
 
 const PATHS: Record<IconName, React.ReactNode> = {
+  chat: (
+    <>
+      <path d="M4 5.5h16a1.5 1.5 0 0 1 1.5 1.5v9a1.5 1.5 0 0 1-1.5 1.5H9l-4.5 3.5v-3.5H4A1.5 1.5 0 0 1 2.5 16V7A1.5 1.5 0 0 1 4 5.5z" />
+      <path d="M7.5 10.5h9" />
+      <path d="M7.5 13.5h5.5" />
+    </>
+  ),
   home: (
     <>
       <path d="M3 10.5 12 3l9 7.5" />

@@ -32,12 +32,19 @@ export function ForcedPasswordChange({ forced }: { forced: boolean }) {
       return;
     }
     setBusy(true);
-    const res = await fetch("/api/settings/password", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ current, next }),
-    });
-    const data = (await res.json()) as { ok?: boolean; error?: string };
+    // This is the one screen a locked-out account MUST get through — a
+    // non-JSON error body or a network drop still has to produce a message.
+    let data: { ok?: boolean; error?: string };
+    try {
+      const res = await fetch("/api/settings/password", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ current, next }),
+      });
+      data = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string };
+    } catch {
+      data = { ok: false, error: "Couldn't reach the server — try again." };
+    }
     setBusy(false);
     if (!data.ok) {
       setError(data.error ?? "Could not change password.");

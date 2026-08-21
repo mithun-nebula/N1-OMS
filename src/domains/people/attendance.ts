@@ -69,6 +69,13 @@ export function attendanceCheckInHandler(
       await graph.putNode("attendance", id, data);
       return {
         changes: [{ nodeType: "attendance", nodeId: id, after: { checkInAt: data.checkInAt } }],
+        undo: {
+          description: "Remove today's clock-in.",
+          revert: async () => { await graph.removeNode("attendance", id); },
+          // Serialisable, so a mistaken clock-in can still be taken back after
+          // a restart — the whole day flow keys off this record.
+          plan: [{ op: "remove", nodeType: "attendance", nodeId: id }],
+        },
       };
     },
   };
@@ -114,6 +121,7 @@ export function attendanceCheckOutHandler(
         undo: {
           description: "Remove the clock-out again.",
           revert: async () => { await graph.putNode("attendance", id, before); },
+          plan: [{ op: "put", nodeType: "attendance", nodeId: id, data: before }],
         },
       };
     },

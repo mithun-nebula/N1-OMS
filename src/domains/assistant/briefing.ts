@@ -1,6 +1,6 @@
 import type { AssistantCtx } from "./specialists";
 import { findStaleCourses } from "@/domains/course/versioning";
-import { findExpiringDocuments, nonAcknowledgers } from "@/domains/workplace";
+import { findExpiringDocuments } from "@/domains/workplace";
 
 export interface BriefBand {
   changed: string[];
@@ -44,12 +44,8 @@ export async function generateBrief(ctx: AssistantCtx): Promise<BriefBand> {
   }
   for (const d of expiring) atRisk.push(`${d.name} expires in ${d.daysLeft} day(s)`);
 
-  const announcements = await ctx.graph.find("announcement", () => true);
-  const unacked: typeof announcements = [];
-  for (const n of announcements) {
-    if ((await nonAcknowledgers(ctx.graph, n.id)).includes(ctx.actor)) unacked.push(n);
-  }
-  if (unacked.length > 0) needsYou.push(`${unacked.length} announcement(s) to acknowledge`);
+  // Announcements (and their acknowledge chase) were replaced by the
+  // messaging system — unread chat deliberately stays out of the brief.
 
   return { changed, needsYou, atRisk };
 }

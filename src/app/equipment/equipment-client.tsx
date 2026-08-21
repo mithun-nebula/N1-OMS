@@ -27,7 +27,6 @@ export function EquipmentClient({
   equipment,
 }: {
   equipment: EquipmentItem[];
-  actorId: string;
 }) {
   const op = useOperation();
   const busy = op.busy;

@@ -22,7 +22,6 @@ export function EventsClient({
   actorId,
 }: {
   events: EventItem[];
-  people: Array<{ id: string; name: string }>;
   actorId: string;
 }) {
   const op = useOperation();

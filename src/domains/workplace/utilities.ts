@@ -1,5 +1,6 @@
 import type { OperationHandler } from "@/spine/operation/registry";
 import type { RecordStore } from "@/spine/record/types";
+import { localDateOf } from "@/domains/assistant/day-plan/time";
 import type { QuestionLimiter } from "./shared/limiter";
 
 interface UtilityCaptureData {
@@ -27,7 +28,10 @@ export function utilityCaptureHandler(
     permission: () => ({ action: "create", nodeType: "utility-capture" }),
     involvesMoneyOrPeople: () => false,
     execute: async (args, ctx) => {
-      if (!limiter.tryConsume(ctx.actor, ctx.now().slice(0, 10))) {
+      // The local day. `ctx.now()` is a UTC instant, so slicing it filed the
+      // allowance under a different key from the day flow, which shares this
+      // same two-a-day budget (appendix A4).
+      if (!limiter.tryConsume(ctx.actor, localDateOf(ctx.now()))) {
         return {
           changes: [],
           publishedTo: [],

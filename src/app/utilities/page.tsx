@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { getSessionUser } from "@/server/auth";
 import { getWorld } from "@/server/runtime";
 import { getQuestionLimiter } from "@/server/limiter";
+import { localDate } from "@/domains/assistant/day-plan/time";
 import { Shell } from "../shell";
 import { UtilitiesClient } from "./utilities-client";
 
@@ -9,7 +10,10 @@ export default async function UtilitiesPage() {
   const user = await getSessionUser();
   if (!user) redirect("/login");
   const { deps } = await getWorld();
-  const today = new Date().toISOString().slice(0, 10);
+  // The local day, matching how `utility.capture` and the day plan *spend* the
+  // allowance. This read the UTC day, so east of Greenwich the page reported a
+  // different day's remaining count from the one being enforced.
+  const today = localDate();
   const remaining = getQuestionLimiter().remaining(user.id, today);
 
   const history = (await deps.graph
@@ -40,7 +44,7 @@ export default async function UtilitiesPage() {
           </p>
         </div>
       </header>
-      <UtilitiesClient actorId={user.id} remaining={remaining} today={today} history={history} />
+      <UtilitiesClient remaining={remaining} today={today} history={history} />
     </Shell>
   );
 }

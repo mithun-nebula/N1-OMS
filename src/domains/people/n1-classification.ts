@@ -46,6 +46,11 @@ export const PERSON_SCOPED_NODE_TYPES: ReadonlySet<string> = new Set([
   "appraisee",
   // training (non-sensitive)
   "training-event-employee",
+  // expenses — a claim is a personal record (it carries an `employee` field):
+  // you see your own, your manager sees the team's, HR sees all. Moved here
+  // from `sensitive` so the self-service expense flow works at all. Travel
+  // requests and advances stay sensitive for now.
+  "expense-claim",
 ]);
 
 /** Non-sensitive N1 node types visible to HR and admins only. */

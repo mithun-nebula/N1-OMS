@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { AccentButton, ChromeButton, Empty, inputCls, OpFeedback } from "../ui/kit";
+import { AccentButton, ChromeButton, Empty, inputCls, OpFeedback, SectionTitle } from "../ui/kit";
 import { useOperation } from "@/components/ops/use-operation";
 
 interface Decision {
@@ -14,11 +14,20 @@ interface Decision {
   linkedRecords: Array<{ nodeType: string; nodeId: string }>;
 }
 
+interface MeetingDecisionSet {
+  meetingId: string;
+  meetingTitle: string;
+  decisions: Array<{ id: string; text: string; ownerName?: string }>;
+  actions: Array<{ id: string; text: string; ownerName: string; due?: string; done: boolean }>;
+}
+
 export function DecisionsClient({
   decisions,
+  meetingDecisions,
   canRecord,
 }: {
   decisions: Decision[];
+  meetingDecisions: MeetingDecisionSet[];
   canRecord: boolean;
 }) {
   const op = useOperation();
@@ -118,6 +127,79 @@ export function DecisionsClient({
             </div>
           ))}
         </div>
+      )}
+
+      {/* Decisions captured against a meeting, with their action items. */}
+      {meetingDecisions.length > 0 && (
+        <section className="rise space-y-2.5" style={{ animationDelay: "180ms" }}>
+          <SectionTitle>Meeting decisions</SectionTitle>
+          {meetingDecisions.map((set, i) => (
+            <div
+              key={set.meetingId}
+              className="rise lift rounded-2xl border-l-[3px] border-mint-strong bg-surface p-5 shadow-card"
+              style={{ animationDelay: `${220 + i * 50}ms` }}
+            >
+              <div className="text-[14px] font-semibold text-ink">{set.meetingTitle}</div>
+              {set.decisions.length > 0 && (
+                <ul className="mt-2 space-y-1.5">
+                  {set.decisions.map((d) => (
+                    <li key={d.id} className="text-sm text-ink-soft">
+                      {d.text}
+                      {d.ownerName && (
+                        <span className="ml-2 rounded-full bg-lilac px-2 py-0.5 text-[10px] font-bold text-lilac-strong">
+                          {d.ownerName}
+                        </span>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+              )}
+              {set.actions.length > 0 && (
+                <div className="mt-3 space-y-1.5">
+                  <div className="text-[10px] font-semibold uppercase tracking-widest text-ink-faint">
+                    Action items
+                  </div>
+                  {set.actions.map((a) => (
+                    <div
+                      key={a.id}
+                      className="flex flex-wrap items-center justify-between gap-2 rounded-xl bg-raised px-3 py-2"
+                    >
+                      <div className="min-w-0 text-xs">
+                        <span className={a.done ? "text-ink-faint line-through" : "font-medium text-ink"}>
+                          {a.text}
+                        </span>
+                        <span className="ml-2 rounded-full bg-peach px-2 py-0.5 text-[10px] font-bold text-peach-strong">
+                          {a.ownerName}
+                        </span>
+                        {a.due && (
+                          <span className="ml-2 text-[11px] text-ink-faint">due {String(a.due).slice(0, 10)}</span>
+                        )}
+                      </div>
+                      {a.done ? (
+                        <span className="rounded-full bg-mint px-2.5 py-0.5 text-[11px] font-semibold text-mint-strong">
+                          Done
+                        </span>
+                      ) : (
+                        <button
+                          onClick={() =>
+                            op.run("meeting.completeAction", {
+                              meetingId: set.meetingId,
+                              actionId: a.id,
+                            })
+                          }
+                          disabled={busy}
+                          className="press rounded-lg bg-chrome px-2.5 py-1 text-[11px] font-semibold text-chrome-ink disabled:opacity-40"
+                        >
+                          Done
+                        </button>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          ))}
+        </section>
       )}
       <OpFeedback
         error={op.error}

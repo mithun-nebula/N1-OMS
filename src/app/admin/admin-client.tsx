@@ -1,8 +1,10 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Avatar, Empty, SectionTitle, inputCls } from "../ui/kit";
+import { cleanApprovalsToGraduate, neverGraduatesCategory } from "@/spine/gate/autonomy";
+import type { OperationCategory } from "@/spine/operation/registry";
 
 interface Account {
   username: string;
@@ -16,6 +18,7 @@ interface Rule {
   ruleId: string;
   author: string;
   opName: string;
+  category?: OperationCategory;
   status: string;
   cleanCount: number;
 }
@@ -28,7 +31,15 @@ interface Suggestion {
   status: string;
 }
 
+/** A small inline outcome message, rendered next to the controls it belongs to. */
+interface Notice {
+  kind: "success" | "error";
+  text: string;
+}
+
 const ROLES = ["intern", "employee", "manager", "hr", "admin", "super-admin"];
+
+const GRADUATE_AT = cleanApprovalsToGraduate();
 
 export function AdminClient({
   initial,
@@ -48,6 +59,18 @@ export function AdminClient({
   const [busy, setBusy] = useState(false);
   const [form, setForm] = useState({ username: "", password: "", displayName: "", role: "intern", team: "" });
   const [error, setError] = useState<string | null>(null);
+  const [peopleNote, setPeopleNote] = useState<Notice | null>(null);
+  const [autonomyNote, setAutonomyNote] = useState<Notice | null>(null);
+  const peopleNoteTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  /** Show a note by the people list; successes fade away on their own. */
+  function showPeopleNote(note: Notice) {
+    if (peopleNoteTimer.current) clearTimeout(peopleNoteTimer.current);
+    setPeopleNote(note);
+    if (note.kind === "success") {
+      peopleNoteTimer.current = setTimeout(() => setPeopleNote(null), 4000);
+    }
+  }
 
   async function createAccount() {
     setBusy(true);
@@ -69,59 +92,128 @@ export function AdminClient({
   }
 
   async function changeRole(username: string, role: string) {
-    const res = await fetch(`/api/admin/accounts/${username}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ role }),
-    });
-    if (!res.ok) {
-      const data = await res.json();
-      setError(data.error ?? "That role change was refused.");
-      return;
+    setPeopleNote(null);
+    try {
+      const res = await fetch(`/api/admin/accounts/${username}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ role }),
+      });
+      if (!res.ok) {
+        const data = (await res.json().catch(() => ({}))) as { error?: string };
+        showPeopleNote({ kind: "error", text: data.error ?? "That role change was refused." });
+        return;
+      }
+      setAccounts((prev) => prev.map((a) => (a.username === username ? { ...a, role } : a)));
+    } catch {
+      showPeopleNote({ kind: "error", text: "Could not reach the server. The role was not changed." });
     }
-    setAccounts((prev) => prev.map((a) => (a.username === username ? { ...a, role } : a)));
   }
 
   async function resetPassword(username: string) {
     const next = window.prompt(`Reset password for ${username}:`, "newpass123");
     if (!next) return;
     setBusy(true);
-    const res = await fetch(`/api/admin/accounts/${username}`, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ password: next }),
-    });
-    setBusy(false);
-    if (!res.ok) {
-      const data = await res.json();
-      setError(data.error ?? "Failed.");
+    setPeopleNote(null);
+    try {
+      const res = await fetch(`/api/admin/accounts/${username}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ password: next }),
+      });
+      if (!res.ok) {
+        const data = (await res.json().catch(() => ({}))) as { error?: string };
+        showPeopleNote({ kind: "error", text: data.error ?? "The password was not reset." });
+        return;
+      }
+      showPeopleNote({ kind: "success", text: `Password reset for ${username}.` });
+    } catch {
+      showPeopleNote({ kind: "error", text: "Could not reach the server. The password was not reset." });
+    } finally {
+      setBusy(false);
     }
   }
 
-  async function autonomyAction(action: string, extra: Record<string, unknown> = {}) {
+  async function autonomyAction(
+    action: string,
+    extra: Record<string, unknown> = {},
+    notes: { success?: string; refused?: string } = {},
+  ) {
     setBusy(true);
-    const res = await fetch("/api/autonomy/rules", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ action, ...extra }),
-    });
-    const data = await res.json();
-    setBusy(false);
-    if (data.suggestions) setSuggestions(data.suggestions);
-    const rulesRes = await fetch("/api/autonomy/rules").then((r) => r.json());
-    setRules(rulesRes.rules ?? []);
-    setSuggestions(rulesRes.suggestions ?? []);
+    setAutonomyNote(null);
+    try {
+      const res = await fetch("/api/autonomy/rules", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action, ...extra }),
+      });
+      const data = (await res.json().catch(() => ({}))) as {
+        ok?: boolean;
+        error?: string;
+        suggestions?: unknown;
+      };
+      if (!res.ok) {
+        setAutonomyNote({ kind: "error", text: data.error ?? "That autonomy action failed." });
+        return;
+      }
+      if (data.ok === false) {
+        setAutonomyNote({ kind: "error", text: notes.refused ?? "The engine refused that action." });
+        return;
+      }
+      if (Array.isArray(data.suggestions)) setSuggestions(data.suggestions as Suggestion[]);
+      setAutonomyNote({
+        kind: "success",
+        text:
+          notes.success ??
+          (Array.isArray(data.suggestions)
+            ? `Detection ran — ${data.suggestions.length} suggestion${data.suggestions.length === 1 ? "" : "s"} on offer.`
+            : "Done."),
+      });
+      const rulesRes = await fetch("/api/autonomy/rules");
+      if (rulesRes.ok) {
+        const listing = (await rulesRes.json().catch(() => null)) as {
+          rules?: unknown;
+          suggestions?: unknown;
+        } | null;
+        if (listing) {
+          if (Array.isArray(listing.rules)) setRules(listing.rules as Rule[]);
+          if (Array.isArray(listing.suggestions)) setSuggestions(listing.suggestions as Suggestion[]);
+        }
+      }
+    } catch {
+      setAutonomyNote({ kind: "error", text: "Could not reach the server. Nothing changed." });
+    } finally {
+      setBusy(false);
+    }
   }
 
   async function triggerTick() {
     setBusy(true);
-    await fetch("/api/autonomy/tick", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({}),
-    });
-    setBusy(false);
-    router.refresh();
+    setAutonomyNote(null);
+    try {
+      const res = await fetch("/api/autonomy/tick", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({}),
+      });
+      const data = (await res.json().catch(() => ({}))) as { error?: string; emitted?: number };
+      if (!res.ok) {
+        setAutonomyNote({ kind: "error", text: data.error ?? "The tick was refused." });
+        return;
+      }
+      setAutonomyNote({
+        kind: "success",
+        text:
+          typeof data.emitted === "number"
+            ? `Tick ran — ${data.emitted} operation${data.emitted === 1 ? "" : "s"} emitted.`
+            : "Tick ran.",
+      });
+      router.refresh();
+    } catch {
+      setAutonomyNote({ kind: "error", text: "Could not reach the server. Nothing changed." });
+    } finally {
+      setBusy(false);
+    }
   }
 
   return (
@@ -176,6 +268,15 @@ export function AdminClient({
             </tbody>
           </table>
         </div>
+        {peopleNote && (
+          <p
+            className={`fade-in mt-2 rounded-xl px-3 py-2 text-xs font-medium ${
+              peopleNote.kind === "error" ? "bg-danger-soft text-danger" : "bg-mint text-mint-strong"
+            }`}
+          >
+            {peopleNote.text}
+          </p>
+        )}
 
         <div className="mt-4 rounded-2xl border border-dashed border-line p-4">
           <p className="mb-3 text-[10px] font-semibold uppercase tracking-widest text-ink-faint">Create account</p>
@@ -214,6 +315,15 @@ export function AdminClient({
             </button>
           </div>
         </div>
+        {autonomyNote && (
+          <p
+            className={`fade-in mt-2 rounded-xl px-3 py-2 text-xs font-medium ${
+              autonomyNote.kind === "error" ? "bg-danger-soft text-danger" : "bg-mint text-mint-strong"
+            }`}
+          >
+            {autonomyNote.text}
+          </p>
+        )}
         {rules.length === 0 ? (
           <Empty icon="spark" text="No standing rules have been exercised yet." />
         ) : (
@@ -230,9 +340,39 @@ export function AdminClient({
                   }`}>
                     {r.status}
                   </span>
-                  <span className="text-xs text-ink-faint">{r.cleanCount}/10 clean</span>
+                  <span className="text-xs text-ink-faint">{r.cleanCount}/{GRADUATE_AT} clean</span>
+                  {r.status === "supervised" &&
+                    !neverGraduatesCategory(r.category) &&
+                    r.cleanCount >= GRADUATE_AT && (
+                      <button
+                        onClick={() =>
+                          autonomyAction(
+                            "accept-graduation",
+                            { ruleId: r.ruleId },
+                            {
+                              success: `${r.ruleId} graduated — it now runs on its own.`,
+                              refused: "Graduation was refused — only the rule's author can accept it.",
+                            },
+                          )
+                        }
+                        disabled={busy}
+                        className="press text-xs font-bold text-mint-strong hover:underline disabled:opacity-40"
+                      >
+                        Let it run on its own
+                      </button>
+                    )}
                   {r.status === "supervised" && (
-                    <button onClick={() => autonomyAction("revoke", { ruleId: r.ruleId })} className="press text-xs font-medium text-danger hover:underline">
+                    <button
+                      onClick={() =>
+                        autonomyAction(
+                          "revoke",
+                          { ruleId: r.ruleId },
+                          { success: `${r.ruleId} returned to supervised.`, refused: "That revoke was refused." },
+                        )
+                      }
+                      disabled={busy}
+                      className="press text-xs font-medium text-danger hover:underline disabled:opacity-40"
+                    >
                       Revoke
                     </button>
                   )}
@@ -250,7 +390,17 @@ export function AdminClient({
               {suggestions.map((s) => (
                 <div key={s.id} className="flex items-center justify-between rounded-xl border-l-[3px] border-peach-strong bg-peach px-3.5 py-2 text-[13px] text-ink">
                   <span>{s.actor} repeats <strong>{s.opName}</strong> ({s.count}×)</span>
-                  <button onClick={() => autonomyAction("accept-suggestion", { suggestionId: s.id })} className="press text-xs font-bold text-peach-strong hover:underline">
+                  <button
+                    onClick={() =>
+                      autonomyAction(
+                        "accept-suggestion",
+                        { suggestionId: s.id },
+                        { success: "Suggestion accepted.", refused: "That suggestion is no longer on offer." },
+                      )
+                    }
+                    disabled={busy}
+                    className="press text-xs font-bold text-peach-strong hover:underline disabled:opacity-40"
+                  >
                     Accept
                   </button>
                 </div>
@@ -300,16 +450,22 @@ function ActivityLogViewer() {
   const [filters, setFilters] = useState({ actor: "", operation: "" });
   const [entries, setEntries] = useState<ActivityEntry[]>([]);
   const [loaded, setLoaded] = useState(false);
+  const [loadFailed, setLoadFailed] = useState(false);
 
   async function load() {
     const params = new URLSearchParams();
     if (filters.actor) params.set("actor", filters.actor);
     if (filters.operation) params.set("operation", filters.operation);
     params.set("limit", "50");
-    const res = await fetch(`/api/activity?${params.toString()}`);
-    if (res.ok) {
-      const data = await res.json();
-      setEntries(data.entries ?? []);
+    try {
+      const res = await fetch(`/api/activity?${params.toString()}`);
+      if (!res.ok) throw new Error(`activity load failed (${res.status})`);
+      const data = (await res.json()) as { entries?: ActivityEntry[] };
+      setEntries(Array.isArray(data.entries) ? data.entries : []);
+      setLoadFailed(false);
+    } catch {
+      setEntries([]);
+      setLoadFailed(true);
     }
     setLoaded(true);
   }
@@ -326,6 +482,10 @@ function ActivityLogViewer() {
       </div>
       {!loaded ? (
         <p className="mt-3 text-xs text-ink-faint">Load to fetch the recent activity log.</p>
+      ) : loadFailed ? (
+        <p className="fade-in mt-3 rounded-xl bg-danger-soft px-3 py-2 text-xs font-medium text-danger">
+          {"Couldn't load the log."}
+        </p>
       ) : entries.length === 0 ? (
         <Empty icon="search" text="No entries match those filters." />
       ) : (

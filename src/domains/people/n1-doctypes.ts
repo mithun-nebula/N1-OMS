@@ -129,7 +129,10 @@ const LEAVE: Array<Partial<DoctypeMapping> & { doctype: string }> = [
 ];
 
 const EXPENSE: Array<Partial<DoctypeMapping> & { doctype: string }> = [
-  { doctype: "Expense Claim", nodeType: "expense-claim", sensitive: true },
+  // Expense Claim is person-scoped, not sensitive: it names one employee
+  // (`employee` field), so you see your own, your manager sees the team's,
+  // HR sees all — the same shape as leave. See n1-classification.ts.
+  { doctype: "Expense Claim", nodeType: "expense-claim" },
   { doctype: "Expense Claim Type", nodeType: "expense-claim-type" },
   { doctype: "Expense Claim Detail", nodeType: "expense-claim-detail", sensitive: true },
   { doctype: "Expense Claim Account", nodeType: "expense-claim-account", sensitive: true },

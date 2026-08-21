@@ -98,18 +98,21 @@ describe("rbac — intern is read-only", () => {
     expect(read.found).toBe(false);
   });
 
-  it("can view open node types but cannot create/edit them", async () => {
-    const { deps } = await world();
-    expect(
-      deps.permissions.can({ actor: "ravi", action: "view", nodeType: "task" })
-        .allowed,
-    ).toBe(true);
+  it("sees only their own tasks, and cannot create/edit any", async () => {
+    // Tasks moved from the open reach to role-scoped views: an intern's board
+    // holds only what is assigned to them.
+    const { spine, deps } = await world();
+    await spine.submit(
+      adapters.fromForm({ actor: "james", name: "task.create", args: { title: "Ravi's share", assignedTo: "ravi" } }),
+    );
+    await spine.submit(
+      adapters.fromForm({ actor: "james", name: "task.create", args: { title: "Priya's share", assignedTo: "priya" } }),
+    );
+    const board = await spine.readMany({ actor: "ravi", nodeType: "task" });
+    expect(board.some((r) => (r.record as { title?: string }).title === "Ravi's share")).toBe(true);
+    expect(board.some((r) => (r.record as { title?: string }).title === "Priya's share")).toBe(false);
     expect(
       deps.permissions.can({ actor: "ravi", action: "create", nodeType: "task" })
-        .allowed,
-    ).toBe(false);
-    expect(
-      deps.permissions.can({ actor: "ravi", action: "edit", nodeType: "task" })
         .allowed,
     ).toBe(false);
   });
@@ -145,10 +148,12 @@ describe("rbac — intern is read-only", () => {
   });
 
   it("an employee (non-read-only) can still create/edit open types", async () => {
+    // Tasks left this list (top-down: manager+ create) — documents and the
+    // calendar are the remaining open-reach examples.
     const { deps } = await world();
     expect(
       deps.permissions
-        .can({ actor: "priya", action: "create", nodeType: "task" })
+        .can({ actor: "priya", action: "create", nodeType: "document" })
         .allowed,
     ).toBe(true);
     expect(
@@ -156,6 +161,11 @@ describe("rbac — intern is read-only", () => {
         .can({ actor: "priya", action: "edit", nodeType: "calendar-entry" })
         .allowed,
     ).toBe(true);
+    expect(
+      deps.permissions
+        .can({ actor: "priya", action: "create", nodeType: "task" })
+        .allowed,
+    ).toBe(false);
   });
 });
 

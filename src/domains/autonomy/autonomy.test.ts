@@ -26,7 +26,7 @@ beforeEach(async () => {
  * confirming your own parked operation minted a persisted grant of authority.
  * Declaring it up front is the real flow.
  */
-function declareRule(ruleId: string, opName = "announcement.send") {
+function declareRule(ruleId: string, opName = "notify.send") {
   if (!world.autonomy.get(ruleId)) {
     world.autonomy.declare(ruleId, "james", opName, "routine");
   }
@@ -37,7 +37,7 @@ function standingAnnouncement(ruleId: string) {
   return adapters.fromStandingRule({
     ruleId,
     ruleAuthor: "james",
-    name: "announcement.send",
+    name: "notify.send",
     args: { message: "test", to: ["james"] },
   });
 }
@@ -143,13 +143,13 @@ describe("routine watcher (10) — offers, never auto", () => {
       await world.spine.submit(
         adapters.fromTyped({
           actor: "priya",
-          name: "announcement.send",
+          name: "notify.send",
           args: { message: `routine ${i}`, to: ["priya"] },
         }),
       );
     }
     const suggestions = await engine.detectRoutines();
-    const found = suggestions.find((s) => s.actor === "priya" && s.opName === "announcement.send");
+    const found = suggestions.find((s) => s.actor === "priya" && s.opName === "notify.send");
     expect(found).toBeTruthy();
     expect(found?.status).toBe("offered");
   });

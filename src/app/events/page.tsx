@@ -1,7 +1,6 @@
 import { redirect } from "next/navigation";
 import { getSessionUser } from "@/server/auth";
 import { getWorld } from "@/server/runtime";
-import { directory } from "@/server/directory";
 import { Shell } from "../shell";
 import { EventsClient } from "./events-client";
 
@@ -25,8 +24,6 @@ export default async function EventsPage() {
     };
   });
 
-  const people = directory().all().filter((p) => p.active).map((p) => ({ id: p.id, name: p.name }));
-
   return (
     <Shell>
       <header className="rise flex flex-wrap items-center justify-between gap-3 px-4 pt-6 sm:px-6">
@@ -35,7 +32,7 @@ export default async function EventsPage() {
         </h1>
         <p className="w-full text-sm text-ink-soft">Proposal → live → closing report</p>
       </header>
-      <EventsClient events={events} people={people} actorId={user.id} />
+      <EventsClient events={events} actorId={user.id} />
     </Shell>
   );
 }

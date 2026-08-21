@@ -28,13 +28,13 @@ export function compileRule(plainLanguage: string, author: string, ruleId: strin
       author,
       plainLanguage,
       category: "routine",
-      opName: "announcement.send",
+      opName: "notify.send",
   evaluate: async (graph, asOf) => {
     const stale = await findStaleCourses(graph, asOf, { review: days });
     return stale
       .filter((c) => c.stage === "review")
       .map((c) => ({
-        opName: "announcement.send",
+        opName: "notify.send",
         args: {
           message: `${c.title} has been in review for ${c.daysWaiting} days.`,
           to: [author],

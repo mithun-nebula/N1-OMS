@@ -4,7 +4,6 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { VoiceButton } from "./voice-input";
-import { GlobalSearch } from "./chrome/global-search";
 import { NotificationsBell } from "./chrome/notifications";
 import { ThemeToggle } from "./chrome/theme-toggle";
 import { Icon, type IconName } from "./ui/icons";
@@ -20,22 +19,23 @@ const PRIMARY: NavItem[] = [
   { href: "/dashboard", label: "Dashboard", icon: "home" },
   { href: "/tasks", label: "Tasks", icon: "tasks" },
   { href: "/meetings", label: "Meetings", icon: "meetings" },
-  { href: "/booking", label: "Booking", icon: "booking" },
-  { href: "/courses", label: "Projects", icon: "projects" },
+  { href: "/courses", label: "Courses", icon: "projects" },
   { href: "/calendar", label: "Calendar", icon: "calendar" },
   { href: "/team", label: "Team", icon: "team" },
-  { href: "/leave", label: "Leave", icon: "leave" },
+  { href: "/messages", label: "Messages", icon: "chat" },
 ];
 
 const SECONDARY: NavItem[] = [
+  { href: "/booking", label: "Booking", icon: "booking" },
+  { href: "/leave", label: "Leave", icon: "leave" },
   { href: "/documents", label: "Documents" },
-  { href: "/announcements", label: "Announcements" },
   { href: "/events", label: "Events" },
   { href: "/equipment", label: "Equipment" },
   { href: "/utilities", label: "Utilities" },
   { href: "/decisions", label: "Decisions" },
-  // Expenses is deliberately absent: the page is read-only and routes nowhere
-  // yet — a dead end in the menu. It returns when claims actually work here.
+  // Expenses is back: claims are now a real self-service flow (submit →
+  // approve/decline through the gate), not the read-only dead end it was.
+  { href: "/expenses", label: "Expenses" },
   // Records is a raw browser over 162 HR record types — an admin tool, not an
   // everyone destination.
   { href: "/records", label: "Records (N1)", roles: ["super-admin", "admin"] },
@@ -119,9 +119,6 @@ export function ShellClient({
               </div>
             </div>
           </div>
-          <div className="mt-4">
-            <GlobalSearch />
-          </div>
         </div>
 
         <nav className="flex-1 space-y-0.5 overflow-y-auto px-3 pb-4">
@@ -171,9 +168,6 @@ export function ShellClient({
                 <Icon name="logout" className="h-4 w-4" />
               </button>
             </div>
-          </div>
-          <div className="mt-2.5">
-            <GlobalSearch />
           </div>
         </div>
 

@@ -39,25 +39,27 @@ export default async function ProfilePage() {
     })
     .sort((a, b) => (a.fromDate < b.fromDate ? 1 : -1));
 
-  const attendance = (await people.listAttendance(user.id)).map((a) => {
-    const d = a.data as Record<string, unknown>;
-    return {
-      id: a.id,
-      date: String(d.date ?? ""),
-      status: String(d.status ?? ""),
-      checkIn: d.checkIn ? String(d.checkIn) : undefined,
-      checkOut: d.checkOut ? String(d.checkOut) : undefined,
-    };
-  });
-
-  const payslips = (await people.listPaySlips(user.id)).map((p) => {
-    const d = p.data as Record<string, unknown>;
-    return {
-      id: p.id,
-      period: d.posting_date ? String(d.posting_date) : d.month ? String(d.month) : p.id,
-      amount: d.net_pay ? Number(d.net_pay) : d.gross_pay ? Number(d.gross_pay) : undefined,
-    };
-  });
+  // Clock-ins write checkInAt/checkOutAt (ISO); N1 rows may carry checkIn/
+  // checkOut times and a status. Accept both shapes, render times as HH:MM.
+  const asTime = (v: unknown): string | undefined => {
+    if (!v) return undefined;
+    const s = String(v);
+    return s.includes("T") ? s.slice(11, 16) : s;
+  };
+  const attendance = (await people.listAttendance(user.id))
+    .map((a) => {
+      const d = a.data as Record<string, unknown>;
+      const checkIn = asTime(d.checkInAt ?? d.checkIn);
+      const checkOut = asTime(d.checkOutAt ?? d.checkOut);
+      return {
+        id: a.id,
+        date: String(d.date ?? ""),
+        status: String(d.status ?? (checkIn ? "Present" : "")),
+        checkIn,
+        checkOut,
+      };
+    })
+    .sort((a, b) => (a.date < b.date ? 1 : -1));
 
   return (
     <Shell>
@@ -74,10 +76,10 @@ export default async function ProfilePage() {
         team={directory().teamNameOf(user.id)}
         contact={isRestricted(contactField) ? undefined : String(contactField ?? "")}
         pay={isRestricted(payField) ? undefined : (payField as number | string | undefined)}
+        performance={isRestricted(performanceField) ? undefined : (performanceField as number | string | undefined)}
         leaveBalance={myBalance}
         leaveHistory={myHistory}
         attendance={attendance}
-        payslips={payslips}
         payRestricted={isRestricted(payField)}
         performanceRestricted={isRestricted(performanceField)}
         canEdit={true}

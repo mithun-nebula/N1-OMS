@@ -53,18 +53,7 @@ export class PeopleRecordService {
     });
   }
 
-  async listPaySlips(employeeId: string): Promise<RecordNode[]> {
-    if (n1Mode() === "live") {
-      const recs = await this.n1.list("Salary Slip", { employee: employeeId });
-      for (const rec of recs) {
-        const id = rec.name;
-        await this.graph.putNode("payslip", id, { employeeId, ...(rec.data as object) });
-      }
-    }
-    // Seeded/N1 payslips carry `employee`; live-synced ones get `employeeId`.
-    return this.graph.find("payslip", (n) => {
-      const d = n.data as { employee?: string; employeeId?: string };
-      return d.employeeId === employeeId || d.employee === employeeId;
-    });
-  }
+  // Payslips are deliberately not surfaced anywhere right now (product call,
+  // 2026-08). The payslip node type, seed and permission rules remain so the
+  // feature can return without re-plumbing.
 }

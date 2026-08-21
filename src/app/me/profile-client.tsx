@@ -20,12 +20,6 @@ interface AttendanceRow {
   checkOut?: string;
 }
 
-interface PayslipRow {
-  id: string;
-  period: string;
-  amount?: number;
-}
-
 export function ProfileClient({
   employeeId,
   name,
@@ -33,10 +27,10 @@ export function ProfileClient({
   team,
   contact,
   pay,
+  performance,
   leaveBalance,
   leaveHistory,
   attendance,
-  payslips,
   payRestricted,
   performanceRestricted,
   canEdit,
@@ -47,10 +41,10 @@ export function ProfileClient({
   team?: string;
   contact?: string;
   pay?: number | string;
+  performance?: number | string;
   leaveBalance?: number;
   leaveHistory: LeaveRow[];
   attendance: AttendanceRow[];
-  payslips: PayslipRow[];
   payRestricted: boolean;
   performanceRestricted: boolean;
   canEdit: boolean;
@@ -127,13 +121,16 @@ export function ProfileClient({
             value={payRestricted ? undefined : pay !== undefined ? String(pay) : undefined}
             restricted={payRestricted}
           />
-          <Field label="Performance" value={undefined} restricted={performanceRestricted} />
+          <Field
+            label="Performance"
+            value={performanceRestricted ? undefined : performance !== undefined ? String(performance) : undefined}
+            restricted={performanceRestricted}
+          />
         </div>
       </section>
 
-      <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
-        {/* Leave — the one dark emphasis card on the page. */}
-        <section className="rise rounded-3xl bg-chrome-card p-5 text-chrome-ink shadow-card" style={{ animationDelay: "110ms" }}>
+      {/* Leave — the one dark emphasis card on the page. */}
+      <section className="rise rounded-3xl bg-chrome-card p-5 text-chrome-ink shadow-card" style={{ animationDelay: "110ms" }}>
           <h2 className="text-[11px] font-semibold uppercase tracking-widest text-chrome-soft">Leave</h2>
           <div className="mt-3 flex items-baseline gap-2">
             <span className="text-5xl font-extrabold text-accent">{leaveBalance ?? "—"}</span>
@@ -154,27 +151,7 @@ export function ProfileClient({
               ))}
             </div>
           )}
-        </section>
-
-        {/* Payslips. */}
-        <section className="rise rounded-3xl bg-surface p-5 shadow-card" style={{ animationDelay: "160ms" }}>
-          <SectionTitle>Payslips</SectionTitle>
-          {payslips.length === 0 ? (
-            <Empty icon="grid" text="No payslips on file." />
-          ) : (
-            <div className="mt-3 space-y-1.5">
-              {payslips.map((p) => (
-                <div key={p.id} className="flex items-center justify-between gap-2 rounded-xl bg-raised px-3 py-2 text-xs">
-                  <span className="text-ink-soft">{p.period}</span>
-                  {p.amount !== undefined && (
-                    <span className="font-semibold text-ink">₹{p.amount.toLocaleString()}</span>
-                  )}
-                </div>
-              ))}
-            </div>
-          )}
-        </section>
-      </div>
+      </section>
 
       {/* Attendance. */}
       <section className="rise rounded-3xl bg-surface p-5 shadow-card" style={{ animationDelay: "210ms" }}>

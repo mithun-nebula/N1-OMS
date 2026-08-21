@@ -24,11 +24,6 @@ export default async function MeetingsPage() {
       link: (n.data as { link?: string }).link,
     }));
 
-  const rooms = (await deps.graph.find("room", () => true)).map((n) => ({
-    id: n.id,
-    name: (n.data as { name?: string }).name ?? n.id,
-  }));
-
   const people = directory().all().filter((p) => p.active).map((p) => ({ id: p.id, name: p.name }));
 
   return (
@@ -38,7 +33,7 @@ export default async function MeetingsPage() {
           Your <span className="font-extrabold">meetings</span>
         </h1>
       </header>
-      <MeetingsClient meetings={meetings} rooms={rooms} people={people} />
+      <MeetingsClient meetings={meetings} people={people} />
     </Shell>
   );
 }

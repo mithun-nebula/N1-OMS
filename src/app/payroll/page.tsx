@@ -1,7 +1,6 @@
 import { redirect } from "next/navigation";
 import { getSessionUser } from "@/server/auth";
 import { getSpine, getWorld } from "@/server/runtime";
-import { directory } from "@/server/directory";
 import { isHrLike } from "@/server/roles";
 import { Shell } from "../shell";
 import { PayrollClient } from "./payroll-client";
@@ -24,18 +23,6 @@ export default async function PayrollPage() {
     return out;
   };
 
-  const payslips = (await readVisible("payslip")).map((d) => ({
-    id: String(d.id),
-    employee: String(d.employee ?? ""),
-    employeeName:
-      directory().get(String(d.employee ?? ""))?.name ??
-      String(d.employeeName ?? d.employee ?? ""),
-    month: String(d.month ?? d.postingDate ?? ""),
-    grossPay: d.grossPay as number | undefined,
-    netPay: d.netPay as number | undefined,
-    status: String(d.status ?? ""),
-  }));
-
   const structures = (await readVisible("salary-structure")).map((d) => ({
     id: String(d.id),
     name: String(d.name ?? ""),
@@ -55,9 +42,9 @@ export default async function PayrollPage() {
         <h1 className="text-2xl font-light tracking-tight text-ink sm:text-3xl">
           Payroll <span className="font-extrabold">runs</span>
         </h1>
-        <p className="text-sm text-ink-soft">Payslips · salary structures · income-tax slabs</p>
+        <p className="text-sm text-ink-soft">Salary structures · income-tax slabs</p>
       </header>
-      <PayrollClient payslips={payslips} structures={structures} taxSlabs={taxSlabs} />
+      <PayrollClient structures={structures} taxSlabs={taxSlabs} />
     </Shell>
   );
 }

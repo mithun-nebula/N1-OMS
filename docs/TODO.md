@@ -31,10 +31,10 @@
 ### 3. Profile page (`/profile` or `/me`) ✅ DONE — built at `/me`
 - [x] View own employee record (name, role, contact, team)
 - [x] Leave balance + leave history
-- [x] Payslips (field-gated: employee sees own, HR/admin sees all)
+- ~~Payslips~~ **OMITTED for now (product call, 2026-08)** — no payslip surface anywhere in the app; node type, seed and permission rules remain so it can return cleanly
 - [x] Attendance history
 - [x] Edit own contact info (self-scope `edit` already permitted)
-- Backend: `/api/people/{id}`, `/api/people/{id}/leave-balance`, `/api/people/{id}/attendance`, `/api/people/{id}/payslips` all exist.
+- Backend: `/api/people/{id}`, `/api/people/{id}/leave-balance`, `/api/people/{id}/attendance` exist (`…/payslips` removed with the omission).
 - Done: `src/app/me/`. Pay/performance render as 🔒 Restricted when field-gated. Added
   the `employee.updateContact` operation (registered in people domain) for inline contact
   editing — permission is the existing self-scope `edit` rule.
@@ -76,13 +76,16 @@
 - Backend: `document.store`, `document.require`, `findExpiringDocuments`, `requiredVsSupplied` exist.
 - Done: `src/app/documents/`. Expiring-soon banner, store form, version + required/supplied status, role access column.
 
-### 7. Announcements page (`/announcements`) ✅ DONE
-- [x] List announcements (message, by, date, outstanding ack count)
-- [x] Send announcement / policy (HR/manager/admin)
-- [x] Acknowledge button (per-person tracking)
-- [ ] Reminder draft to non-ackers (outstanding count shown; bulk reminder not wired)
-- Backend: `/api/announcements`, `/api/announcements/{id}` exist.
-- Done: `src/app/announcements/`. Per-person ack, policy flag, audience picker.
+### 7. Messages page (`/messages`) ✅ DONE — replaced Announcements entirely (2026-08)
+- [x] One-to-one chat with every active person + one "Everyone" group
+- [x] Deliberately NO RBAC — every signed-in role (interns included) chats; the only
+      rule is identity (you can only open your own DMs)
+- [x] Outside the operations gate (like the day plan): no audit-log entries, DMs private
+- [x] Unread badges, last-message previews, optimistic send, 4s polling, mobile list-first
+- [x] Durable in Postgres (`orga_messages`, `orga_message_reads`)
+- Backend: `/api/messages` (GET state / POST send + mark-read); `/announcements` redirects here.
+- Announcements + ack tracking removed by product call; `notify.send` (writes nothing,
+  bell-only) remains for autonomy rules.
 
 ### 8. Events page (`/events`) ✅ DONE
 - [x] Create event (title, date, capacity, budget)
@@ -124,7 +127,9 @@
 
 ## Medium Priority — Pages that need editing / interactivity
 
-### 13. Projects (`/courses`) kanban editing ✅ DONE
+### 13. Courses (`/courses`, nav renamed from "Projects" 2026-08-19) kanban editing ✅ DONE
+- [x] **Course creation decided + built (2026-08-19):** manager+ create (`course.create`), admin-level delete (`course.delete`), and `course.assign` — 1–3 people work a course together, each getting their own linked task (top-down tasks: employees never create, only update status of their assigned ones; each role sees its own board — self / own-team / all).
+- [x] Personal view: "Working on / Worked" sections driven by the viewer's course-linked tasks.
 - [x] Drag card to change stage (outline → draft → review → published) — implemented as stage buttons honouring valid transitions
 - [x] Click card → detail view (modules, progress, version history)
 - [x] Edit module state (setModuleState — recomputes completion figure)
@@ -159,7 +164,7 @@
 
 ### 17. Dashboard — role-aware content ✅ DONE
 - [x] Intern: minimal (assigned tasks, read-only overview)
-- [x] Employee: own tasks, own leave, own courses, payslip summary
+- [x] Employee: own tasks, own leave, own courses
 - [x] Manager: team tasks, pending approvals, team course progress
 - [x] HR: pending onboardings, policy acks, outstanding documents
 - [x] Admin: system status, user count, autonomy rules summary
@@ -324,7 +329,7 @@ read-through that pulls from N1 when `n1Mode() === "live"`.
 | `Employee` | `employee` | ✅ specific mapper + UI (directory, dashboard, profile) |
 | `Leave Application` | `leave` | ✅ specific mapper + operations (request/approve/decline) |
 | `Attendance` | `attendance` | ✅ specific mapper + read-through |
-| `Salary Slip` | `payslip` | ✅ registry-mapped + read-through + `/payroll` page |
+| `Salary Slip` | `payslip` | ⏸ registry-mapped, but **omitted from every UI surface** (product call, 2026-08) |
 | … + 146 more | (see registry) | ✅ registry-mapped, permission-gated, **full CRUD** at `/records` |
 
 ---
@@ -339,6 +344,7 @@ Cannot run an organisation without these. Every one is available via N1 REST.
 - [ ] **Payslip generation** — `Salary Slip`, `Payroll Entry`, `Payroll Period`,
       `Payroll Period Date`, `Payroll Settings`
       Monthly payroll runs, automated payslip creation, posting to accounting.
+      **ON HOLD: payslips are omitted from the application for now (product call, 2026-08).**
 - [ ] **Indian income tax** — `Income Tax Slab`, `Income Tax Slab Other Charges`,
       `Taxable Salary Slab`, `Employee Tax Exemption Declaration`,
       `Employee Tax Exemption Declaration Category`, `Employee Tax Exemption Category`,

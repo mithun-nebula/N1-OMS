@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getActingUser } from "@/server/session-guard";
-import { getSpine, getWorld } from "@/server/runtime";
+import { getDayPlanService, getSpine, getWorld } from "@/server/runtime";
+import { applyDayPlanReactions } from "@/domains/assistant/day-plan/reactions";
 import * as adapters from "@/spine/adapters";
 import {
   isApplicationStart,
@@ -74,6 +75,16 @@ export async function POST(request: Request) {
     );
   }
   const result = await (await getSpine()).submit(op);
+  if (result.status === "ran") {
+    // Personal planning state reacts to the write — a meeting displaces
+    // committed work, approved leave pauses the streak (appendix A6/A9). It
+    // sits here rather than in the handlers because a day plan is not an org
+    // record and never passes the gate. It cannot fail the operation.
+    await applyDayPlanReactions(op.name, op.args, {
+      service: await getDayPlanService(),
+      graph: (await getWorld()).deps.graph,
+    });
+  }
   const status =
     result.status === "ran"
       ? 200

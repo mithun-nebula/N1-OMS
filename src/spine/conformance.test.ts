@@ -114,7 +114,7 @@ describe("write-conformance: operations only touch what they declared", () => {
       ...(anyMeeting
         ? [{ actor: "james", name: "meeting.update", args: { meetingId: anyMeeting.id, title: "Renamed" } }]
         : []),
-      { actor: "james", name: "announcement.send", args: { message: "Conformance notice", to: ["priya"] } },
+      { actor: "james", name: "notify.send", args: { message: "Conformance notice", to: ["priya"] } },
       { actor: "priya", name: "utility.capture", args: { subject: "AC timing", detail: "9 to 6" } },
       ...(anyEquipment
         ? [{ actor: "priya", name: "equipment.reportFault", args: { equipmentId: anyEquipment.id, fault: "Flickers" } }]
@@ -151,14 +151,21 @@ describe("write-conformance: operations only touch what they declared", () => {
     // through thunked args.
     let approveLeaveId: string | undefined;
     let declineLeaveId: string | undefined;
+    let approveClaimId: string | undefined;
     const leaveIdOf = (o: { result?: { response?: unknown } }) =>
       (o.result?.response as { leaveId?: string } | undefined)?.leaveId;
+    const claimIdOf = (o: { result?: { response?: unknown } }) =>
+      (o.result?.response as { claimId?: string } | undefined)?.claimId;
     battery.push(
       { actor: "shruti", name: "employee.create", args: { employeeId: "conform1", name: "Conform Ance", role: "employee", username: "conform1", temporaryPassword: "TempPass2026", team: "courses" } },
       { actor: "priya", name: "leave.request", args: { employeeId: "priya", fromDate: "2026-09-03", toDate: "2026-09-04" }, after: (o) => { approveLeaveId = leaveIdOf(o); } },
       { actor: "james", name: "leave.approve", args: () => ({ leaveId: approveLeaveId }) },
       { actor: "priya", name: "leave.request", args: { employeeId: "priya", fromDate: "2026-09-10", toDate: "2026-09-11" }, after: (o) => { declineLeaveId = leaveIdOf(o); } },
       { actor: "james", name: "leave.decline", args: () => ({ leaveId: declineLeaveId, reason: "No cover that week." }) },
+      // Expense claims mirror the leave lifecycle: person-scoped request,
+      // approve declared on the employee node the claim belongs to.
+      { actor: "priya", name: "expense.claim", args: { employeeId: "priya", amount: 2600, category: "Travel", description: "Conformance cab fare", date: "2026-09-05" }, after: (o) => { approveClaimId = claimIdOf(o); } },
+      { actor: "james", name: "expense.approve", args: () => ({ claimId: approveClaimId }) },
       { actor: "shruti", name: "employee.update", args: { employeeId: "conform1", patch: { contact: "conform1@example.org" } } },
       { actor: "shruti", name: "employee.setPay", args: { employeeId: "conform1", pay: 50000, effectiveFrom: "2026-09-01" } },
       { actor: "shruti", name: "employee.updateContact", args: { employeeId: "shruti", contact: "shruti@example.org" } },
@@ -173,8 +180,26 @@ describe("write-conformance: operations only touch what they declared", () => {
       { actor: "james", name: "leaving.completeHandover", args: { employeeId: "meena", handoverId: "h-course-ai-basics" } },
     );
 
+    // Phase 4 — course lifecycle: creating, assigning (which also writes one
+    // task per assignee — both declared), and the admin-level delete.
+    let createdCourseId: string | undefined;
+    battery.push(
+      {
+        actor: "james",
+        name: "course.create",
+        args: { title: "Conformance Course", modules: ["One", "Two"] },
+        after: (o) => {
+          createdCourseId = (o.result?.response as { courseId?: string } | undefined)?.courseId;
+        },
+      },
+      { actor: "james", name: "course.assign", args: () => ({ courseId: createdCourseId, assignees: ["priya", "arun"] }) },
+      { actor: "admin", name: "course.delete", args: () => ({ courseId: createdCourseId }) },
+    );
+
     const violations: string[] = [];
     const ranOps = new Set<string>();
+    /** Operations that offered an undo which would not survive a restart. */
+    const undoGaps = new Set<string>();
     for (const op of battery) {
       writes.length = 0;
       const args = typeof op.args === "function" ? op.args() : op.args;
@@ -187,7 +212,7 @@ describe("write-conformance: operations only touch what they declared", () => {
         if (writes.length > 0) {
           violations.push(`${op.name}: wrote ${writes.length} record(s) while parked for confirmation`);
         }
-        outcome = await spine.confirm(outcome.pendingId, op.actor);
+        outcome = await spine.confirm(outcome.pendingId as string, op.actor);
       }
       // A refused op that wrote anything is its own violation.
       if (outcome.status !== "ran") {
@@ -198,6 +223,14 @@ describe("write-conformance: operations only touch what they declared", () => {
       }
       ranOps.add(op.name);
       op.after?.(outcome);
+      // An operation that offers an undo must offer one that survives a
+      // restart. `spine.undo` prefers the in-process closure and falls back to
+      // `entry.undoPlan`; with no plan it refuses outright once the process is
+      // gone. AGENTS.md: "closures die with the process."
+      const entry = outcome.activityEntry;
+      if (entry?.undoDescription && !entry.undoPlan?.length) {
+        undoGaps.add(op.name);
+      }
       const declared = await declaredFor((n) => registry.get(n), op.name, args);
       for (const w of writes) {
         if (!conforms(w, declared)) {
@@ -210,13 +243,42 @@ describe("write-conformance: operations only touch what they declared", () => {
 
     expect(violations, violations.join("\n")).toEqual([]);
 
+    /**
+     * Operations whose undo is still a closure only, and therefore dies with
+     * the process.
+     *
+     * This list is a ratchet, not a permission slip: it may shrink, never grow.
+     * A new operation offering an undo without a plan fails this test on the
+     * spot. The day-flow verbs — every `task.*`, both `attendance.*`, all of
+     * `employee.*` and the three `course.*` writes — have been cleared; what
+     * remains is the workplace and HR surface, which no agent runs unattended
+     * yet. Clear these before anything does.
+     */
+    const KNOWN_UNDO_GAPS = new Set([
+      "employee.updateContact",
+      "expense.approve",
+      "expense.claim",
+      "joining.completeStep",
+      "leave.approve",
+      "leave.decline",
+      "leaving.completeHandover",
+      "meeting.create",
+    ]);
+    const newGaps = [...undoGaps].filter((n) => !KNOWN_UNDO_GAPS.has(n)).sort();
+    expect(
+      newGaps,
+      `These operations offer an undo with no serialisable plan, so it stops working after a restart:\n  ${newGaps.join("\n  ")}`,
+    ).toEqual([]);
+
     // A battery op that silently never ran proves nothing — the flows this
     // harness exists for must actually have executed.
     for (const mustRun of [
       "task.create", "meeting.create", "attendance.checkIn", "room.book",
       "employee.create", "leave.request", "leave.approve", "leave.decline",
+      "expense.claim", "expense.approve",
       "employee.setPay", "joining.start", "joining.completeStep", "leaving.start",
       "leaving.completeHandover", "employee.deactivate",
+      "course.create", "course.assign", "course.delete",
     ]) {
       expect(ranOps.has(mustRun), `${mustRun} never ran — its conformance was not tested`).toBe(true);
     }

@@ -1,5 +1,5 @@
 import type { DomainContext, DomainModule } from "../types";
-import { announcementAckHandler, announcementSendHandler } from "./announcements";
+import { notifySendHandler } from "./notify";
 import {
   calendarAddPeopleHandler,
   calendarCancelHandler,
@@ -56,8 +56,7 @@ export const workplaceDomain: DomainModule = {
     ctx.registry.register(equipmentReportFaultHandler(ctx.graph));
     ctx.registry.register(documentStoreHandler(ctx.graph));
     ctx.registry.register(documentRequireHandler(ctx.graph));
-    ctx.registry.register(announcementSendHandler(ctx.graph));
-    ctx.registry.register(announcementAckHandler(ctx.graph));
+    ctx.registry.register(notifySendHandler());
   },
   async seed(ctx: DomainContext) {
     await seedWorkplace(ctx);
@@ -67,5 +66,4 @@ export const workplaceDomain: DomainModule = {
 export { monthView } from "./calendar";
 export { findExpiringDocuments, requiredVsSupplied } from "./documents";
 export { findOverdueEventTasks, registrationPacing } from "./events";
-export { nonAcknowledgers } from "./announcements";
 export { repeatFaults } from "./equipment";

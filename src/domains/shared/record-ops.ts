@@ -93,6 +93,9 @@ export function recordCreateHandler(
         undo: {
           description: `Delete ${args.nodeType}:${id}.`,
           revert: async () => { await graph.removeNode(args.nodeType, id); },
+          // Serialisable, so undo still works after a restart — the closure
+          // above dies with the process (registry.ts, `UndoInfo.plan`).
+          plan: [{ op: "remove", nodeType: args.nodeType, nodeId: id }],
         },
         response: { id },
       };
@@ -143,6 +146,9 @@ export function recordUpdateHandler(
         undo: {
           description: `Revert ${args.nodeType}:${args.nodeId}.`,
           revert: async () => { await graph.putNode(args.nodeType, args.nodeId, before.data); },
+          // Serialisable, so undo still works after a restart — the closure
+          // above dies with the process (registry.ts, `UndoInfo.plan`).
+          plan: [{ op: "put", nodeType: args.nodeType, nodeId: args.nodeId, data: before.data }],
         },
       };
       return result;
@@ -155,6 +161,7 @@ export function recordDeleteHandler(
 ): OperationHandler<{ nodeType: string; nodeId: string }> {
   return {
     name: "record.delete",
+    category: "routine",
     validate: (args) => {
       const missing: string[] = [];
       if (!args.nodeType) missing.push("nodeType");
@@ -166,7 +173,22 @@ export function recordDeleteHandler(
       nodeType: args.nodeType,
       recordNodeIds: [args.nodeId],
     }),
-    involvesMoneyOrPeople: () => false,
+    /**
+     * Non-negotiable #3 — deleting an employee, a payslip or a salary
+     * structure is unambiguously a money-or-people action.
+     *
+     * This returned a flat `false` and declared no `category`, while its
+     * siblings `record.create` and `record.update` both used
+     * `touchesMoneyOrPeople`. `gate.ts` reads `category && neverGraduates(...)`,
+     * so an absent category short-circuits that check too — leaving a graduated
+     * rule able to delete a person's record unattended, with no confirmation.
+     * Nothing exploited it only because the rule compiler cannot yet emit
+     * anything but `notify.send`.
+     *
+     * The node type alone decides it: a delete carries no field payload to
+     * inspect, so anything person-scoped or money-bearing counts.
+     */
+    involvesMoneyOrPeople: (args) => touchesMoneyOrPeople(args.nodeType, {}),
     execute: async (args) => {
       const before = await graph.getNode(args.nodeType, args.nodeId);
       await graph.removeNode(args.nodeType, args.nodeId);
@@ -177,6 +199,11 @@ export function recordDeleteHandler(
           revert: async () => {
             if (before) await graph.putNode(args.nodeType, args.nodeId, before.data);
           },
+          // Serialisable, so undo still works after a restart — the closure
+          // above dies with the process (registry.ts, `UndoInfo.plan`).
+          plan: before
+            ? [{ op: "put", nodeType: args.nodeType, nodeId: args.nodeId, data: before.data }]
+            : undefined,
         },
       };
       return result;

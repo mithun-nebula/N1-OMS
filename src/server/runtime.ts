@@ -52,6 +52,7 @@ let orgMemoryService: OrgMemoryService | undefined;
 let dayPlanStore: DayPlanStore | undefined;
 let dayPlanService: DayPlanService | undefined;
 let n1ReadThrough: N1ReadThroughService | undefined;
+let messageStore: import("@/domains/messaging/store").MessageStore | undefined;
 
 export async function getPeopleService(): Promise<PeopleRecordService> {
   if (!peopleService) {
@@ -83,6 +84,20 @@ export async function getOrgMemoryService(): Promise<OrgMemoryService> {
     orgMemoryService = new OrgMemoryService(deps.graph);
   }
   return orgMemoryService;
+}
+
+export async function getMessageStore(): Promise<import("@/domains/messaging/store").MessageStore> {
+  if (!messageStore) {
+    const world = await getWorld();
+    // Chat lives outside the operations gate by design (personal
+    // communication, not an org record) — same standing as the day plan.
+    const { MessageStore } = await import("@/domains/messaging/store");
+    const { PostgresMessagePersistence } = await import("./store-pg-messages");
+    messageStore = new MessageStore(
+      world.pool ? new PostgresMessagePersistence(world.pool) : undefined,
+    );
+  }
+  return messageStore;
 }
 
 export async function getDayPlanService(): Promise<DayPlanService> {

@@ -25,6 +25,11 @@ import {
   attendanceCheckInHandler,
   attendanceCheckOutHandler,
 } from "./attendance";
+import {
+  expenseApproveHandler,
+  expenseClaimHandler,
+  expenseDeclineHandler,
+} from "./expenses";
 import { seedPeople } from "./seed";
 
 export const peopleDomain: DomainModule = {
@@ -36,6 +41,9 @@ export const peopleDomain: DomainModule = {
     ctx.registry.register(leaveRequestHandler(ctx.graph, ctx.owners));
     ctx.registry.register(leaveApproveHandler(ctx.graph));
     ctx.registry.register(leaveDeclineHandler(ctx.graph));
+    ctx.registry.register(expenseClaimHandler(ctx.graph, ctx.owners));
+    ctx.registry.register(expenseApproveHandler(ctx.graph));
+    ctx.registry.register(expenseDeclineHandler(ctx.graph));
     ctx.registry.register(employeeUpdateContactHandler(ctx.graph));
     ctx.registry.register(employeeCreateHandler(ctx.graph));
     ctx.registry.register(employeeUpdateHandler(ctx.graph));

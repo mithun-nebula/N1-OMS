@@ -40,6 +40,19 @@ export function DocumentsClient({
   });
 
   const canStore = isManagerOrAbove(actorRole);
+  const [requireForm, setRequireForm] = useState({ name: "", nodeType: "employee", nodeId: "" });
+
+  async function markRequired() {
+    if (!requireForm.name || !requireForm.nodeId) return;
+    const outcome = await op.run("document.require", {
+      name: requireForm.name,
+      nodeType: requireForm.nodeType,
+      nodeId: requireForm.nodeId,
+    });
+    if (outcome.status === "ran") {
+      setRequireForm({ ...requireForm, name: "", nodeId: "" });
+    }
+  }
 
   async function store() {
     if (!form.name || !form.nodeType || !form.nodeId) return;
@@ -127,7 +140,7 @@ export function DocumentsClient({
               <input
                 value={form.blobRef}
                 onChange={(e) => setForm({ ...form, blobRef: e.target.value })}
-                placeholder="Blob ref (cloud storage deferred)"
+                placeholder="Link or reference (URL, drive path…)"
                 className={`${inputCls} w-full py-2`}
               />
               <input
@@ -188,6 +201,40 @@ export function DocumentsClient({
                 ))}
               </tbody>
             </table>
+          </div>
+        )}
+
+        {canStore && (
+          <div className="mt-4 rounded-2xl border border-dashed border-line p-4">
+            <p className="mb-3 text-[10px] font-semibold uppercase tracking-widest text-ink-faint">
+              Mark a document as required
+            </p>
+            <div className="flex flex-wrap items-end gap-2.5">
+              <input
+                value={requireForm.name}
+                onChange={(e) => setRequireForm({ ...requireForm, name: e.target.value })}
+                placeholder="Document name"
+                className={`${inputCls} py-2`}
+              />
+              <select
+                value={requireForm.nodeType}
+                onChange={(e) => setRequireForm({ ...requireForm, nodeType: e.target.value })}
+                className={`${inputCls} py-2`}
+              >
+                <option value="employee">Employee</option>
+                <option value="course">Course</option>
+                <option value="event">Event</option>
+              </select>
+              <input
+                value={requireForm.nodeId}
+                onChange={(e) => setRequireForm({ ...requireForm, nodeId: e.target.value })}
+                placeholder="Record id (e.g. priya)"
+                className={`${inputCls} py-2`}
+              />
+              <AccentButton onClick={markRequired} disabled={busy || !requireForm.name || !requireForm.nodeId}>
+                {busy ? "Marking…" : "Mark required"}
+              </AccentButton>
+            </div>
           </div>
         )}
       </section>

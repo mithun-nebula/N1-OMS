@@ -10,7 +10,7 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:db": "bash -c 'set -a && . ./.env && set +a && vitest run src/server/store-pg.test.ts'"
+    "test:db": "vitest run src/server/store-pg.test.ts"
   },
   "dependencies": {
     "next": "16.3.0",

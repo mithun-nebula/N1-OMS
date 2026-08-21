@@ -2,7 +2,7 @@ import type { ActorId } from "@/spine/operation/types";
 import type { RecordStore } from "@/spine/record/types";
 import type { Spine } from "@/spine/spine";
 import { findStaleCourses } from "@/domains/course/versioning";
-import { findExpiringDocuments, nonAcknowledgers } from "@/domains/workplace";
+import { findExpiringDocuments } from "@/domains/workplace";
 
 export interface AssistantCtx {
   actor: ActorId;
@@ -85,17 +85,11 @@ export const documentsSpecialist: Specialist = {
     for (const d of expiringAll) {
       if (await canView(ctx, "document", d.id)) expiring.push(d);
     }
-    const announcements = await ctx.graph.find("announcement", () => true);
-    const unacked: typeof announcements = [];
-    for (const n of announcements) {
-      if ((await nonAcknowledgers(ctx.graph, n.id)).includes(ctx.actor)) unacked.push(n);
-    }
     const parts: string[] = [];
     if (expiring.length > 0)
       parts.push(
         expiring.map((d) => `${d.name} expires in ${d.daysLeft} day(s)`).join("; "),
       );
-    if (unacked.length > 0) parts.push(`${unacked.length} announcement(s) need your acknowledgement`);
     return parts.length > 0 ? "Needs attention: " + parts.join("; ") + "." : "Nothing documents-wise needs you.";
   },
 };

@@ -5,7 +5,6 @@ import { monthView } from "./calendar";
 import { repeatFaults } from "./equipment";
 import { findExpiringDocuments, requiredVsSupplied } from "./documents";
 import { findOverdueEventTasks, registrationPacing } from "./events";
-import { nonAcknowledgers } from "./announcements";
 
 function world() {
   return buildDemoWorld();
@@ -93,6 +92,79 @@ describe("meetings — immutable link + late-add auto-send", () => {
       }),
     );
     expect((added.result?.response as { sentLinkTo: string }).sentLinkTo).toBe("karthik");
+  });
+});
+
+describe("meeting decisions — record + complete action", () => {
+  it("records decisions and actions, then marks an action done", async () => {
+    const { spine, deps } = await world();
+    const recorded = await spine.submit(
+      adapters.fromForm({
+        actor: "james",
+        name: "meeting.recordDecisions",
+        args: {
+          meetingId: "m1",
+          decisions: [{ text: "Ship v2 next sprint" }],
+          actions: [{ text: "Write migration notes", owner: "priya", due: "2026-08-25" }],
+        },
+      }),
+    );
+    expect(recorded.status).toBe("ran");
+    expect(recorded.result?.response).toMatchObject({ decisionCount: 1, actionCount: 1 });
+
+    const node = await deps.graph.getNode("meeting-decision", "decisions:m1");
+    const actions = (node?.data as { actions: Array<{ id: string; done?: boolean }> }).actions;
+    expect(actions).toHaveLength(1);
+    expect(actions[0].done).toBeUndefined();
+
+    const done = await spine.submit(
+      adapters.fromForm({
+        actor: "priya",
+        name: "meeting.completeAction",
+        args: { meetingId: "m1", actionId: actions[0].id },
+      }),
+    );
+    expect(done.status).toBe("ran");
+    const after = await deps.graph.getNode("meeting-decision", "decisions:m1");
+    expect(
+      (after?.data as { actions: Array<{ done?: boolean; completedAt?: string }> }).actions[0],
+    ).toMatchObject({ done: true });
+  });
+
+  it("appends to an existing set instead of overwriting it", async () => {
+    const { spine, deps } = await world();
+    await spine.submit(
+      adapters.fromForm({
+        actor: "james",
+        name: "meeting.recordDecisions",
+        args: { meetingId: "m1", decisions: [{ text: "First" }] },
+      }),
+    );
+    await spine.submit(
+      adapters.fromForm({
+        actor: "james",
+        name: "meeting.recordDecisions",
+        args: { meetingId: "m1", decisions: [{ text: "Second" }] },
+      }),
+    );
+    const node = await deps.graph.getNode("meeting-decision", "decisions:m1");
+    const texts = (node?.data as { decisions: Array<{ text: string }> }).decisions.map((d) => d.text);
+    expect(texts).toEqual(["First", "Second"]);
+  });
+
+  it("refuses an intern recording decisions (view-only reach)", async () => {
+    // The workplaceRules() reach for `meeting-decision`: everyone views,
+    // everyone but interns writes — the /decisions page relies on the view
+    // half, this proves the write half stays closed.
+    const { spine } = await world();
+    const attack = await spine.submit(
+      adapters.fromForm({
+        actor: "ravi",
+        name: "meeting.recordDecisions",
+        args: { meetingId: "m1", decisions: [{ text: "Interns decide policy" }] },
+      }),
+    );
+    expect(attack.status).toBe("forbidden");
   });
 });
 
@@ -224,14 +296,25 @@ describe("events — registration pacing + overdue tasks", () => {
   });
 });
 
-describe("announcements — per-person acknowledgement", () => {
-  it("tracks who has/hasn't acknowledged", async () => {
+describe("notify.send — a line in the bell, no record written", () => {
+  it("delivers to each recipient and touches no graph records", async () => {
     const { spine, deps } = await world();
+    const before = (await deps.graph.find("notification", () => true)).length;
     const sent = await spine.submit(
-      adapters.fromForm({ actor: "james", name: "announcement.send", args: { message: "New policy", to: ["priya", "arun", "ravi"], policy: true } }),
+      adapters.fromForm({ actor: "james", name: "notify.send", args: { message: "New policy", to: ["priya", "arun"] } }),
     );
-    const id = (sent.result?.response as { announcementId: string }).announcementId;
-    await spine.submit(adapters.fromForm({ actor: "priya", name: "announcement.ack", args: { announcementId: id } }));
-    expect(await nonAcknowledgers(deps.graph, id)).toEqual(["arun", "ravi"]);
+    expect(sent.status).toBe("ran");
+    expect((sent.result?.response as { sentTo: number }).sentTo).toBe(2);
+    expect(deps.bus.forActor("priya").some((n) => n.message.includes("New policy"))).toBe(true);
+    expect(deps.bus.forActor("arun").some((n) => n.message.includes("New policy"))).toBe(true);
+    expect((await deps.graph.find("notification", () => true)).length).toBe(before);
+  });
+
+  it("refuses an empty recipient list", async () => {
+    const { spine } = await world();
+    const res = await spine.submit(
+      adapters.fromForm({ actor: "james", name: "notify.send", args: { message: "to nobody", to: [] } }),
+    );
+    expect(res.status).toBe("rejected");
   });
 });

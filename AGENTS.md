@@ -7,8 +7,45 @@
 - `npm run lint` — ESLint (flat config).
 - `npm run typecheck` — `tsc --noEmit`.
 - `npm test` — Vitest run; `npm run test:watch` for watch mode.
+- `npm run test:db` — the Postgres suite. **Requires `ORG_TEST_DATABASE_URL`**;
+  skips entirely without it.
 
 Run `npm run lint && npm run typecheck && npm test` before declaring a task done.
+
+### The database tests need a throwaway database
+
+`src/server/store-pg.test.ts` writes and deletes rows. It reads
+`ORG_TEST_DATABASE_URL` — never `DATABASE_URL` — and refuses to start if the two
+are equal. This matters: the script used to source `.env`, `afterEach` issued
+unscoped `DELETE FROM orga_nodes / orga_edges / orga_activity / orga_figures /
+orga_autonomy_rules`, and the accounts test ran `DROP TABLE orga_accounts`. One
+run against the live database would have deleted every record and destroyed
+every login. Deletes are now scoped to the `pgtest` prefix, and the accounts
+tests additionally require `ORG_TEST_DB_DESTRUCTIVE=1`.
+
+One line to get a database:
+
+```
+docker run -d --name n1oms-testdb -e POSTGRES_PASSWORD=testonly \
+  -e POSTGRES_DB=n1oms_test -p 55432:5432 postgres:16-alpine
+```
+
+then
+
+```
+ORG_TEST_DATABASE_URL="postgresql://postgres:testonly@127.0.0.1:55432/n1oms_test" npm run test:db
+```
+
+That container already exists on this machine — `docker start n1oms-testdb`.
+
+### Time is local, not UTC
+
+`src/domains/assistant/day-plan/time.ts` is the single source for "today" and
+for the 09:00 the working day opens at, and both are computed in **server local
+time**. Never derive a day with `iso.slice(0, 10)` — that is the UTC day, and
+for an India-resident deployment it is the wrong one for five and a half hours
+out of every twenty-four. Use `localDate()` / `localDateOf()`. **Deployment must
+set `TZ`.**
 
 ## What this is
 

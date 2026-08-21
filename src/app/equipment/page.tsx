@@ -56,7 +56,7 @@ export default async function EquipmentPage() {
           </p>
         </div>
       </header>
-      <EquipmentClient equipment={equipment} actorId={user.id} />
+      <EquipmentClient equipment={equipment} />
     </Shell>
   );
 }

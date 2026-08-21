@@ -39,7 +39,6 @@ const MANAGED_NODE_TYPES = [
   "calendar-entry",
   "event",
   "document",
-  "announcement",
 ];
 
 function superAdminRules(): PermissionRule[] {
@@ -71,10 +70,12 @@ const WORKPLACE_NODE_TYPES = [
   "event",
   "event-task",
   "document",
-  "announcement",
   "utility-capture",
   "fault",
-  "task",
+  // `notification` is not a record at all — it authorises notify.send, which
+  // writes nothing and only puts a line in someone's bell. Everyone may send,
+  // interns included (chat replaced announcements; this is what remained).
+  "notification",
 ];
 
 /**
@@ -90,11 +91,62 @@ function workplaceRules(): PermissionRule[] {
       rules.push({
         role,
         nodeType,
-        actions: role === "intern" ? ["view"] : ["view", "create", "edit"],
+        // Interns are read-only across the workplace — except notifying,
+        // which everyone may do (it writes no records).
+        actions:
+          role === "intern" && nodeType !== "notification" ? ["view"] : ["view", "create", "edit"],
         recordScope: { kind: "all" },
         fields: { kind: "all-visible" },
       });
     }
+  }
+  return rules;
+}
+
+/**
+ * Tasks are top-down (user decision, 2026-08-19): work is HANDED to people,
+ * never self-created. Split out of the open `workplaceRules()` reach:
+ *
+ * - manager/hr create and assign; a manager edits within their own team
+ *   (resolved through the owners map — `task:<id>` → assignedTo — registered
+ *   on create/assign and hydrated at boot). An unassigned task has no owner
+ *   and fails closed for a manager; admins cover it.
+ * - an employee/intern never creates. Their edit rule is scoped `self` with
+ *   only the `status` field visible, so `task.start`/`task.complete` (which
+ *   declare `fields: ["status"]`) pass on their own tasks while `task.edit`
+ *   (title/priority/due) is refused — update-your-assigned-work, nothing else.
+ * - delete is admin-level; nobody else ever had it (the old open reach never
+ *   granted delete either).
+ */
+function taskRules(): PermissionRule[] {
+  const TASK_EDIT_FIELDS = ["title", "description", "priority", "dueDate", "assignedTo", "status", "courseId", "estimateMinutes"];
+  // Each role gets a different board (user decision, 2026-08-19): employees
+  // and interns see only their own tasks, a manager their team's, hr/admin
+  // everything. Task ownership resolves assignee-first with a createdBy
+  // fallback, so a manager's freshly created unassigned task stays visible
+  // to them.
+  const rules: PermissionRule[] = [
+    { role: "super-admin", nodeType: "task", actions: ALL_ACTIONS, recordScope: { kind: "all" }, fields: { kind: "all-visible" } },
+    { role: "admin", nodeType: "task", actions: ["view", "create", "edit", "delete"], recordScope: { kind: "all" }, fields: { kind: "all-visible" } },
+    { role: "hr", nodeType: "task", actions: ["view", "create", "edit"], recordScope: { kind: "all" }, fields: { kind: "all-visible" } },
+    { role: "manager", nodeType: "task", actions: ["create"], recordScope: { kind: "all" }, fields: { kind: "all-visible" } },
+    { role: "manager", nodeType: "task", actions: ["view", "edit"], recordScope: { kind: "own-team" }, fields: { kind: "all-visible" } },
+  ];
+  for (const role of ["employee", "intern"] as const) {
+    rules.push(
+      { role, nodeType: "task", actions: ["view"], recordScope: { kind: "self" }, fields: { kind: "all-visible" } },
+      {
+        role,
+        nodeType: "task",
+        actions: ["edit"],
+        recordScope: { kind: "self" },
+        fields: {
+          kind: "per-field",
+          visible: ["status"],
+          restricted: TASK_EDIT_FIELDS.filter((f) => f !== "status"),
+        },
+      },
+    );
   }
   return rules;
 }
@@ -201,6 +253,7 @@ export const DEMO_PERMISSION_RULES: PermissionRule[] = [
   ...superAdminRules(),
   ...adminRules(),
   ...workplaceRules(),
+  ...taskRules(),
   ...n1GeneratedRules(),
   // ── Course versions: written by every course edit, so every role that can
   // edit a course can create a snapshot; reading history is open like the
@@ -311,9 +364,26 @@ export const DEMO_PERMISSION_RULES: PermissionRule[] = [
     fields: { kind: "all-visible" },
   },
   {
+    // Courses are managed by manager-and-above (user decision, 2026-08-19):
+    // create + edit + assign. Delete stays admin-level — see the explicit
+    // admin course-delete rule below (ADMIN_ACTIONS deliberately lacks delete).
     role: "manager",
     nodeType: "course",
-    actions: ["view", "edit", "approve"],
+    actions: ["view", "create", "edit", "approve"],
+    recordScope: { kind: "all" },
+    fields: { kind: "all-visible" },
+  },
+  {
+    role: "hr",
+    nodeType: "course",
+    actions: ["view", "create", "edit"],
+    recordScope: { kind: "all" },
+    fields: { kind: "all-visible" },
+  },
+  {
+    role: "admin",
+    nodeType: "course",
+    actions: ["delete"],
     recordScope: { kind: "all" },
     fields: { kind: "all-visible" },
   },

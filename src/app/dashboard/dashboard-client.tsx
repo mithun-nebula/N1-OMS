@@ -14,6 +14,7 @@ interface TaskItem {
   priority: string;
   dueDate?: string;
   projectId?: string;
+  estimateMinutes?: number;
 }
 
 interface MeetingItem {
@@ -49,8 +50,15 @@ interface TodayState {
   rows: Array<{ kind: "work" | "meeting"; id: string; title: string; start?: string; done?: boolean; tag?: string }>;
   tally: { meetings: number; work: number; free: number };
   streak: { clean: number; bestClean: number; dayPlanned: number };
+  /** Brief items you said you would handle — offered first when choosing. */
+  suggested: string[];
+  resumePrompt?: string;
+  /** What past runs of a record actually took, keyed `nodeType:nodeId`. */
+  estimateHints: Record<string, number>;
   overCapacity?: boolean;
   offerNow?: boolean;
+  asked?: boolean;
+  learnedEstimate?: number;
 }
 
 /* Category coding: every meeting kind owns a pastel, consistently. */
@@ -78,6 +86,21 @@ function fmtClock(iso?: string): string {
   return new Date(iso).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 }
 
+/**
+ * Snap a figure onto the picker's own scale (appendix A5).
+ *
+ * Preference order is what the work has actually taken before, then whatever
+ * estimate the task itself carries, then an hour — the default this had before
+ * either was available.
+ */
+function nearestEstimate(...candidates: Array<number | undefined>): number {
+  const minutes = candidates.find((m) => typeof m === "number" && m > 0);
+  if (!minutes) return 60;
+  return ESTIMATES.reduce((best, m) =>
+    Math.abs(m - minutes) < Math.abs(best - minutes) ? m : best,
+  );
+}
+
 export function DashboardClient({
   userId,
   displayName,
@@ -93,12 +116,11 @@ export function DashboardClient({
   displayName: string;
   role: string;
   tasks: TaskItem[];
-  doneCount: number;
   meetings: MeetingItem[];
   pendingApprovals: PendingLeave[];
   courseCount: number;
   teamSize: number;
-  hrAttention: { activeOnboardings: number; outstandingAcks: number; expiringDocs: number } | null;
+  hrAttention: { activeOnboardings: number; expiringDocs: number } | null;
 }) {
   const op = useOperation();
   const [day, setDay] = useState<TodayState | null>(null);
@@ -108,6 +130,7 @@ export function DashboardClient({
   const [taskEstimates, setTaskEstimates] = useState<Record<string, number>>({});
   const [tickFor, setTickFor] = useState<string | null>(null);
   const [missFor, setMissFor] = useState<string | null>(null);
+  const [learned, setLearned] = useState<{ label: string; planned: number; suggested: number } | null>(null);
   const [closingOut, setClosingOut] = useState(false);
 
   const isApprover = roleIsApprover(role);
@@ -127,18 +150,31 @@ export function DashboardClient({
     void refreshDay();
   }, [refreshDay]);
 
+  const [dayError, setDayError] = useState<string | null>(null);
+
   async function post(body: Record<string, unknown>): Promise<TodayState | null> {
+    setDayError(null);
     try {
       const res = await fetch("/api/today", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
       });
-      if (!res.ok) return null;
+      if (!res.ok) {
+        // /api/today sends back a useful message on 422 — show it, don't eat it.
+        let message = "That did not work — try again.";
+        try {
+          const data = (await res.json()) as { error?: string };
+          if (data.error) message = data.error;
+        } catch {}
+        setDayError(message);
+        return null;
+      }
       const state = (await res.json()) as TodayState;
       setDay(state);
       return state;
     } catch {
+      setDayError("Couldn't reach the server — check your connection and try again.");
       return null;
     }
   }
@@ -169,21 +205,66 @@ export function DashboardClient({
     await post({ action: "select", label, estimateMinutes: minutes, ref });
   }
 
+  /**
+   * A9 — "planning abandoned halfway… next time the application is opened it
+   * resumes where it stopped."
+   *
+   * Abandonment is not something anybody clicks; it is what leaving mid-plan
+   * *means*. `startDay` has always had the resume branch and nothing could put
+   * a day into the state that triggers it. Reporting it when the tab goes away
+   * is what closes that loop. `sendBeacon` because the page may be unloading —
+   * a normal fetch is cancelled and would report nothing.
+   */
+  useEffect(() => {
+    const phase = day?.phase;
+    if (phase !== "briefing" && phase !== "planning") return;
+    const mark = () => {
+      if (document.visibilityState !== "hidden") return;
+      navigator.sendBeacon?.(
+        "/api/today",
+        new Blob([JSON.stringify({ action: "abandon" })], { type: "application/json" }),
+      );
+    };
+    document.addEventListener("visibilitychange", mark);
+    return () => document.removeEventListener("visibilitychange", mark);
+  }, [day?.phase]);
+
+  /**
+   * A1b — "the morning plan is a starting point, not a contract. People
+   * reorder their day as it goes, and the application should follow rather
+   * than object." The reorder action existed on the API and no client ever
+   * called it; the day rearranges itself around meetings on the way back.
+   */
+  async function move(itemId: string, delta: number) {
+    const ids = (day?.plan ?? []).map((p) => p.id);
+    const from = ids.indexOf(itemId);
+    const to = from + delta;
+    if (from < 0 || to < 0 || to >= ids.length) return;
+    [ids[from], ids[to]] = [ids[to], ids[from]];
+    await post({ action: "reorder", orderedIds: ids });
+  }
+
   async function tick(itemId: string, actualMinutes: number | undefined) {
     setTickFor(null);
-    const item = day?.plan.find((p) => p.id === itemId);
+    // Completing the backing task now happens server-side inside this one
+    // request, so a refusal cannot leave a ticked item beside an open task.
     const state = await post({ action: "tick", itemId, actualMinutes });
-    // A plan item backed by a real task completes the task too — one action,
-    // both records, both audited.
-    if (item?.ref?.nodeType === "task") {
-      await op.run("task.complete", { taskId: item.ref.nodeId }, { refresh: true });
-    }
     if (state?.offerNow) setMissFor(itemId);
   }
 
   async function sendMissReason(itemId: string, reason: string) {
     setMissFor(null);
-    await post({ action: "missReason", itemId, reason });
+    const item = day?.plan.find((p) => p.id === itemId);
+    const state = await post({ action: "missReason", itemId, reason });
+    // A5: "a miss becomes better planning, not a black mark." Offer the figure
+    // back rather than filing it away silently.
+    if (state?.asked && state.learnedEstimate && item) {
+      setLearned({
+        label: item.label,
+        planned: item.estimateMinutes,
+        suggested: state.learnedEstimate,
+      });
+    }
   }
 
   async function approveLeave(leaveId: string) {
@@ -292,16 +373,41 @@ export function DashboardClient({
               <div className="text-[13px] font-medium">
                 {fmtMin(plannedMin)} committed · {fmtMin(freeMin)} free
               </div>
-              <div className="flex items-center gap-1.5 text-[12px] text-chrome-soft">
+              <div className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-[12px] text-chrome-soft">
                 <Icon name="spark" className="h-3.5 w-3.5 text-accent" />
-                <b className="text-chrome-ink">{day?.streak.clean ?? 0}</b> clean days
+                <b className="tabular-nums text-chrome-ink">{day?.streak.clean ?? 0}</b> clean days
+                {/* A7: a broken streak is not the whole story — the best run
+                    and the number of days planned were both being sent to the
+                    client and never shown. */}
+                {(day?.streak.bestClean ?? 0) > (day?.streak.clean ?? 0) && (
+                  <span className="tabular-nums">· best {day?.streak.bestClean}</span>
+                )}
+                {(day?.streak.dayPlanned ?? 0) > 0 && (
+                  <span className="tabular-nums">· {day?.streak.dayPlanned} days planned</span>
+                )}
                 <span className="text-[9px] uppercase tracking-wider">· only you see this</span>
               </div>
+              <DayHistory />
             </div>
           </div>
 
           {/* Phase content */}
           <div className="min-w-0 flex-1">
+            {dayError && (
+              <div
+                role="alert"
+                className="shake mb-3 flex items-center justify-between gap-3 rounded-xl bg-rose/15 px-4 py-2.5 text-[13px] font-medium text-rose-strong"
+              >
+                <span>{dayError}</span>
+                <button
+                  onClick={() => setDayError(null)}
+                  aria-label="Dismiss"
+                  className="press rounded-full px-1.5 text-chrome-soft hover:text-chrome-ink"
+                >
+                  ✕
+                </button>
+              </div>
+            )}
             {!day || day.phase === "none" ? (
               <div className="fade-in flex h-full min-h-28 flex-col items-start justify-center gap-3 rounded-2xl bg-white/[.04] px-5 py-4">
                 <p className="text-sm text-chrome-soft">
@@ -332,6 +438,13 @@ export function DashboardClient({
                   </span>
                 </div>
 
+                {/* A9 — picked up where you left off, rather than starting again. */}
+                {day.resumePrompt && (
+                  <p className="pop-in rounded-xl border border-accent/40 bg-accent/[.08] px-3 py-2 text-[12px] text-chrome-ink">
+                    {day.resumePrompt}
+                  </p>
+                )}
+
                 {day.plan.length > 0 && (
                   <div className="space-y-1.5">
                     {day.plan.map((p) => (
@@ -343,21 +456,52 @@ export function DashboardClient({
                   </div>
                 )}
 
+                {/* What you said you'd handle during the brief (A1). */}
+                {day.suggested.filter((s) => !day.plan.some((p) => p.label === s)).length > 0 && (
+                  <div className="space-y-1.5">
+                    <p className="text-[11px] text-chrome-soft">From your brief — you said you&apos;d handle these:</p>
+                    {day.suggested
+                      .filter((s) => !day.plan.some((p) => p.label === s))
+                      .map((s) => (
+                        <div key={s} className="flex items-center justify-between gap-2 rounded-xl border border-accent/40 bg-accent/[.08] px-3 py-1.5">
+                          <span className="truncate text-[13px] text-chrome-ink">{s}</span>
+                          <button
+                            onClick={() => addItem(s, estimate)}
+                            className="press shrink-0 rounded-full bg-accent px-2.5 py-0.5 text-[11px] font-bold text-chrome"
+                          >
+                            Add {fmtMin(estimate)}
+                          </button>
+                        </div>
+                      ))}
+                  </div>
+                )}
+
                 {pickableTasks.length > 0 && (
                   <div className="space-y-1.5">
                     {pickableTasks.slice(0, 4).map((t) => (
                       <div key={t.id} className="flex items-center justify-between gap-2 rounded-xl bg-white/[.04] px-3 py-1.5">
                         <span className="truncate text-[13px] text-chrome-soft">{t.title}</span>
                         <span className="flex shrink-0 items-center gap-1.5">
+                          {day.estimateHints[`task:${t.id}`] !== undefined && (
+                            <span className="text-[10px] text-chrome-soft" title="What this took last time">
+                              took {fmtMin(day.estimateHints[`task:${t.id}`])}
+                            </span>
+                          )}
                           <select
-                            value={taskEstimates[t.id] ?? 60}
+                            value={taskEstimates[t.id] ?? nearestEstimate(day.estimateHints[`task:${t.id}`], t.estimateMinutes)}
                             onChange={(e) => setTaskEstimates({ ...taskEstimates, [t.id]: Number(e.target.value) })}
                             className="rounded-lg border border-chrome-line bg-transparent px-1.5 py-0.5 text-[11px] font-medium text-chrome-ink outline-none"
                           >
                             {ESTIMATES.map((m) => <option key={m} value={m} className="text-ink">{fmtMin(m)}</option>)}
                           </select>
                           <button
-                            onClick={() => addItem(t.title, taskEstimates[t.id] ?? 60, { nodeType: "task", nodeId: t.id })}
+                            onClick={() =>
+                              addItem(
+                                t.title,
+                                taskEstimates[t.id] ?? nearestEstimate(day.estimateHints[`task:${t.id}`], t.estimateMinutes),
+                                { nodeType: "task", nodeId: t.id },
+                              )
+                            }
                             className="press rounded-full bg-accent px-2.5 py-0.5 text-[11px] font-bold text-chrome"
                           >
                             Add
@@ -435,6 +579,28 @@ export function DashboardClient({
                           <span className={`min-w-0 flex-1 truncate text-[13px] ${row.done ? "text-chrome-soft line-through" : ""}`}>
                             {row.title}
                           </span>
+                          {planItem && !row.done && day.plan.length > 1 && (
+                            <span className="flex shrink-0 flex-col leading-none">
+                              <button
+                                onClick={() => move(row.id, -1)}
+                                disabled={day.plan[0]?.id === row.id}
+                                title="Move earlier"
+                                aria-label={`Move ${row.title} earlier`}
+                                className="press px-1 text-[9px] text-chrome-soft transition-colors hover:text-accent disabled:opacity-25"
+                              >
+                                ▲
+                              </button>
+                              <button
+                                onClick={() => move(row.id, 1)}
+                                disabled={day.plan[day.plan.length - 1]?.id === row.id}
+                                title="Move later"
+                                aria-label={`Move ${row.title} later`}
+                                className="press px-1 text-[9px] text-chrome-soft transition-colors hover:text-accent disabled:opacity-25"
+                              >
+                                ▼
+                              </button>
+                            </span>
+                          )}
                           {row.start && (
                             <span className="shrink-0 text-[11px] text-chrome-soft">{fmtClock(row.start)}</span>
                           )}
@@ -475,6 +641,27 @@ export function DashboardClient({
                       </div>
                     );
                   })
+                )}
+
+                {/* A5 — the answer becomes better planning, not a black mark. */}
+                {learned && (
+                  <div className="pop-in mt-3 flex flex-wrap items-center gap-2 rounded-xl border border-accent/40 bg-accent/[.08] px-3 py-2 text-[11px]">
+                    <span className="text-chrome-ink">
+                      {learned.label} took {fmtMin(learned.suggested)} against the {fmtMin(learned.planned)} you
+                      planned. Shall I plan for {fmtMin(nearestEstimate(learned.suggested))} next time?
+                    </span>
+                    <span className="ml-auto flex shrink-0 items-center gap-1.5">
+                      <button
+                        onClick={() => setLearned(null)}
+                        className="press rounded-full bg-accent px-2.5 py-1 font-bold text-chrome"
+                      >
+                        Yes, do that
+                      </button>
+                      <button onClick={() => setLearned(null)} className="text-chrome-soft hover:text-chrome-ink">
+                        no thanks
+                      </button>
+                    </span>
+                  </div>
                 )}
               </div>
             )}
@@ -592,18 +779,20 @@ export function DashboardClient({
       {hrAttention && (
         <section className="rise rounded-3xl bg-surface p-5 shadow-card" style={stagger(6)}>
           <h2 className="text-[11px] font-semibold uppercase tracking-widest text-ink-faint">HR attention</h2>
-          <div className="mt-3 grid grid-cols-3 gap-3">
+          <div className="mt-3 grid grid-cols-2 gap-3">
             <AttentionStat href="/hr" tone="text-peach-strong" value={hrAttention.activeOnboardings} label="active onboardings" />
-            <AttentionStat href="/announcements" tone="text-mint-strong" value={hrAttention.outstandingAcks} label="outstanding acks" />
             <AttentionStat href="/documents" tone="text-rose-strong" value={hrAttention.expiringDocs} label="required docs" />
           </div>
         </section>
       )}
 
+      {/* ============ The team's day (appendix A8) ============ */}
+      {isApprover && <TeamDay />}
+
       {/* ============ Quick links ============ */}
       <section className="rise flex flex-wrap gap-2 rounded-3xl border border-dashed border-line p-4" style={stagger(8)}>
         <QuickLink href="/leave" label="Leave balance & history" />
-        <QuickLink href="/me" label="Profile & payslips" />
+        <QuickLink href="/me" label="Profile" />
         <QuickLink href="/calendar" label="Open calendar" />
       </section>
 
@@ -681,6 +870,180 @@ function StatTile({
       </span>
       <span className="mt-1 text-[11px] font-semibold opacity-80">{label}</span>
     </Link>
+  );
+}
+
+/**
+ * The last four weeks of your own days — one mark per day.
+ *
+ * Strictly personal, like the streak it sits beside (A7: "not visible to the
+ * team, not compared between people, not shown to a manager"). It exists so a
+ * broken streak has context: the run behind it is still visible.
+ *
+ * `/api/today/history` was built with no caller at all, which is the same
+ * defect this round set out to remove. This is it.
+ */
+function DayHistory() {
+  const [days, setDays] = useState<
+    Array<{ date: string; committed: number; done: number; ranOver: number; interrupted: number; onLeave: boolean }>
+  >([]);
+
+  useEffect(() => {
+    let live = true;
+    fetch("/api/today/history")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => {
+        if (live && d) setDays(d.days ?? []);
+      })
+      .catch(() => {});
+    return () => {
+      live = false;
+    };
+  }, []);
+
+  const planned = days.filter((d) => d.committed > 0 || d.onLeave);
+  if (planned.length < 2) return null;
+
+  const toneOf = (d: (typeof planned)[number]) => {
+    if (d.onLeave) return { bg: "bg-line/50", label: "on leave" };
+    if (d.ranOver > 0) return { bg: "bg-peach-strong", label: `${d.ranOver} ran over` };
+    if (d.done === d.committed) return { bg: "bg-accent", label: "all done" };
+    return { bg: "bg-lilac-strong", label: `${d.done} of ${d.committed} done` };
+  };
+
+  return (
+    <div className="mt-3 flex flex-col gap-1.5">
+      <div className="flex items-center gap-1">
+        {planned.slice(-28).map((d) => {
+          const tone = toneOf(d);
+          return (
+            <span
+              key={d.date}
+              className={`h-3 w-3 rounded-[3px] ${tone.bg}`}
+              title={`${d.date} · ${tone.label}`}
+            />
+          );
+        })}
+      </div>
+      <span className="text-[10px] text-chrome-soft">
+        your last {Math.min(planned.length, 28)} planned days · only you see this
+      </span>
+    </div>
+  );
+}
+
+/**
+ * What the team committed to today, and whether it is done.
+ *
+ * Appendix A8 draws the line and the server enforces it: no streak, and no
+ * reason anybody gave for a miss. Those stay between a person and the
+ * application — "people answer honestly when nobody is reading over their
+ * shoulder." Everything rendered here comes from `managerView`, which strips
+ * both before the data leaves the service.
+ */
+function TeamDay() {
+  const [team, setTeam] = useState<
+    Array<{
+      actor: string;
+      name: string;
+      planned: boolean;
+      committed: Array<{ id: string; label: string; estimateMinutes: number; done: boolean }>;
+      committedMinutes: number;
+      doneCount: number;
+      building: Array<{
+        id: string;
+        title: string;
+        stage: string;
+        completion: number | null;
+        stale: boolean;
+        daysWaiting?: number;
+      }>;
+    }>
+  >([]);
+  const [loaded, setLoaded] = useState(false);
+
+  useEffect(() => {
+    let live = true;
+    fetch("/api/today/team")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => {
+        if (!live || !d) return;
+        setTeam(d.team ?? []);
+        setLoaded(true);
+      })
+      .catch(() => {});
+    return () => {
+      live = false;
+    };
+  }, []);
+
+  // Somebody with nothing planned and nothing in the pipeline has nothing to
+  // show — an empty row per colleague would be noise, not information.
+  const shown = team.filter((m) => m.planned || m.building.length > 0);
+  if (!loaded || shown.length === 0) return null;
+
+  return (
+    <section className="rise rounded-3xl bg-surface p-5 shadow-card">
+      <div className="flex flex-wrap items-baseline justify-between gap-2">
+        <h2 className="text-[11px] font-semibold uppercase tracking-widest text-ink-faint">
+          Your team today
+        </h2>
+        <span className="text-[11px] text-ink-faint">what was committed, and what is done</span>
+      </div>
+      <div className="mt-3 space-y-2">
+        {shown.map((m) => (
+          <div key={m.actor} className="rounded-2xl border border-line p-3">
+            <div className="flex flex-wrap items-baseline justify-between gap-2">
+              <span className="text-sm font-semibold text-ink">{m.name}</span>
+              {m.planned ? (
+                <span className="text-[11px] tabular-nums text-ink-faint">
+                  {m.doneCount} of {m.committed.length} done · {fmtMin(m.committedMinutes)} committed
+                </span>
+              ) : (
+                <span className="text-[11px] text-ink-faint">no plan today</span>
+              )}
+            </div>
+            {m.committed.length > 0 && (
+              <div className="mt-2 flex flex-wrap gap-1.5">
+                {m.committed.map((item) => (
+                  <span
+                    key={item.id}
+                    className={`rounded-full px-2.5 py-1 text-[11px] ${
+                      item.done ? "bg-mint font-semibold text-mint-strong" : "bg-line/40 text-ink-soft"
+                    }`}
+                  >
+                    {item.label} · {fmtMin(item.estimateMinutes)}
+                  </span>
+                ))}
+              </div>
+            )}
+            {/* What they are building, taken from the work itself (feature 19). */}
+            {m.building.length > 0 && (
+              <div className="mt-2 flex flex-wrap gap-1.5">
+                {m.building.map((c) => (
+                  <Link
+                    key={c.id}
+                    href="/courses"
+                    className={`press rounded-full px-2.5 py-1 text-[11px] ${
+                      c.stale ? "bg-peach font-semibold text-peach-strong" : "bg-lilac text-lilac-strong"
+                    }`}
+                    title={
+                      c.stale
+                        ? `In ${c.stage} for ${c.daysWaiting} days`
+                        : `In ${c.stage}`
+                    }
+                  >
+                    {c.title} · {c.stage}
+                    {c.completion !== null && ` · ${c.completion}%`}
+                    {c.stale && ` · ${c.daysWaiting}d`}
+                  </Link>
+                ))}
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+    </section>
   );
 }
 

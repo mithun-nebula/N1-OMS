@@ -58,9 +58,9 @@ describe("non-negotiable audit — every CONTEXT §13 rule holds", () => {
     const { spine, autonomy } = await world();
     // A rule must be declared before anything runs under it — creating one by
     // confirming against an unknown id was the authority-forgery hole.
-    autonomy.declare("auto-announce", "james", "announcement.send", "routine");
+    autonomy.declare("auto-announce", "james", "notify.send", "routine");
     for (let i = 0; i < 10; i++) {
-      const res = await spine.submit(adapters.fromStandingRule({ ruleId: "auto-announce", ruleAuthor: "james", name: "announcement.send", args: { message: "test", to: ["james"] } }));
+      const res = await spine.submit(adapters.fromStandingRule({ ruleId: "auto-announce", ruleAuthor: "james", name: "notify.send", args: { message: "test", to: ["james"] } }));
       await spine.confirm(res.pendingId!, "james");
     }
     expect(autonomy.get("auto-announce")?.status).toBe("supervised");
@@ -68,7 +68,7 @@ describe("non-negotiable audit — every CONTEXT §13 rule holds", () => {
   });
 
   it("§5 voice confirms before saving (read-back transcript stored)", () => {
-    const op = adapters.fromVoice({ actor: "james", name: "announcement.send", args: { message: "hi", to: ["priya"] }, transcript: "send a reminder" });
+    const op = adapters.fromVoice({ actor: "james", name: "notify.send", args: { message: "hi", to: ["priya"] }, transcript: "send a reminder" });
     expect(op.startedBy.voiceTranscript).toBe("send a reminder");
   });
 

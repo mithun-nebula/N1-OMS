@@ -18,7 +18,7 @@ describe("durable undo — the plan replays when the closure is gone", () => {
 
     const created = await spine.submit(
       adapters.fromForm({
-        actor: "priya",
+        actor: "james",
         name: "task.create",
         args: { title: "Original title" },
       }),
@@ -27,7 +27,7 @@ describe("durable undo — the plan replays when the closure is gone", () => {
 
     const edit = await spine.submit(
       adapters.fromForm({
-        actor: "priya",
+        actor: "james",
         name: "task.edit",
         args: { taskId, title: "Edited title" },
       }),
@@ -39,10 +39,15 @@ describe("durable undo — the plan replays when the closure is gone", () => {
     const restarted = new Spine(deps);
 
     const entry = await deps.log.get(edit.activityEntry!.id);
-    // task.edit does not carry a plan yet, so undo is correctly unavailable
-    // after a restart. Operations added in later blocks must supply one.
     expect(entry).toBeDefined();
-    const withoutPlan = await restarted.undo(edit.activityEntry!.id, "priya");
+    // `task.edit` now ships a plan of its own, so the entry carries one. Strip
+    // it to reach the case this test exists for: an entry whose only undo was
+    // a closure the restart threw away.
+    const shipped = entry!.undoPlan;
+    expect(shipped).toBeDefined();
+    entry!.undoPlan = undefined;
+
+    const withoutPlan = await restarted.undo(edit.activityEntry!.id, "james");
     expect(withoutPlan.status).toBe("rejected");
     expect(withoutPlan.detail).toContain("No undo is available");
 
@@ -52,7 +57,7 @@ describe("durable undo — the plan replays when the closure is gone", () => {
     ];
     entry!.undoPlan = plan;
 
-    const replayed = await restarted.undo(edit.activityEntry!.id, "priya");
+    const replayed = await restarted.undo(edit.activityEntry!.id, "james");
     expect(replayed.status).toBe("undone");
     const data = (await deps.graph.getNode("task", taskId))?.data as { title: string };
     expect(data.title).toBe("Original title");
@@ -61,15 +66,15 @@ describe("durable undo — the plan replays when the closure is gone", () => {
   it("refuses to undo the same entry twice", async () => {
     const { spine } = await buildDemoWorld();
     const created = await spine.submit(
-      adapters.fromForm({ actor: "priya", name: "task.create", args: { title: "Once" } }),
+      adapters.fromForm({ actor: "james", name: "task.create", args: { title: "Once" } }),
     );
     const taskId = (created.result?.response as { taskId?: string })?.taskId as string;
     const done = await spine.submit(
-      adapters.fromForm({ actor: "priya", name: "task.complete", args: { taskId } }),
+      adapters.fromForm({ actor: "james", name: "task.complete", args: { taskId } }),
     );
 
-    expect((await spine.undo(done.activityEntry!.id, "priya")).status).toBe("undone");
-    const again = await spine.undo(done.activityEntry!.id, "priya");
+    expect((await spine.undo(done.activityEntry!.id, "james")).status).toBe("undone");
+    const again = await spine.undo(done.activityEntry!.id, "james");
     expect(again.status).toBe("rejected");
     expect(again.detail).toContain("already undone");
   });
@@ -189,7 +194,7 @@ describe("node ids are unique across types", () => {
     const nodeTypes = [
       "employee", "leave", "course", "task", "room", "booking", "meeting",
       "calendar-entry", "event", "equipment", "fault", "document",
-      "announcement", "org-memory", "utility-capture", "onboarding",
+      "org-memory", "utility-capture", "onboarding",
       "offboarding", "attendance", "payslip",
     ];
 

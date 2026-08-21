@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { isAdminLike } from "@/server/roles";
+import { isAdminLike, isManagerOrAbove } from "@/server/roles";
 import { Icon } from "../ui/icons";
 import { inputCls, OpFeedback, PriorityBadge } from "../ui/kit";
 import { useOperation } from "@/components/ops/use-operation";
@@ -15,6 +15,9 @@ interface Task {
   dueDate?: string;
   projectId?: string;
   description?: string;
+  estimateMinutes?: number;
+  courseId?: string;
+  courseTitle?: string;
 }
 
 /* Each column owns a category color, T1-style. */
@@ -54,8 +57,15 @@ export function TasksClient({
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editForm, setEditForm] = useState({ title: "", description: "", priority: "medium", dueDate: "" });
   const [filters, setFilters] = useState({ assignee: "", project: "", priority: "" });
+  const [addingId, setAddingId] = useState<string | null>(null);
+  const [addedToday, setAddedToday] = useState<Set<string>>(new Set());
+  const [addError, setAddError] = useState<string | null>(null);
 
   const canDelete = isAdminLike(actorRole);
+  // Tasks are top-down: work is handed out by manager-and-above, never
+  // self-created — an employee only updates the status of their own. The
+  // gate enforces this opaquely; hiding the controls keeps the page honest.
+  const canManage = isManagerOrAbove(actorRole);
   const today = new Date().toISOString().slice(0, 10);
 
   async function runLeaving(taskId: string, name: string, args: Record<string, unknown>) {
@@ -86,6 +96,45 @@ export function TasksClient({
     }
   }
 
+  /**
+   * Commit a task to today's plan without leaving the board.
+   *
+   * The two views used to know nothing about each other: the dashboard could
+   * pull tasks in, but from here there was no way to say "this one, today".
+   * The estimate comes from the task when it has one — the day plan requires a
+   * time on every item, and this is where that time now lives between days.
+   */
+  async function addToToday(t: Task) {
+    setAddingId(t.id);
+    try {
+      const res = await fetch("/api/today", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "select",
+          label: t.title,
+          estimateMinutes: t.estimateMinutes ?? 60,
+          ref: { nodeType: "task", nodeId: t.id },
+        }),
+      });
+      setAddedToday((s) => {
+        const next = new Set(s);
+        if (res.ok) next.add(t.id);
+        return next;
+      });
+      if (!res.ok) {
+        const body = (await res.json().catch(() => ({}))) as { error?: string };
+        // The commonest case by far: the day has not been started yet, which
+        // the dashboard is where you do.
+        setAddError(body.error ?? "That could not be added to today.");
+      } else {
+        setAddError(null);
+      }
+    } finally {
+      setAddingId(null);
+    }
+  }
+
   function startEdit(t: Task) {
     setEditingId(t.id);
     setEditForm({ title: t.title, description: t.description ?? "", priority: t.priority, dueDate: t.dueDate ?? "" });
@@ -104,10 +153,14 @@ export function TasksClient({
     <div className="mx-auto max-w-6xl p-4 sm:p-6">
       {/* ============ Filters + new task ============ */}
       <div className="rise mb-4 flex flex-wrap items-center gap-2" style={{ animationDelay: "60ms" }}>
-        <select value={filters.assignee} onChange={(e) => setFilters({ ...filters, assignee: e.target.value })} className={inputCls}>
-          <option value="">All assignees</option>
-          {people.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-        </select>
+        {/* An employee's board only ever holds their own tasks — an assignee
+            filter there is noise. */}
+        {canManage && (
+          <select value={filters.assignee} onChange={(e) => setFilters({ ...filters, assignee: e.target.value })} className={inputCls}>
+            <option value="">All assignees</option>
+            {people.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+          </select>
+        )}
         <select value={filters.project} onChange={(e) => setFilters({ ...filters, project: e.target.value })} className={inputCls}>
           <option value="">All projects</option>
           {projects.map((p) => <option key={p} value={p}>{p}</option>)}
@@ -117,16 +170,18 @@ export function TasksClient({
           {PRIORITIES.map((p) => <option key={p} value={p}>{p}</option>)}
         </select>
         <p className="ml-auto text-xs font-medium text-ink-faint">{filtered.length} tasks</p>
-        <button
-          onClick={() => setShowForm(!showForm)}
-          className="press rounded-full bg-chrome px-4 py-2 text-xs font-semibold text-chrome-ink transition-colors hover:bg-chrome-card"
-        >
-          {showForm ? "Cancel" : "+ New task"}
-        </button>
+        {canManage && (
+          <button
+            onClick={() => setShowForm(!showForm)}
+            className="press rounded-full bg-chrome px-4 py-2 text-xs font-semibold text-chrome-ink transition-colors hover:bg-chrome-card"
+          >
+            {showForm ? "Cancel" : "+ New task"}
+          </button>
+        )}
       </div>
 
       {/* ============ Create form ============ */}
-      {showForm && (
+      {canManage && showForm && (
         <div className="pop-in mb-5 rounded-3xl bg-surface p-4 shadow-card">
           <div className="flex flex-wrap items-end gap-2.5">
             <input value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} placeholder="Task title" className={`${inputCls} min-w-40 flex-1 bg-raised py-2`} />
@@ -201,6 +256,18 @@ export function TasksClient({
                                 <span className="text-[13px] font-semibold leading-snug text-ink">{t.title}</span>
                                 {/* Actions reveal on hover; always visible on touch (no hover state). */}
                                 <div className="flex shrink-0 gap-1 opacity-100 transition-opacity duration-200 sm:opacity-0 sm:group-hover:opacity-100">
+                                  {t.status !== "done" && (
+                                    <IconAction
+                                      title={addedToday.has(t.id) ? "On today's plan" : "Add to today"}
+                                      onClick={() => addToToday(t)}
+                                      disabled={busy || addingId === t.id || addedToday.has(t.id)}
+                                      tone="hover:bg-accent-soft hover:text-accent-strong"
+                                    >
+                                      <span className="text-[11px] font-bold leading-none">
+                                        {addedToday.has(t.id) ? "✓" : "+"}
+                                      </span>
+                                    </IconAction>
+                                  )}
                                   {t.status === "todo" && (
                                     <IconAction title="Start task" onClick={() => runLeaving(t.id, "task.start", { taskId: t.id })} disabled={busy} tone="hover:bg-lilac hover:text-lilac-strong">
                                       <span className="text-[10px] leading-none">▶</span>
@@ -211,9 +278,11 @@ export function TasksClient({
                                       <Icon name="check" className="h-3.5 w-3.5" />
                                     </IconAction>
                                   )}
-                                  <IconAction title="Edit" onClick={() => startEdit(t)} disabled={busy} tone="hover:bg-accent-soft hover:text-accent-strong">
-                                    <span className="text-[11px] font-bold leading-none">✎</span>
-                                  </IconAction>
+                                  {canManage && (
+                                    <IconAction title="Edit" onClick={() => startEdit(t)} disabled={busy} tone="hover:bg-accent-soft hover:text-accent-strong">
+                                      <span className="text-[11px] font-bold leading-none">✎</span>
+                                    </IconAction>
+                                  )}
                                   {canDelete && (
                                     <IconAction title="Delete" onClick={() => runLeaving(t.id, "task.delete", { taskId: t.id })} disabled={busy} tone="hover:bg-danger-soft hover:text-danger">
                                       <span className="text-[13px] leading-none">×</span>
@@ -225,15 +294,30 @@ export function TasksClient({
                                 <p className="mt-1 line-clamp-2 text-xs text-ink-soft">{t.description}</p>
                               )}
                               <div className="mt-3 flex flex-wrap items-center gap-2 text-[11px]">
-                                <select
-                                  value={t.assignedTo ?? ""}
-                                  onChange={(e) => op.run("task.assign", { taskId: t.id, assignedTo: e.target.value })}
-                                  disabled={busy}
-                                  className="rounded-lg border border-line bg-transparent px-1.5 py-0.5 text-[11px] font-medium text-ink-soft outline-none focus:border-accent-strong"
-                                >
-                                  <option value="">Unassigned</option>
-                                  {people.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-                                </select>
+                                {canManage ? (
+                                  <select
+                                    value={t.assignedTo ?? ""}
+                                    onChange={(e) => op.run("task.assign", { taskId: t.id, assignedTo: e.target.value })}
+                                    disabled={busy}
+                                    className="rounded-lg border border-line bg-transparent px-1.5 py-0.5 text-[11px] font-medium text-ink-soft outline-none focus:border-accent-strong"
+                                  >
+                                    <option value="">Unassigned</option>
+                                    {people.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+                                  </select>
+                                ) : (
+                                  <span className="font-medium text-ink-soft">
+                                    {people.find((p) => p.id === t.assignedTo)?.name ?? "Unassigned"}
+                                  </span>
+                                )}
+                                {t.courseTitle && (
+                                  <a
+                                    href="/courses"
+                                    className="press rounded-full bg-lilac px-2 py-0.5 font-semibold text-lilac-strong"
+                                    title="Part of a course assignment"
+                                  >
+                                    ⤷ {t.courseTitle}
+                                  </a>
+                                )}
                                 {t.dueDate && (
                                   <span className={`flex items-center gap-1 ${overdue ? "font-semibold text-danger" : "text-ink-faint"}`}>
                                     <Icon name="clock" className="h-3 w-3" />
@@ -260,6 +344,14 @@ export function TasksClient({
           );
         })}
       </div>
+      {addError && (
+        <div className="mt-3 flex items-center justify-between gap-3 rounded-2xl border border-line bg-surface px-4 py-3 text-xs text-ink-soft">
+          <span>{addError}</span>
+          <button onClick={() => setAddError(null)} className="press shrink-0 font-semibold text-accent-strong">
+            Dismiss
+          </button>
+        </div>
+      )}
       <OpFeedback
         error={op.error}
         confirmation={op.confirmation}

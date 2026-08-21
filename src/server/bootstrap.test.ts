@@ -108,7 +108,7 @@ describe("gate — autonomy is earned, never assumed (appendix B)", () => {
     const op = adapters.fromStandingRule({
       ruleId: "overdue-list",
       ruleAuthor: "james",
-      name: "announcement.send",
+      name: "notify.send",
       args: { message: "Courses overdue", to: ["james"] },
     });
     const res = await spine.submit(op);

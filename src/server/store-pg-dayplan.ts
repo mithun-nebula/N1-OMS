@@ -56,6 +56,19 @@ export class PostgresDayPlanPersistence implements DayPlanPersistence {
     return res.rows[0]?.data;
   }
 
+  async loadRange(actor: string, from: string, to: string): Promise<DayPlan[]> {
+    await this.ready;
+    // Dates are stored as YYYY-MM-DD text, which sorts and compares
+    // lexicographically exactly as it does chronologically.
+    const res = await this.pool.query<{ data: DayPlan }>(
+      `SELECT data FROM orga_day_plans
+       WHERE actor = $1 AND date >= $2 AND date <= $3
+       ORDER BY date ASC`,
+      [actor, from, to],
+    );
+    return res.rows.map((r) => r.data);
+  }
+
   async saveStreak(actor: ActorId, streak: StreakRecord): Promise<void> {
     await this.ready;
     await this.pool.query(

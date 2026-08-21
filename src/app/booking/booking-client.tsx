@@ -33,26 +33,40 @@ export function BookingClient({
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState({ roomId: "", title: "", from: "", to: "" });
   const [result, setResult] = useState<{ ok: boolean; text: string } | null>(null);
+  const [clash, setClash] = useState<{ reason: string; alternatives: string[] } | null>(null);
 
-  async function book() {
-    if (!form.roomId || !form.title || !form.from || !form.to) return;
+  const roomNameOf = (id: string) => rooms.find((r) => r.id === id)?.name ?? id;
+
+  async function submitBooking(roomId: string) {
+    if (!roomId || !form.title || !form.from || !form.to) return;
     setResult(null);
+    setClash(null);
     const outcome = await op.run("room.book", {
-      roomId: form.roomId,
+      roomId,
       title: form.title,
       from: new Date(form.from).toISOString(),
       to: new Date(form.to).toISOString(),
     });
-    if (outcome.status === "ran") {
-      const resolved = (outcome.response as { resolved?: boolean } | undefined)?.resolved;
-      setResult(
-        resolved
-          ? { ok: true, text: "Booked!" }
-          : { ok: false, text: "Could not book — clash detected." },
-      );
+    if (outcome.status !== "ran") return;
+    const response = outcome.response as
+      | { resolved?: boolean; reason?: string; alternatives?: string[] }
+      | undefined;
+    if (response?.resolved) {
+      setResult({ ok: true, text: "Booked!" });
       setShowForm(false);
       setForm({ roomId: "", title: "", from: "", to: "" });
+    } else {
+      // Keep the form open with the input intact — the alternatives only make
+      // sense against the slot the user just asked for.
+      setClash({
+        reason: response?.reason ?? "That slot clashes with an existing booking.",
+        alternatives: response?.alternatives ?? [],
+      });
     }
+  }
+
+  async function cancelBooking(bookingId: string) {
+    await op.run("room.cancel", { bookingId });
   }
 
   return (
@@ -61,7 +75,7 @@ export function BookingClient({
       <section className="rise rounded-3xl bg-surface p-5 shadow-card" style={{ animationDelay: "60ms" }}>
         <div className="flex flex-wrap items-center justify-between gap-3">
           <SectionTitle>Rooms</SectionTitle>
-          <ChromeButton onClick={() => setShowForm(!showForm)}>
+          <ChromeButton onClick={() => { setShowForm(!showForm); setClash(null); }}>
             {showForm ? "Cancel" : "+ Book a room"}
           </ChromeButton>
         </div>
@@ -116,9 +130,38 @@ export function BookingClient({
               <input type="datetime-local" value={form.from} onChange={(e) => setForm({ ...form, from: e.target.value })} className={inputCls} />
               <input type="datetime-local" value={form.to} onChange={(e) => setForm({ ...form, to: e.target.value })} className={inputCls} />
             </div>
-            <AccentButton onClick={book} disabled={busy || !form.roomId || !form.title}>
+            <AccentButton onClick={() => submitBooking(form.roomId)} disabled={busy || !form.roomId || !form.title}>
               {busy ? "Booking…" : "Book"}
             </AccentButton>
+
+            {clash && (
+              <div className="pop-in rounded-2xl border-l-[3px] border-danger bg-raised p-3.5">
+                <p className="text-xs font-semibold text-danger">{clash.reason}</p>
+                {clash.alternatives.length > 0 ? (
+                  <>
+                    <p className="mt-1.5 text-[11px] text-ink-soft">
+                      These rooms are free for the same slot:
+                    </p>
+                    <div className="mt-2 flex flex-wrap gap-1.5">
+                      {clash.alternatives.map((id) => (
+                        <button
+                          key={id}
+                          onClick={() => submitBooking(id)}
+                          disabled={busy}
+                          className="press rounded-full bg-chrome px-3 py-1 text-xs font-semibold text-chrome-ink transition-colors hover:bg-chrome-card disabled:opacity-40"
+                        >
+                          Book {roomNameOf(id)} instead
+                        </button>
+                      ))}
+                    </div>
+                  </>
+                ) : (
+                  <p className="mt-1.5 text-[11px] text-ink-soft">
+                    No other room is free for that slot — try a different time.
+                  </p>
+                )}
+              </div>
+            )}
           </div>
         )}
       </section>
@@ -152,11 +195,20 @@ export function BookingClient({
                     {b.roomName}
                   </span>
                 </div>
-                <span className="flex shrink-0 items-center gap-1.5 text-[11px] text-ink-soft">
-                  <Icon name="clock" className="h-3 w-3" />
-                  {b.from && new Date(b.from).toLocaleString([], { dateStyle: "medium", timeStyle: "short" })}
-                  {b.to && ` → ${new Date(b.to).toLocaleTimeString([], { timeStyle: "short" })}`}
-                </span>
+                <div className="flex shrink-0 items-center gap-3">
+                  <span className="flex items-center gap-1.5 text-[11px] text-ink-soft">
+                    <Icon name="clock" className="h-3 w-3" />
+                    {b.from && new Date(b.from).toLocaleString([], { dateStyle: "medium", timeStyle: "short" })}
+                    {b.to && ` → ${new Date(b.to).toLocaleTimeString([], { timeStyle: "short" })}`}
+                  </span>
+                  <button
+                    onClick={() => cancelBooking(b.id)}
+                    disabled={busy}
+                    className="press text-[11px] font-medium text-danger hover:underline disabled:opacity-40"
+                  >
+                    Cancel
+                  </button>
+                </div>
               </div>
             ))}
           </div>

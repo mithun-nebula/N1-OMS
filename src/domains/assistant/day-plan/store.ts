@@ -9,6 +9,12 @@ export interface PlanItem {
   estimateMinutes: number;
   start?: string;
   end?: string;
+  /**
+   * True when the service placed this item in the day itself, rather than the
+   * caller supplying a window. Only auto-placed, unfinished work is moved when
+   * the day is re-laid-out — an explicitly scheduled item is an anchor.
+   */
+  autoScheduled?: boolean;
   done?: boolean;
   doneAt?: string;
   actualMinutes?: number;
@@ -32,12 +38,20 @@ export interface MeetingItem {
 }
 
 export interface StreakRecord {
+  /** Consecutive clean days. Personal only — never shown to a manager (A7). */
   clean: number;
+  /** The best run so far, so a broken streak is not the whole story. */
   bestClean: number;
-  finishedWithinTime: number;
+  /** How many days this person has planned at all. */
   dayPlanned: number;
   lastAssessedDate?: string;
 }
+/*
+ * `finishedWithinTime` used to sit here too. It was incremented in lockstep
+ * with `clean` — the same number under a second name — and never read by
+ * anything. Rows written before this still carry the key; extra JSON keys are
+ * ignored on the way back in.
+ */
 
 export interface DayPlan {
   actor: ActorId;
@@ -49,6 +63,13 @@ export interface DayPlan {
   meetings: MeetingItem[];
   streak: StreakRecord;
   onLeave?: boolean;
+  /**
+   * Brief items the person said they would handle. Offered first in the
+   * picker, so answering the brief actually feeds the plan (appendix A1).
+   */
+  suggested?: string[];
+  /** Brief items pushed to "Later" — they reappear in tomorrow's brief. */
+  deferred?: string[];
 }
 
 /**
@@ -70,6 +91,37 @@ export interface DayPlanPersistence {
   loadEstimate(key: string): Promise<{ estimate: number; actuals: number[] } | undefined>;
   /** Bulk-hydrate the estimate learning table on first load after a restart. */
   loadAllEstimates?(): Promise<Array<{ key: string; estimate: number; actuals: number[] }>>;
+  /**
+   * Days in a range, oldest first. The store could only ever be asked for a
+   * single (actor, date), so there was no way to look back over a week — no
+   * streak timeline, no "how did last month go".
+   */
+  loadRange?(actor: string, from: string, to: string): Promise<DayPlan[]>;
+}
+
+/** One past day, reduced to what a history view actually needs. */
+export interface DaySummary {
+  date: string;
+  committed: number;
+  done: number;
+  committedMinutes: number;
+  ranOver: number;
+  interrupted: number;
+  onLeave: boolean;
+  phase: DayPhase;
+}
+
+export function summariseDay(plan: DayPlan): DaySummary {
+  return {
+    date: plan.date,
+    committed: plan.plan.length,
+    done: plan.plan.filter((p) => p.done).length,
+    committedMinutes: plan.plan.reduce((sum, p) => sum + p.estimateMinutes, 0),
+    ranOver: plan.plan.filter((p) => p.miss?.kind === "ran-over").length,
+    interrupted: plan.plan.filter((p) => p.miss?.kind === "interrupted" || p.interrupted).length,
+    onLeave: Boolean(plan.onLeave),
+    phase: plan.phase,
+  };
 }
 
 export class DayPlanStore {
@@ -130,10 +182,30 @@ export class DayPlanStore {
     }
   }
 
+  /**
+   * Past days, oldest first. Falls back to whatever is in memory when there is
+   * no persistence — which is what the tests run against.
+   */
+  async history(actor: string, from: string, to: string): Promise<DaySummary[]> {
+    const persisted = this.persistence?.loadRange
+      ? await this.persistence.loadRange(actor, from, to)
+      : [];
+    const byDate = new Map(persisted.map((p) => [p.date, p]));
+    // Memory is newer than any snapshot, so it wins on a date held by both.
+    for (const plan of this.plans.values()) {
+      if (plan.actor !== actor) continue;
+      if (plan.date < from || plan.date > to) continue;
+      byDate.set(plan.date, plan);
+    }
+    return [...byDate.values()]
+      .sort((a, b) => a.date.localeCompare(b.date))
+      .map(summariseDay);
+  }
+
   streakFor(actor: ActorId): StreakRecord {
     let s = this.streaks.get(actor);
     if (!s) {
-      s = { clean: 0, bestClean: 0, finishedWithinTime: 0, dayPlanned: 0 };
+      s = { clean: 0, bestClean: 0, dayPlanned: 0 };
       this.streaks.set(actor, s);
     }
     return s;
@@ -151,5 +223,21 @@ export class DayPlanStore {
     if (!entry || entry.actuals.length === 0) return undefined;
     const avg = entry.actuals.reduce((a, b) => a + b, 0) / entry.actuals.length;
     return Math.round(avg);
+  }
+
+  /**
+   * Learned estimates for a specific set of records (appendix A5).
+   *
+   * Callers pass only the keys the actor may already see — the learning table
+   * is keyed by record, not by person, so handing back the whole map would
+   * disclose which records exist.
+   */
+  learnedFor(keys: string[]): Record<string, number> {
+    const out: Record<string, number> = {};
+    for (const key of keys) {
+      const learned = this.learnedAdjustment(key);
+      if (learned !== undefined) out[key] = learned;
+    }
+    return out;
   }
 }

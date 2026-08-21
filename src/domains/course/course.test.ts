@@ -154,6 +154,77 @@ describe("findStaleCourses — 'waiting 8 days' detector", () => {
   });
 });
 
+describe("the completion figure keeps up with the record", () => {
+  /** Whatever `/courses` and the team view would show right now. */
+  async function completionOf(
+    deps: Awaited<ReturnType<typeof world>>["deps"],
+    courseId: string,
+  ): Promise<string | number | undefined> {
+    const figures = await deps.figures.forRecord("course", courseId, "Course completion");
+    return figures.at(-1)?.value;
+  }
+
+  it("restoring an old version restores the percentage with it", async () => {
+    const { spine, deps } = await world();
+    const before = await completionOf(deps, "ai-presentations");
+    expect(before).toBe(60);
+
+    const course = (await deps.graph.getNode("course", "ai-presentations"))?.data as {
+      modules: Array<{ state: string }>;
+    };
+    for (let i = 0; i < course.modules.length; i += 1) {
+      await spine.submit(
+        adapters.fromForm({
+          actor: "james",
+          name: "course.setModuleState",
+          args: { courseId: "ai-presentations", moduleIndex: i, state: "published" },
+        }),
+      );
+    }
+    expect(await completionOf(deps, "ai-presentations")).toBe(100);
+
+    const versions = await readVersions(deps.graph, "ai-presentations");
+    const restore = await spine.submit(
+      adapters.fromForm({
+        actor: "james",
+        name: "course.restoreVersion",
+        args: { courseId: "ai-presentations", version: versions[0].version },
+      }),
+    );
+    expect(restore.status).toBe("ran");
+    // The record went back and the figure did not, so the course showed 100%
+    // against a version where it was not finished.
+    expect(await completionOf(deps, "ai-presentations")).toBe(before);
+  });
+
+  it("moving a stage refreshes the figure rather than leaving it behind", async () => {
+    const { spine, deps } = await world();
+    const courseId = "spreadsheet-automation";
+
+    // Change the modules behind the figure's back, the way a restore or a
+    // direct record edit does. Nothing has recomputed anything at this point.
+    const course = (await deps.graph.getNode("course", courseId))?.data as {
+      modules: Array<{ name: string; state: string }>;
+    };
+    await deps.graph.patchNode("course", courseId, {
+      modules: course.modules.map((m) => ({ ...m, state: "published" })),
+    });
+
+    const moved = await spine.submit(
+      adapters.fromForm({
+        actor: "james",
+        name: "course.updateStage",
+        args: { courseId, stage: "draft" },
+      }),
+    );
+    expect(moved.status).toBe("ran");
+
+    // Only `setModuleState` used to recompute, so the stage moved and the
+    // percentage stayed describing modules that had already changed.
+    expect(await completionOf(deps, courseId)).toBe(100);
+  });
+});
+
 describe("CourseService — team-progress aggregate + deck", () => {
   it("lists every course with completion + stale flag", async () => {
     const { deps } = await world();

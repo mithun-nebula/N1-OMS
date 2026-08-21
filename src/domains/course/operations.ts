@@ -23,6 +23,7 @@ async function readCourse(graph: RecordStore, courseId: string): Promise<CourseD
 
 export function courseUpdateStageHandler(
   graph: RecordStore,
+  figures: FigureStore,
 ): OperationHandler<{ courseId: string; stage: string }> {
   return {
     name: "course.updateStage",
@@ -65,6 +66,17 @@ export function courseUpdateStageHandler(
         stageEnteredAt: ctx.now(),
       });
       await snapshotCourse(graph, args.courseId, ctx.actor, `stage → ${stage}`);
+      // Only `course.setModuleState` recomputed the figure, so a course that
+      // moved through the pipeline without a module ever being touched showed
+      // no completion at all — and any figure it did have kept a `computedAt`
+      // from whenever a module last changed.
+      if (before) {
+        await recomputeCompletion(figures, {
+          id: args.courseId,
+          title: before.title,
+          modules: before.modules ?? [],
+        });
+      }
       const result: OperationResult = {
         changes: [
           {
@@ -79,6 +91,9 @@ export function courseUpdateStageHandler(
           revert: async () => {
             if (before) await graph.putNode("course", args.courseId, before);
           },
+          plan: before
+            ? [{ op: "put", nodeType: "course", nodeId: args.courseId, data: before }]
+            : undefined,
         },
         publishedTo: [{ kind: "record", nodeType: "course", nodeId: args.courseId }],
       };
@@ -145,6 +160,10 @@ export function courseSetModuleStateHandler(
               modules: before.modules,
             });
           },
+          // The record goes back; the figure is recomputed from it on the next
+          // module change or stage move. A plan cannot call `recomputeCompletion`,
+          // so the closure stays the richer path while the process lives.
+          plan: [{ op: "put", nodeType: "course", nodeId: args.courseId, data: before }],
         },
         publishedTo: [{ kind: "record", nodeType: "course", nodeId: args.courseId }],
         response: { completion: figure.value },
@@ -179,6 +198,8 @@ export function courseSetProgressNoteHandler(
     ],
     involvesMoneyOrPeople: () => false,
     execute: async (args, ctx) => {
+      const before = await readCourse(graph, args.courseId);
+      const previousNote = (before as { progressNote?: unknown } | undefined)?.progressNote;
       await graph.patchNode("course", args.courseId, {
         progressNote: { text: args.note, at: ctx.now(), by: ctx.actor },
       });
@@ -190,6 +211,19 @@ export function courseSetProgressNoteHandler(
             after: { progressNote: args.note },
           },
         ],
+        undo: {
+          description: `Restore the previous progress note on ${args.courseId}.`,
+          revert: async () => {
+            await graph.patchNode("course", args.courseId, { progressNote: previousNote });
+          },
+          // `put` of the whole record, not a `patch` of the one field. The plan
+          // is persisted as JSONB, and `JSON.stringify({progressNote: undefined})`
+          // is `{}` — so on the *first* note a course ever received, the patch
+          // replayed as a no-op and the note could not be undone after a restart.
+          plan: before
+            ? [{ op: "put", nodeType: "course", nodeId: args.courseId, data: before }]
+            : undefined,
+        },
         publishedTo: [{ kind: "record", nodeType: "course", nodeId: args.courseId }],
       };
     },
@@ -223,7 +257,8 @@ export function courseAssignStageOwnerHandler(
     involvesMoneyOrPeople: () => false,
     execute: async (args) => {
       const before = await readCourse(graph, args.courseId);
-      const stageOwners = { ...(before?.stageOwners ?? {}), [normalizeStage(args.stage)]: args.owner };
+      const previousOwners = { ...(before?.stageOwners ?? {}) };
+      const stageOwners = { ...previousOwners, [normalizeStage(args.stage)]: args.owner };
       await graph.patchNode("course", args.courseId, { stageOwners });
       return {
         changes: [
@@ -233,6 +268,20 @@ export function courseAssignStageOwnerHandler(
             after: { stageOwner: { stage: args.stage, owner: args.owner } },
           },
         ],
+        undo: {
+          description: `Put the ${args.stage} owner on ${args.courseId} back as it was.`,
+          revert: async () => {
+            await graph.patchNode("course", args.courseId, { stageOwners: previousOwners });
+          },
+          plan: [
+            {
+              op: "patch",
+              nodeType: "course",
+              nodeId: args.courseId,
+              data: { stageOwners: previousOwners },
+            },
+          ],
+        },
         publishedTo: [{ kind: "actor", actor: args.owner }],
       };
     },
@@ -241,6 +290,7 @@ export function courseAssignStageOwnerHandler(
 
 export function courseRestoreVersionHandler(
   graph: RecordStore,
+  figures: FigureStore,
 ): OperationHandler<{ courseId: string; version: number }> {
   return {
     name: "course.restoreVersion",
@@ -264,8 +314,17 @@ export function courseRestoreVersionHandler(
         throw new Error(`No version ${args.version} for ${args.courseId}`);
       }
       const before = await readCourse(graph, args.courseId);
-      await graph.putNode("course", args.courseId, { ...target.snapshot });
+      const restored = { ...target.snapshot } as CourseData;
+      await graph.putNode("course", args.courseId, restored);
       await snapshotCourse(graph, args.courseId, ctx.actor, `restored v${args.version}`);
+      // A restore replaces the whole record, modules included, so the
+      // completion figure describes a version that is no longer there. Nothing
+      // recomputed it, and the stale percentage stayed on screen.
+      await recomputeCompletion(figures, {
+        id: args.courseId,
+        title: restored.title ?? args.courseId,
+        modules: restored.modules ?? [],
+      });
       return {
         changes: [
           {
@@ -278,8 +337,20 @@ export function courseRestoreVersionHandler(
         undo: {
           description: `Undo restore of ${args.courseId} from v${args.version}.`,
           revert: async () => {
-            if (before) await graph.putNode("course", args.courseId, before);
+            if (!before) return;
+            await graph.putNode("course", args.courseId, before);
+            await recomputeCompletion(figures, {
+              id: args.courseId,
+              title: before.title,
+              modules: before.modules ?? [],
+            });
           },
+          // This one matters most: a restore replaces the entire record, it is
+          // offered from `/courses`, and without a plan it became irreversible
+          // the moment the process restarted.
+          plan: before
+            ? [{ op: "put", nodeType: "course", nodeId: args.courseId, data: before }]
+            : undefined,
         },
         publishedTo: [{ kind: "record", nodeType: "course", nodeId: args.courseId }],
       };

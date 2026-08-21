@@ -38,7 +38,6 @@ export function LeaveClient({
   peopleForSelect,
 }: {
   currentUserId: string;
-  currentUserName: string;
   myBalance?: number;
   myHistory: LeaveEntry[];
   pendingForApproval: PendingLeave[];

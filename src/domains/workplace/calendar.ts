@@ -70,6 +70,9 @@ export function calendarCreateHandler(
         undo: {
           description: `Cancel calendar entry ${id}.`,
           revert: async () => { await graph.removeNode("calendar-entry", id); },
+          // Serialisable, so undo still works after a restart — the closure
+          // above dies with the process (registry.ts, `UndoInfo.plan`).
+          plan: [{ op: "remove", nodeType: "calendar-entry", nodeId: id }],
         },
         response: { entryId: id, picks },
       });
@@ -124,6 +127,9 @@ export function calendarEditHandler(
         undo: {
           description: `Revert calendar entry ${args.entryId}.`,
           revert: async () => { await graph.putNode("calendar-entry", args.entryId, before); },
+          // Serialisable, so undo still works after a restart — the closure
+          // above dies with the process (registry.ts, `UndoInfo.plan`).
+          plan: [{ op: "put", nodeType: "calendar-entry", nodeId: args.entryId, data: before }],
         },
       });
     },
@@ -162,6 +168,9 @@ export function calendarAddPeopleHandler(
         undo: {
           description: `Remove added people from ${args.entryId}.`,
           revert: async () => { await graph.putNode("calendar-entry", args.entryId, before); },
+          // Serialisable, so undo still works after a restart — the closure
+          // above dies with the process (registry.ts, `UndoInfo.plan`).
+          plan: [{ op: "put", nodeType: "calendar-entry", nodeId: args.entryId, data: before }],
         },
         response: { picks: added, resolvedFrom: note, addedBy: ctx.actor },
       });
@@ -203,6 +212,9 @@ export function calendarRemovePeopleHandler(
         undo: {
           description: `Restore removed people to ${args.entryId}.`,
           revert: async () => { await graph.putNode("calendar-entry", args.entryId, before); },
+          // Serialisable, so undo still works after a restart — the closure
+          // above dies with the process (registry.ts, `UndoInfo.plan`).
+          plan: [{ op: "put", nodeType: "calendar-entry", nodeId: args.entryId, data: before }],
         },
         response: { removed, removedBy: ctx.actor },
       });
@@ -235,6 +247,9 @@ export function calendarCancelHandler(
         undo: {
           description: `Un-cancel ${args.entryId}.`,
           revert: async () => { await graph.putNode("calendar-entry", args.entryId, before); },
+          // Serialisable, so undo still works after a restart — the closure
+          // above dies with the process (registry.ts, `UndoInfo.plan`).
+          plan: [{ op: "put", nodeType: "calendar-entry", nodeId: args.entryId, data: before }],
         },
       });
     },

@@ -19,7 +19,6 @@ export function UtilitiesClient({
   today,
   history,
 }: {
-  actorId: string;
   remaining: number;
   today: string;
   history: Capture[];

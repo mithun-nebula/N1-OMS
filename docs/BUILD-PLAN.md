@@ -332,7 +332,7 @@ query returns; a stored figure opens into its components.
 - [x] Joining process: step-owner model (named owners, not a checklist) + overdue-step chase — `joining.start` / `joining.completeStep` (allowedActors grant) + `findOverdueSteps`
 - [x] Leaving process: outstanding-asset + outstanding-course handover detection — `leaving.start` (detects via graph traverse) + `leaving.completeHandover` (reassigns, recorded + undoable)
 - [x] Separation-date hook → stub for autonomy auto-suspend (Phase 6) — `leaving.applySeparation` (category `leaving-org`, sets `suspendedRules`; never auto-graduates)
-- [x] Payroll stays in N1; field-restricted, never exposed except via permission — `PeopleRecordService.listPaySlips` + `GET /api/people/[id]/payslips` (hr/admin/self only); pay 🔒 for everyone else
+- [x] Payroll stays in N1; field-restricted, never exposed except via permission; pay 🔒 for non-HR. **Payslip surfaces (listPaySlips, `/api/people/[id]/payslips`, /me + /payroll sections) removed 2026-08 — payslips are omitted from the app for now.**
 - [ ] Verify N1 background jobs (emails, payroll runs) process via the worker-drain Cloud Run Job within acceptable latency — GCP (Phase 0)
 - [x] Tests: restricted user cannot see pay; refusal does not hint existence — `src/server/rbac.test.ts` + `src/domains/people/*.test.ts`
 
@@ -414,7 +414,7 @@ with its reasoning.
 - [x] Repeat-fault detection ("three times this month") — `repeatFaults`
 - [x] Document storage: Supabase Storage / Cloud Storage, versioned, role-access metadata — `document.store` (versioned, role-access; **blob deferred** — metadata in-memory)
 - [x] Required-vs-supplied doc tracking + expiry raising ("insurance cert expires in 30 days") — `document.require` + `requiredVsSupplied` + `findExpiringDocuments`
-- [x] Announcements/policies: per-person acknowledgement tracking + reminder drafting — `announcement.send/ack` + `nonAcknowledgers`
+- [x] Announcements/policies: per-person acknowledgement tracking — `announcement.send/ack` + `nonAcknowledgers`. **Superseded 2026-08: replaced by the messaging system (`/messages`, no ack tracking); `notify.send` remains for autonomy pings.**
 - [x] Tests: clash resolution; calendar notify+record+undo atomicity; link immutability — `src/domains/workplace/workplace.test.ts` (11 tests)
 
 **Exit:** book a room with a clash and have it resolved; create an online meeting with an

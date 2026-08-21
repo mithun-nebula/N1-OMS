@@ -90,7 +90,6 @@ export default async function LeavePage() {
       </header>
       <LeaveClient
         currentUserId={user.id}
-        currentUserName={user.displayName}
         myBalance={myBalance}
         myHistory={myHistory}
         pendingForApproval={pendingForApproval}

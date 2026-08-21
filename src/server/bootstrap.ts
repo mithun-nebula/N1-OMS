@@ -17,7 +17,9 @@ import {
   ownerOfRecordData,
 } from "@/domains/people/n1-classification";
 import { buildDemoPermissionPolicy } from "./policy";
-import { getQuestionLimiter } from "./limiter";
+import { configureQuestionLimiter } from "./limiter";
+import { localDate } from "@/domains/assistant/day-plan/time";
+import { PostgresNotificationStore } from "./store-pg-notifications";
 import { PostgresRecordStore } from "./store-pg-record";
 import { PostgresActivityLog } from "./store-pg-activity";
 import { PostgresFigureStore } from "./store-pg-figures";
@@ -81,7 +83,12 @@ export async function buildDemoWorld(): Promise<DemoWorld> {
   const graph: RecordStore = pool ? new PostgresRecordStore(pool) : new InMemoryRecordStore();
   const log: ActivityLog = pool ? new PostgresActivityLog(pool) : new InMemoryActivityLog();
   const figures: FigureStore = pool ? new PostgresFigureStore(pool) : new InMemoryFigureStore();
-  const bus = new PublishBus();
+  // Notifications and the question allowance are durable when a pool exists,
+  // like every other store here. Both used to be memory-only, so a restart
+  // wiped the bell and handed everyone a fresh two questions.
+  const bus = new PublishBus(pool ? new PostgresNotificationStore(pool) : undefined);
+  // Configuring hydrates: what has already been asked today comes back with it.
+  const limiter = await configureQuestionLimiter(pool, localDate());
   const registry = new OperationRegistry();
 
   // Durable accounts (hydrate from DB / seed defaults)
@@ -97,7 +104,7 @@ export async function buildDemoWorld(): Promise<DemoWorld> {
     bus,
     owners,
     teams,
-    limiter: getQuestionLimiter(),
+    limiter,
   };
 
   for (const domain of DOMAINS) {
@@ -157,6 +164,16 @@ async function hydrateOwners(owners: Map<string, ActorId>, graph: RecordStore): 
   for (const c of courses) {
     const owner = (c.data as { owner?: string }).owner;
     if (owner) owners.set(`course:${c.id}`, owner);
+  }
+  // Tasks are owned by their assignee (creator as fallback) — the self scope
+  // that lets an employee see and finish their own assigned work (and nobody
+  // else's) after a restart, while a manager's unassigned creations stay
+  // visible to the manager.
+  const tasks = await graph.find("task", () => true);
+  for (const t of tasks) {
+    const d = t.data as { assignedTo?: string; createdBy?: string };
+    const owner = d.assignedTo ?? d.createdBy;
+    if (owner) owners.set(`task:${t.id}`, owner);
   }
   // Person-scoped HR records: the owner travels in the record's own fields
   // (`employee` from N1, `employeeId` internally). Resolved here once so the

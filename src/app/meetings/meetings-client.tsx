@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { Icon } from "../ui/icons";
-import { AccentButton, AvatarStack, ChromeButton, Empty, inputCls, OpFeedback } from "../ui/kit";
+import { AccentButton, AvatarStack, ChromeButton, Empty, inputCls, Modal, OpFeedback } from "../ui/kit";
 import { useOperation } from "@/components/ops/use-operation";
 
 interface Meeting {
@@ -23,12 +23,19 @@ const KIND_STYLE: Record<string, { edge: string; pill: string }> = {
 };
 const KIND_DEFAULT = KIND_STYLE.online;
 
+interface DecisionLine {
+  text: string;
+  owner: string;
+  due: string;
+}
+
+const EMPTY_LINE: DecisionLine = { text: "", owner: "", due: "" };
+
 export function MeetingsClient({
   meetings,
   people,
 }: {
   meetings: Meeting[];
-  rooms: Array<{ id: string; name: string }>;
   people: Array<{ id: string; name: string }>;
 }) {
   const op = useOperation();
@@ -45,6 +52,8 @@ export function MeetingsClient({
   const [editForm, setEditForm] = useState({ title: "", from: "", to: "" });
   const [addingTo, setAddingTo] = useState<string | null>(null);
   const [addAttendee, setAddAttendee] = useState("");
+  const [decisionsFor, setDecisionsFor] = useState<Meeting | null>(null);
+  const [lines, setLines] = useState<DecisionLine[]>([{ ...EMPTY_LINE }]);
 
   function toggleAttendee(id: string) {
     setForm((f) => ({
@@ -79,6 +88,39 @@ export function MeetingsClient({
     const fromLocal = m.from ? new Date(m.from).toISOString().slice(0, 16) : "";
     const toLocal = m.to ? new Date(m.to).toISOString().slice(0, 16) : "";
     setEditForm({ title: m.title, from: fromLocal, to: toLocal });
+  }
+
+  function openDecisions(m: Meeting) {
+    setDecisionsFor(m);
+    setLines([{ ...EMPTY_LINE }]);
+  }
+
+  function setLine(i: number, patch: Partial<DecisionLine>) {
+    setLines((ls) => ls.map((l, j) => (j === i ? { ...l, ...patch } : l)));
+  }
+
+  const filledLines = lines.filter((l) => l.text.trim());
+  const dueNeedsOwner = filledLines.some((l) => l.due && !l.owner);
+
+  async function saveDecisions() {
+    if (!decisionsFor || filledLines.length === 0 || dueNeedsOwner) return;
+    // A line with a due date becomes an action item — the op requires an owner
+    // on actions, which is why the form insists on one. The rest are decisions.
+    const decisions = filledLines
+      .filter((l) => !l.due)
+      .map((l) => ({ text: l.text.trim(), owner: l.owner || undefined }));
+    const actions = filledLines
+      .filter((l) => l.due)
+      .map((l) => ({ text: l.text.trim(), owner: l.owner, due: l.due }));
+    const outcome = await op.run("meeting.recordDecisions", {
+      meetingId: decisionsFor.id,
+      decisions,
+      actions,
+    });
+    if (outcome.status === "ran") {
+      setDecisionsFor(null);
+      setLines([{ ...EMPTY_LINE }]);
+    }
   }
 
   async function saveEdit() {
@@ -179,6 +221,7 @@ export function MeetingsClient({
                         <span className={`ml-2 rounded-full px-2 py-0.5 text-[10px] font-bold ${s.pill}`}>{m.kind}</span>
                       </div>
                       <div className="flex shrink-0 gap-2.5 text-[11px] font-medium">
+                        <button onClick={() => openDecisions(m)} className="press text-accent-strong hover:underline">Record decisions</button>
                         <button onClick={() => startEdit(m)} className="press text-accent-strong hover:underline">Edit</button>
                         <button onClick={() => run("meeting.cancel", { meetingId: m.id })} disabled={busy} className="press text-danger hover:underline">
                           Cancel meeting
@@ -231,6 +274,77 @@ export function MeetingsClient({
             );
           })}
         </div>
+      )}
+      {decisionsFor && (
+        <Modal onClose={() => setDecisionsFor(null)} wide>
+          <div className="text-[15px] font-semibold text-ink">
+            Record decisions <span className="font-normal text-ink-soft">— {decisionsFor.title}</span>
+          </div>
+          <p className="mt-1 text-xs text-ink-faint">
+            Give a line a due date to make it an action item — action items need an owner.
+          </p>
+          <div className="mt-4 space-y-2.5">
+            {lines.map((l, i) => (
+              <div key={i} className="flex flex-wrap items-center gap-2">
+                <input
+                  value={l.text}
+                  onChange={(e) => setLine(i, { text: e.target.value })}
+                  placeholder="What was decided"
+                  className={`${inputCls} min-w-40 flex-1 py-2`}
+                />
+                <select
+                  value={l.owner}
+                  onChange={(e) => setLine(i, { owner: e.target.value })}
+                  className={inputCls}
+                >
+                  <option value="">No owner</option>
+                  {people.map((p) => (
+                    <option key={p.id} value={p.id}>{p.name}</option>
+                  ))}
+                </select>
+                <input
+                  type="date"
+                  value={l.due}
+                  onChange={(e) => setLine(i, { due: e.target.value })}
+                  className={inputCls}
+                />
+                {lines.length > 1 && (
+                  <button
+                    onClick={() => setLines((ls) => ls.filter((_, j) => j !== i))}
+                    className="press text-xs font-medium text-ink-faint hover:text-danger"
+                    aria-label="Remove line"
+                  >
+                    Remove
+                  </button>
+                )}
+              </div>
+            ))}
+          </div>
+          <div className="mt-3 flex flex-wrap items-center gap-3">
+            <button
+              onClick={() => setLines((ls) => [...ls, { ...EMPTY_LINE }])}
+              className="press text-xs font-medium text-accent-strong hover:underline"
+            >
+              + Add line
+            </button>
+            {dueNeedsOwner && (
+              <span className="text-[11px] font-medium text-danger">
+                A line with a due date needs an owner.
+              </span>
+            )}
+          </div>
+          <div className="mt-4 flex items-center gap-3">
+            <AccentButton
+              onClick={saveDecisions}
+              disabled={busy || filledLines.length === 0 || dueNeedsOwner}
+            >
+              {busy ? "Saving…" : "Save decisions"}
+            </AccentButton>
+            <button onClick={() => setDecisionsFor(null)} className="text-xs font-medium text-ink-faint hover:text-ink">
+              Close
+            </button>
+          </div>
+        </Modal>
       )}
       <OpFeedback
         error={op.error}

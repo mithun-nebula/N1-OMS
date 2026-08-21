@@ -55,7 +55,10 @@ describe("n1-doctypes registry — sensitivity", () => {
     expect(isSensitiveNodeType("payslip")).toBe(true);
     expect(isSensitiveNodeType("appraisal")).toBe(true);
     expect(isSensitiveNodeType("income-tax-slab")).toBe(true);
-    expect(isSensitiveNodeType("expense-claim")).toBe(true);
+    // expense-claim moved from sensitive to person-scoped: it is a personal
+    // record (own claim visible to self, team to manager, all to HR) so the
+    // self-service expense flow can exist. See n1-classification.ts.
+    expect(isSensitiveNodeType("expense-claim")).toBe(false);
     expect(isSensitiveNodeType("salary-structure")).toBe(true);
     expect(isSensitiveNodeType("leave-type")).toBe(false);
     expect(isSensitiveNodeType("job-applicant")).toBe(false);

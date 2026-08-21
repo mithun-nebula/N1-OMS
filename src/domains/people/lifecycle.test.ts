@@ -230,25 +230,12 @@ describe("leaving.applySeparation — auto-suspend hook (Phase 6 stub)", () => {
 });
 
 describe("payroll — stays in N1, field-restricted", () => {
-  it("pay slip read-through returns nothing in stub mode (data lives in N1)", async () => {
-    const { deps } = await world();
-    const { PeopleRecordService } = await import("./service");
-    const service = new PeopleRecordService(deps.graph, {
-      id: "stub",
-      async get() {
-        return undefined;
-      },
-      async list() {
-        return [];
-      },
-      async create() {
-        throw new Error("stub");
-      },
-      async update() {
-        throw new Error("stub");
-      },
-    });
-    const payslips = await service.listPaySlips("meena");
-    expect(payslips).toEqual([]);
+  // Payslips are omitted from the application for now (product call, 2026-08):
+  // no listPaySlips read-through, no UI surface. The permission rules that
+  // keep pay restricted are covered in n1-readthrough.test.ts and still hold.
+  it("an employee cannot open a payslip record (opaque refusal)", async () => {
+    const { spine } = await world();
+    const read = await spine.read({ actor: "priya", nodeType: "payslip", nodeId: "payslip-demo" });
+    expect(read.found).toBe(false);
   });
 });

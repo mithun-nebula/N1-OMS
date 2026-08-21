@@ -166,12 +166,12 @@ describe("an earned right is scoped to the operation that earned it", () => {
    */
   it("a rule graduated for one operation cannot run another", async () => {
     const { deps, autonomy } = await buildDemoWorld();
-    autonomy.declare("announce-rule", "shruti", "announcement.send");
+    autonomy.declare("announce-rule", "shruti", "notify.send");
     const state = autonomy.get("announce-rule")!;
     state.status = "graduated";
     autonomy.set(state);
 
-    expect(deps.autonomy.hasEarnedRight("announce-rule", "announcement.send")).toBe(true);
+    expect(deps.autonomy.hasEarnedRight("announce-rule", "notify.send")).toBe(true);
     expect(deps.autonomy.hasEarnedRight("announce-rule", "record.update")).toBe(false);
     expect(deps.autonomy.hasEarnedRight("announce-rule", "task.create")).toBe(false);
   });
@@ -496,6 +496,36 @@ describe("person-scoping: nobody browses a colleague's day", () => {
     expect(stranger.found).toBe(false);
   });
 
+  it("person-scopes expense claims: self sees their own, a stranger none, HR all", async () => {
+    // expense-claim moved from `sensitive` (HR/admin only — every employee saw
+    // empty tables) to person-scoped: your own claim is yours to see, your
+    // manager sees the team's, HR sees the organisation's.
+    const { spine } = await buildDemoWorld();
+    let req = await spine.submit(
+      adapters.fromForm({
+        actor: "priya",
+        name: "expense.claim",
+        args: { employeeId: "priya", amount: 1800, category: "Food", description: "Team lunch", date: "2026-08-12" },
+      }),
+    );
+    if (req.status === "awaiting-confirmation") {
+      req = await spine.confirm(req.pendingId as string, "priya");
+    }
+    expect(req.status).toBe("ran");
+    const claimId = (req.result?.response as { claimId?: string })?.claimId as string;
+    expect(claimId).toBeTruthy();
+
+    const asOwner = await spine.readMany({ actor: "priya", nodeType: "expense-claim" });
+    expect(asOwner.map((r) => r.nodeId)).toContain(claimId);
+
+    // ravi is an intern on another team — none of priya's claims for him.
+    const asStranger = await spine.readMany({ actor: "ravi", nodeType: "expense-claim" });
+    expect(asStranger.map((r) => r.nodeId)).not.toContain(claimId);
+
+    const asHr = await spine.readMany({ actor: "shruti", nodeType: "expense-claim" });
+    expect(asHr.map((r) => r.nodeId)).toContain(claimId);
+  });
+
   it("a fresh leave request is visible to its owner without a restart", async () => {
     const { spine } = await buildDemoWorld();
     const req = await spine.submit(
@@ -550,26 +580,20 @@ describe("the open-node bypass is one type wide, not twelve", () => {
     expect(attack.status).toBe("forbidden");
   });
 
-  it("an employee still acknowledges an announcement (function preserved)", async () => {
+  it("anyone — intern included — can put a line in someone's bell (notify.send)", async () => {
+    // Announcements were replaced by chat; notify.send is what remained for
+    // autonomy rules and quick pings. It writes nothing and is open to all.
     const { spine, deps } = await buildDemoWorld();
     const sent = await spine.submit(
       adapters.fromForm({
-        actor: "james",
-        name: "announcement.send",
+        actor: "ravi",
+        name: "notify.send",
         args: { message: "Fire drill on Friday", to: ["priya"] },
       }),
     );
     expect(sent.status).toBe("ran");
-    const all = await deps.graph.find("announcement", () => true);
-    expect(all.length).toBeGreaterThan(0);
-    const ok = await spine.submit(
-      adapters.fromForm({
-        actor: "priya",
-        name: "announcement.ack",
-        args: { announcementId: all[0].id },
-      }),
-    );
-    expect(ok.status).toBe("ran");
+    const delivered = deps.bus.forActor("priya");
+    expect(delivered.some((n) => n.message.includes("Fire drill"))).toBe(true);
   });
 
   it("the common calendar stays open to an employee", async () => {
@@ -582,5 +606,111 @@ describe("the open-node bypass is one type wide, not twelve", () => {
       }),
     );
     expect(ok.status).toBe("ran");
+  });
+});
+
+describe("tasks are top-down and person-scoped", () => {
+  it("an employee cannot create a task at all", async () => {
+    const { spine } = await buildDemoWorld();
+    const attack = await spine.submit(
+      adapters.fromForm({ actor: "priya", name: "task.create", args: { title: "self-made work" } }),
+    );
+    expect(attack.status).toBe("forbidden");
+  });
+
+  it("an employee finishes their own assigned task, not a colleague's", async () => {
+    const { spine } = await buildDemoWorld();
+    const mine = await spine.submit(
+      adapters.fromForm({ actor: "james", name: "task.create", args: { title: "Priya's share", assignedTo: "priya" } }),
+    );
+    const theirs = await spine.submit(
+      adapters.fromForm({ actor: "james", name: "task.create", args: { title: "Arun's share", assignedTo: "arun" } }),
+    );
+    const myId = (mine.result?.response as { taskId: string }).taskId;
+    const theirId = (theirs.result?.response as { taskId: string }).taskId;
+
+    const attack = await spine.submit(
+      adapters.fromForm({ actor: "priya", name: "task.complete", args: { taskId: theirId } }),
+    );
+    expect(attack.status).toBe("forbidden");
+
+    const ok = await spine.submit(
+      adapters.fromForm({ actor: "priya", name: "task.complete", args: { taskId: myId } }),
+    );
+    expect(ok.status).toBe("ran");
+  });
+
+  it("an employee updates status only — rewriting their own task is refused", async () => {
+    const { spine } = await buildDemoWorld();
+    const created = await spine.submit(
+      adapters.fromForm({ actor: "james", name: "task.create", args: { title: "As handed out", assignedTo: "priya" } }),
+    );
+    const taskId = (created.result?.response as { taskId: string }).taskId;
+    const attack = await spine.submit(
+      adapters.fromForm({ actor: "priya", name: "task.edit", args: { taskId, title: "Rewritten by me" } }),
+    );
+    expect(attack.status).toBe("forbidden");
+  });
+
+  it("each role gets its own board: self / own-team / all", async () => {
+    const { spine } = await buildDemoWorld();
+    await spine.submit(
+      adapters.fromForm({ actor: "james", name: "task.create", args: { title: "For priya", assignedTo: "priya" } }),
+    );
+    // A manager's unassigned creation must not vanish from their own board —
+    // ownership falls back to the creator.
+    await spine.submit(
+      adapters.fromForm({ actor: "james", name: "task.create", args: { title: "Still unassigned" } }),
+    );
+
+    const titleOf = (r: { record: Record<string, unknown> }) => String(r.record.title ?? "");
+    const priyaBoard = (await spine.readMany({ actor: "priya", nodeType: "task" })).map(titleOf);
+    expect(priyaBoard).toContain("For priya");
+    expect(priyaBoard).not.toContain("Still unassigned");
+    expect(priyaBoard.every((t) => t !== "Still unassigned")).toBe(true);
+
+    const jamesBoard = (await spine.readMany({ actor: "james", nodeType: "task" })).map(titleOf);
+    expect(jamesBoard).toContain("For priya");
+    expect(jamesBoard).toContain("Still unassigned");
+
+    const hrBoard = (await spine.readMany({ actor: "shruti", nodeType: "task" })).map(titleOf);
+    expect(hrBoard).toContain("For priya");
+    expect(hrBoard).toContain("Still unassigned");
+  });
+});
+
+describe("courses are managed from above, worked from below", () => {
+  it("an employee cannot create a course; a manager can", async () => {
+    const { spine } = await buildDemoWorld();
+    const attack = await spine.submit(
+      adapters.fromForm({ actor: "priya", name: "course.create", args: { title: "Self-serve course" } }),
+    );
+    expect(attack.status).toBe("forbidden");
+
+    const ok = await spine.submit(
+      adapters.fromForm({ actor: "james", name: "course.create", args: { title: "Prompt Writing" } }),
+    );
+    expect(ok.status).toBe("ran");
+  });
+
+  it("delete is admin-level: manager refused, admin succeeds and can undo", async () => {
+    const { spine, deps } = await buildDemoWorld();
+    const created = await spine.submit(
+      adapters.fromForm({ actor: "james", name: "course.create", args: { title: "Short-lived" } }),
+    );
+    const courseId = (created.result?.response as { courseId: string }).courseId;
+
+    const attack = await spine.submit(
+      adapters.fromForm({ actor: "james", name: "course.delete", args: { courseId } }),
+    );
+    expect(attack.status).toBe("forbidden");
+
+    const del = await spine.submit(
+      adapters.fromForm({ actor: "admin", name: "course.delete", args: { courseId } }),
+    );
+    expect(del.status).toBe("ran");
+    expect(await deps.graph.getNode("course", courseId)).toBeUndefined();
+    expect((await spine.undo(del.activityEntry!.id, "admin")).status).toBe("undone");
+    expect(await deps.graph.getNode("course", courseId)).toBeDefined();
   });
 });

@@ -13,17 +13,34 @@ export default async function TasksPage() {
   const { deps } = await getWorld();
   const spine = await getSpine();
 
-  const tasks = (await deps.graph.find("task", () => true)).map((n) => {
-    const d = n.data as Record<string, unknown>;
+  // Course titles for the linked-task chips ("Work on <course>").
+  const courseTitles = new Map(
+    (await deps.graph.find("course", () => true)).map((c) => [
+      c.id,
+      String((c.data as { title?: string }).title ?? c.id),
+    ]),
+  );
+
+  // Through the gate, so each role gets its own board: an employee sees only
+  // their tasks, a manager their team's, hr/admin everything. A raw graph
+  // read here would show every task to everyone regardless of the policy.
+  const tasks = (
+    await spine.readMany({ actor: user.id, nodeType: "task" })
+  ).map(({ nodeId, record }) => {
+    const d = record as Record<string, unknown>;
+    const courseId = d.courseId ? String(d.courseId) : undefined;
     return {
-      id: n.id,
-      title: String(d.title ?? n.id),
+      id: nodeId,
+      title: String(d.title ?? nodeId),
       assignedTo: d.assignedTo ? String(d.assignedTo) : undefined,
       status: String(d.status ?? "todo"),
       priority: String(d.priority ?? "medium"),
       dueDate: d.dueDate ? String(d.dueDate) : undefined,
       projectId: d.projectId ? String(d.projectId) : undefined,
       description: d.description ? String(d.description) : undefined,
+      estimateMinutes: typeof d.estimateMinutes === "number" ? d.estimateMinutes : undefined,
+      courseId,
+      courseTitle: courseId ? courseTitles.get(courseId) : undefined,
     };
   });
 

@@ -3,7 +3,7 @@
 > Working notes. Everything decided, built or discovered in the current round of
 > work, with enough detail to pick up from cold.
 >
-> Last updated: 2026-08-13
+> Last updated: 2026-08-19
 
 ---
 
@@ -14,7 +14,7 @@
 | **Database** | Live Supabase Postgres (`ap-southeast-2`), transaction pooler on 6543 |
 | **Demo data** | Off — real people only |
 | **Accounts** | `admin` (super-admin) · `ananya` (HR) · `rohit` (employee) |
-| **Tests** | 214 passing, 11 skipped |
+| **Tests** | 305 passing, 13 skipped |
 | **Build** | Clean — lint, typecheck, production build |
 | **Blocks done** | 0 (integrity) · 4 (UI components) · 1 (employee records) · Phase 0 security |
 | **Blocks skipped** | 2 (departments) — reporting lines already work through the directory |
@@ -30,9 +30,14 @@ most of it undoable.
 
 ### What does not exist yet
 
-Attendance (nobody can clock in) · a general approval flow (only leave can be
-approved) · real file upload · the day-plan screen · notifications that survive
-a restart · role-specific dashboards.
+A general approval flow (only leave can be approved) · real file upload ·
+role-specific dashboards · **any LLM at all** — `ORG_LLM_PROVIDER=stub`, the
+assistant is regex routing over hard-coded specialist strings, and
+`autonomy/compiler.ts` matches exactly one sentence shape.
+
+> Attendance, the day-plan screen and durable notifications all landed since
+> this list was written. See **STATUS.md → Recently built (2026-08-18)** for
+> the productivity-path repair that preceded the agent work.
 
 ---
 
@@ -379,8 +384,15 @@ assets.
 - **Change the admin password** — currently `RealAdminPass2026`, also in chat
 - A **second database for tests** — `npm run test:db` deletes every row, and
   pointed at the real one it would wipe it
-- `docs/STATUS.md` marks all thirteen non-negotiables as holding. **Eight are
-  false.** Correct it before anyone plans from it.
+- ~~`docs/STATUS.md` marks all thirteen non-negotiables as holding. **Eight are
+  false.** Correct it before anyone plans from it.~~ **Done 2026-08-19.** Audited
+  against the code rather than from memory; the "eight" was itself stale. Result:
+  9 hold, 3 partial, 1 not enforced — each with the gap and the file named. Four
+  were repaired in the same pass (`record.delete` could be deleted unattended by
+  a graduated rule; the brief could be skipped entirely; the two-a-day limit
+  capped answers rather than asks; calendar and `record.*` undo died on restart),
+  plus a genuine leak nobody had flagged: `/api/people/[id]/attendance` let any
+  employee read a colleague's full attendance history.
 - `docs/BUILD-PLAN.md` marks background execution as done. Nothing exists.
 
 ### Related documents

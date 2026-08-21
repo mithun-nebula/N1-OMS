@@ -17,15 +17,22 @@ export default async function DashboardPage() {
       return d.assignedTo === user.id && d.status !== "done";
     }))
     .map((n) => {
-      const d = n.data as { title: string; priority: string; dueDate?: string; projectId?: string };
-      return { id: n.id, title: d.title, priority: d.priority, dueDate: d.dueDate, projectId: d.projectId };
+      const d = n.data as {
+        title: string;
+        priority: string;
+        dueDate?: string;
+        projectId?: string;
+        estimateMinutes?: number;
+      };
+      return {
+        id: n.id,
+        title: d.title,
+        priority: d.priority,
+        dueDate: d.dueDate,
+        projectId: d.projectId,
+        estimateMinutes: d.estimateMinutes,
+      };
     });
-
-  const doneCount = (await deps.graph
-    .find("task", (n) => {
-      const d = n.data as { assignedTo?: string; status?: string };
-      return d.assignedTo === user.id && d.status === "done";
-    })).length;
 
   const myMeetings = (await deps.graph
     .find("meeting", (n) => {
@@ -75,10 +82,6 @@ export default async function DashboardPage() {
   const hrAttention = isHr
     ? {
         activeOnboardings: (await deps.graph.find("onboarding", (n) => (n.data as { status?: string }).status === "active")).length,
-        outstandingAcks: (await deps.graph.find("announcement", () => true)).reduce((sum, n) => {
-          const d = n.data as { audience?: string[]; acknowledged?: string[] };
-          return sum + (d.audience ?? []).filter((a) => !(d.acknowledged ?? []).includes(a)).length;
-        }, 0),
         expiringDocs: (await deps.graph.find("document", (n) => Boolean((n.data as { required?: boolean }).required))).length,
       }
     : null;
@@ -90,7 +93,6 @@ export default async function DashboardPage() {
         displayName={user.displayName}
         role={user.role}
         tasks={myTasks}
-        doneCount={doneCount}
         meetings={myMeetings}
         pendingApprovals={pendingApprovals}
         courseCount={courseCount}
