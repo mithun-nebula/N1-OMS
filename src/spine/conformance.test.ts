@@ -200,6 +200,15 @@ describe("write-conformance: operations only touch what they declared", () => {
     const ranOps = new Set<string>();
     /** Operations that offered an undo which would not survive a restart. */
     const undoGaps = new Set<string>();
+    /**
+     * Operations that ran and offered NO undo at all — a different and worse
+     * thing than an undo that dies on restart, and one the ratchet above does
+     * not look for: it only inspects operations that DID offer one.
+     *
+     * Phase 3's rule is "no undo, no tool". This is where that is enforced,
+     * because an operation nothing can reverse must not be handed to a model.
+     */
+    const noUndoAtAll = new Set<string>();
     for (const op of battery) {
       writes.length = 0;
       const args = typeof op.args === "function" ? op.args() : op.args;
@@ -231,6 +240,9 @@ describe("write-conformance: operations only touch what they declared", () => {
       if (entry?.undoDescription && !entry.undoPlan?.length) {
         undoGaps.add(op.name);
       }
+      if (!entry?.undoDescription) {
+        noUndoAtAll.add(op.name);
+      }
       const declared = await declaredFor((n) => registry.get(n), op.name, args);
       for (const w of writes) {
         if (!conforms(w, declared)) {
@@ -255,15 +267,51 @@ describe("write-conformance: operations only touch what they declared", () => {
      * yet. Clear these before anything does.
      */
     const KNOWN_UNDO_GAPS = new Set([
-      "employee.updateContact",
+      // `employee.updateContact` was here. Phase 3's Prompt 2 gave it a
+      // serialisable plan — it restores the employee record as it was, which is
+      // three lines and was the only thing standing between it and a tool.
       "expense.approve",
       "expense.claim",
       "joining.completeStep",
       "leave.approve",
       "leave.decline",
       "leaving.completeHandover",
-      "meeting.create",
+      // `meeting.create` was here. Phase 2.5 gave it a serialisable plan that
+      // covers the meeting, the calendar entry, the edge between them, the room
+      // booking, and any booking `displaceClash` moved out of the way.
     ]);
+    /**
+     * Operations with no undo whatsoever.
+     *
+     * A ratchet like the one above: it may shrink, never grow. Everything on it
+     * is a **read-shaped or terminal** verb where "undo" has no meaning —
+     * clocking out twice, closing an event that is already closed — rather than
+     * a change somebody might want back.
+     *
+     * ⚠ PHASE 3: NO UNDO, NO TOOL. Anything named here does not become a write
+     * tool. Adding one to the catalogue without first giving it an undo is the
+     * thing this list exists to make impossible to do by accident.
+     */
+    const KNOWN_NO_UNDO = new Set([
+      // The four HR flows that START something. All four are money/people, so
+      // they park under delegation AND propose under Phase 3's gate — a person
+      // submits them under their own hand, and "the agent ran something it
+      // cannot reverse" never arises. Giving a half-begun joining or separation
+      // an undo is a real HR question, not a missing line of code.
+      "joining.start",
+      "leave.request",
+      "leaving.applySeparation",
+      "leaving.start",
+      // Writes no record at all — it puts a line in somebody's bell. A
+      // notification that has been read cannot be un-read, and pretending
+      // otherwise would be the dishonest kind of undo.
+      "notify.send",
+    ]);
+    expect(
+      [...noUndoAtAll].filter((n) => !KNOWN_NO_UNDO.has(n)),
+      "An operation ran and offered no undo at all. Phase 3's rule is: no undo, no tool.",
+    ).toEqual([]);
+
     const newGaps = [...undoGaps].filter((n) => !KNOWN_UNDO_GAPS.has(n)).sort();
     expect(
       newGaps,

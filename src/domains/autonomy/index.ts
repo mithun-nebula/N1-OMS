@@ -11,4 +11,12 @@ export const autonomyDomain: DomainModule = {
 
 export { AutonomyStore } from "./store";
 export { AutonomyEngine } from "./engine";
-export { compileRule, type CompiledRule } from "./compiler";
+// `compileRule` and its regex are GONE (Phase 4). It understood exactly one
+// sentence shape and returned null for everything else — and a rule that
+// silently fails to exist is worse than one that refuses out loud.
+export { authorRule, fillFormOffline, type AuthorOutcome } from "./author";
+export { evaluateSpec } from "./interpret";
+export { describeSpec, describeWhen, RULE_EMITTABLE_OPERATIONS } from "./spec";
+export type { RuleSpec, RuleWhen, RuleDo, Finding } from "./spec";
+export { FiredKeyStore, type FiredKeys } from "./fired";
+export { stopAllRules, resumeAllRules, rulesAreStopped } from "./engine";

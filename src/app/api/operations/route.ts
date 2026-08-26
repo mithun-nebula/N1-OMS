@@ -1,7 +1,13 @@
 import { NextResponse } from "next/server";
 import { getActingUser } from "@/server/session-guard";
-import { getDayPlanService, getSpine, getWorld } from "@/server/runtime";
+import {
+  getAutonomyEngine,
+  getDayPlanService,
+  getSpine,
+  getWorld,
+} from "@/server/runtime";
 import { applyDayPlanReactions } from "@/domains/assistant/day-plan/reactions";
+import { applyAutonomyReactions } from "@/domains/autonomy/reactions";
 import * as adapters from "@/spine/adapters";
 import {
   isApplicationStart,
@@ -83,6 +89,12 @@ export async function POST(request: Request) {
     await applyDayPlanReactions(op.name, op.args, {
       service: await getDayPlanService(),
       graph: (await getWorld()).deps.graph,
+    });
+    // A rule never outlives its owner (§13 #4). This is the path a person
+    // takes: the gate only ever parks a *delegated* operation, so HR
+    // deactivating somebody through the form arrives here, not at confirm.
+    await applyAutonomyReactions(op.name, op.args, {
+      engine: await getAutonomyEngine(),
     });
   }
   const status =

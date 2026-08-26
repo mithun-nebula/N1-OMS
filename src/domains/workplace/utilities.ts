@@ -51,6 +51,13 @@ export function utilityCaptureHandler(
       return {
         changes: [{ nodeType: "utility-capture", nodeId: id, after: data }],
         publishedTo: [{ kind: "broadcast" }],
+        // A mistyped meter reading is the most ordinary mistake there is, and
+        // this had no undo at all. A create, so the undo is a delete.
+        undo: {
+          description: `Remove reading ${id}.`,
+          revert: async () => { await graph.removeNode("utility-capture", id); },
+          plan: [{ op: "remove", nodeType: "utility-capture", nodeId: id }],
+        },
         response: { captured: true, id },
       };
     },

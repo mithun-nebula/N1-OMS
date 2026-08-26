@@ -3,6 +3,13 @@ import type { ActorId, NodeId } from "@/spine/operation/types";
 import type { RecordStore } from "@/spine/record/types";
 import { calendarResult } from "./shared/calendar-result";
 import { resolvePeople } from "./shared/resolve";
+import {
+  calendarCancelledMessage,
+  calendarCreatedMessage,
+  calendarEditedMessage,
+  calendarPeopleAddedMessage,
+  calendarPeopleRemovedMessage,
+} from "./shared/change-message";
 
 interface CalendarEntry {
   title: string;
@@ -17,10 +24,26 @@ interface CalendarEntry {
 }
 
 let entrySeq = 0;
-function nextEntryId(): string {
+/**
+ * Exported because `meeting.create` writes a calendar entry too. Ids come from
+ * one counter so a meeting-derived entry is indistinguishable from a hand-made
+ * one on the common calendar — which is the point of section 6.
+ */
+export function nextEntryId(): string {
   entrySeq += 1;
   return `cal_${Date.now().toString(36)}_${entrySeq}`;
 }
+
+/**
+ * The edge from a meeting to the calendar entry that shows it.
+ *
+ * ⚠ **An edge, not a merge.** Merging `meeting` into `calendar-entry` would
+ * drag meetings inside `OPEN_NODE_TYPES` (`server/policy.ts`), which is
+ * deliberately ONE type wide and is asserted to be by `security.test.ts`
+ * ("the open-node bypass is one type wide, not twelve"). Meetings keep their
+ * own permission rules; the calendar entry is a projection of them.
+ */
+export const SHOWN_ON_CALENDAR = "shown-on";
 
 async function readEntry(graph: RecordStore, id: string): Promise<CalendarEntry | undefined> {
   const node = await graph.getNode("calendar-entry", id);
@@ -64,9 +87,23 @@ export function calendarCreateHandler(
         people: picks,
       };
       await graph.putNode("calendar-entry", id, data);
+      // E5: what changed, and who changed it. Without this the spine falls back
+      // to summarizeChanges and delivers "calendar-entry:cal_x changed".
+      const message = calendarCreatedMessage({
+        actor: ctx.actor,
+        title: data.title,
+        kind: data.kind,
+        date: data.date,
+        from: data.from,
+        to: data.to,
+        people: picks,
+      });
       return calendarResult({
         changes: [{ nodeType: "calendar-entry", nodeId: id, after: data }],
-        notify: [{ kind: "actor", actor: ctx.actor }, ...picks.map((a) => ({ kind: "actor" as const, actor: a }))],
+        notify: [
+          { kind: "actor", actor: ctx.actor, message },
+          ...picks.map((a) => ({ kind: "actor" as const, actor: a, message })),
+        ],
         undo: {
           description: `Cancel calendar entry ${id}.`,
           revert: async () => { await graph.removeNode("calendar-entry", id); },
@@ -114,6 +151,13 @@ export function calendarEditHandler(
         detail: args.detail ?? before.detail,
       };
       await graph.putNode("calendar-entry", args.entryId, updated);
+      // `editedBy` was already computed and then thrown into the activity
+      // record. E5 wants it in the sentence the person reads.
+      const message = calendarEditedMessage({
+        actor: ctx.actor,
+        before: { title: before.title, date: before.date, from: before.from, to: before.to },
+        after: { title: updated.title, date: updated.date, from: updated.from, to: updated.to },
+      });
       return calendarResult({
         changes: [
           {
@@ -123,7 +167,7 @@ export function calendarEditHandler(
             after: { title: updated.title, date: updated.date, editedBy: ctx.actor },
           },
         ],
-        notify: before.people.map((a) => ({ kind: "actor" as const, actor: a })),
+        notify: before.people.map((a) => ({ kind: "actor" as const, actor: a, message })),
         undo: {
           description: `Revert calendar entry ${args.entryId}.`,
           revert: async () => { await graph.putNode("calendar-entry", args.entryId, before); },
@@ -162,9 +206,18 @@ export function calendarAddPeopleHandler(
       const added = picks.filter((p) => !before.people.includes(p));
       const people = [...before.people, ...added];
       await graph.putNode("calendar-entry", args.entryId, { ...before, people });
+      // Only the added people are notified, so each of them reads the "added
+      // you" form rather than being told that somebody else joined.
+      const message = calendarPeopleAddedMessage({
+        actor: ctx.actor,
+        title: before.title,
+        added,
+        date: before.date,
+        forAddedPerson: true,
+      });
       return calendarResult({
         changes: [{ nodeType: "calendar-entry", nodeId: args.entryId, after: { added } }],
-        notify: added.map((a) => ({ kind: "actor" as const, actor: a })),
+        notify: added.map((a) => ({ kind: "actor" as const, actor: a, message })),
         undo: {
           description: `Remove added people from ${args.entryId}.`,
           revert: async () => { await graph.putNode("calendar-entry", args.entryId, before); },
@@ -203,11 +256,21 @@ export function calendarRemovePeopleHandler(
       const removed = before.people.filter((p) => args.people.includes(p));
       const people = before.people.filter((p) => !args.people.includes(p));
       await graph.putNode("calendar-entry", args.entryId, { ...before, people });
+      // E4: being dropped silently is the worst thing an open calendar can do,
+      // so the person removed is told, and told who removed them.
+      const message = calendarPeopleRemovedMessage({
+        actor: ctx.actor,
+        title: before.title,
+        removed,
+        date: before.date,
+        forRemovedPerson: true,
+      });
       return calendarResult({
         changes: [{ nodeType: "calendar-entry", nodeId: args.entryId, after: { removed } }],
         notify: removed.map((a) => ({
           kind: "actor" as const,
           actor: a,
+          message,
         })),
         undo: {
           description: `Restore removed people to ${args.entryId}.`,
@@ -241,9 +304,14 @@ export function calendarCancelHandler(
       const before = await readEntry(graph, args.entryId);
       if (!before) throw new Error(`No calendar entry ${args.entryId}`);
       await graph.putNode("calendar-entry", args.entryId, { ...before, cancelled: true });
+      const message = calendarCancelledMessage({
+        actor: ctx.actor,
+        title: before.title,
+        date: before.date,
+      });
       return calendarResult({
         changes: [{ nodeType: "calendar-entry", nodeId: args.entryId, after: { cancelled: true, cancelledBy: ctx.actor } }],
-        notify: before.people.map((a) => ({ kind: "actor" as const, actor: a })),
+        notify: before.people.map((a) => ({ kind: "actor" as const, actor: a, message })),
         undo: {
           description: `Un-cancel ${args.entryId}.`,
           revert: async () => { await graph.putNode("calendar-entry", args.entryId, before); },
@@ -258,8 +326,18 @@ export function calendarCancelHandler(
 
 export interface CalendarCell {
   date: string;
+  /** How many meetings fall on this day. `meetingEntries` is the detail. */
   meetings: number;
   events: Array<{ id: NodeId; title: string }>;
+  /**
+   * The meetings themselves, carrying the join link where there is one.
+   *
+   * E7 names the common calendar as one of the three places the link must be
+   * visible. Before section 6 a meeting never reached this view at all —
+   * `meeting` and `calendar-entry` were unrelated node types and
+   * `calendar-entry.kind === "meeting"` was a label, not a reference.
+   */
+  meetingEntries: Array<{ id: NodeId; title: string; link?: string }>;
 }
 
 export async function monthView(graph: RecordStore, year: number, month: number): Promise<CalendarCell[]> {
@@ -269,6 +347,7 @@ export async function monthView(graph: RecordStore, year: number, month: number)
     date: `${prefix}-${String(i + 1).padStart(2, "0")}`,
     meetings: 0,
     events: [],
+    meetingEntries: [],
   }));
   const entries = await graph.find("calendar-entry", () => true);
   for (const node of entries) {
@@ -276,8 +355,16 @@ export async function monthView(graph: RecordStore, year: number, month: number)
     if (d.cancelled || !d.date.startsWith(prefix)) continue;
     const day = Number(d.date.slice(8, 10));
     if (day < 1 || day > days) continue;
-    if (d.kind === "meeting") cells[day - 1].meetings += 1;
-    else cells[day - 1].events.push({ id: node.id, title: d.title });
+    if (d.kind === "meeting") {
+      cells[day - 1].meetings += 1;
+      cells[day - 1].meetingEntries.push({
+        id: node.id,
+        title: d.title,
+        // Present only for an online or `both` meeting. An in-person one gets
+        // no link field at all rather than an empty one.
+        link: typeof d.link === "string" ? d.link : undefined,
+      });
+    } else cells[day - 1].events.push({ id: node.id, title: d.title });
   }
   return cells;
 }

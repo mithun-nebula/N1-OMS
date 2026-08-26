@@ -50,10 +50,27 @@ export function restOfDayAtRisk(
   remaining: PlanItem[],
   asOf: string,
 ): boolean {
+  return firstAtRisk(item, remaining, asOf) !== undefined;
+}
+
+/**
+ * *Which* piece of later work this overrun has eaten into — the one A4 names
+ * in the offer: "your 12:00 session will not fit."
+ *
+ * `restOfDayAtRisk` is defined in terms of this so the live warning and the
+ * post-hoc question can never disagree about whether anything is at risk. The
+ * boolean came first; the live strip needed the item itself, and answering that
+ * with a second copy of the predicate is how the two drift apart.
+ */
+export function firstAtRisk(
+  item: PlanItem,
+  remaining: PlanItem[],
+  asOf: string,
+): PlanItem | undefined {
   const finishedAt = at(asOf);
   const itemStart = at(item.start);
-  if (!Number.isFinite(finishedAt)) return false;
-  return remaining.some((p) => {
+  if (!Number.isFinite(finishedAt)) return undefined;
+  return remaining.find((p) => {
     if (p.done || p.id === item.id) return false;
     const start = at(p.start);
     if (!Number.isFinite(start)) return false;

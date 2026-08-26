@@ -36,6 +36,7 @@ interface MeetingRecord {
   to?: string;
   attendees?: ActorId[];
   cancelled?: boolean;
+  link?: string;
 }
 
 interface CalendarRecord {
@@ -110,6 +111,9 @@ async function meetingChanged(
     title: record.title ?? asString(args.title) ?? "A meeting",
     start: from,
     end: to,
+    // A meeting that lands in the middle of somebody's day is exactly when they
+    // most need the link without going to look for it.
+    link: record.link,
   };
   // The local day the meeting falls on — a UTC slice files a late-evening
   // meeting under the wrong date for anyone east of Greenwich.

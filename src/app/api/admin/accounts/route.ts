@@ -72,6 +72,7 @@ export async function POST(request: Request) {
     displayName: body.displayName,
     role,
     team: body.team,
+    actor: user.id,
   });
 
   if (!result.ok) {

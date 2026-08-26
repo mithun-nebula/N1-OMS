@@ -38,6 +38,21 @@ export function equipmentReportFaultHandler(
       return {
         changes: [{ nodeType: "fault", nodeId: id, after: data }],
         publishedTo: [{ kind: "actor", actor: "shruti" }],
+        // A fault report had no undo at all, and a fault reported against the
+        // wrong item is an ordinary mistake — not something to leave standing.
+        // A create, so the undo is a delete. Also the edge, or the equipment
+        // keeps pointing at a fault that no longer exists.
+        undo: {
+          description: `Withdraw fault ${id}.`,
+          revert: async () => {
+            await graph.removeEdge(args.equipmentId, id, "reported-fault");
+            await graph.removeNode("fault", id);
+          },
+          plan: [
+            { op: "removeEdge", from: args.equipmentId, to: id, edgeType: "reported-fault" },
+            { op: "remove", nodeType: "fault", nodeId: id },
+          ],
+        },
         response: { faultId: id, repeatCountThisMonth: repeats.length },
       };
     },

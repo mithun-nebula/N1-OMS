@@ -2,7 +2,8 @@ import { describe, it, expect, beforeEach } from "vitest";
 import { buildDemoWorld, type DemoWorld } from "@/server/bootstrap";
 import * as adapters from "@/spine/adapters";
 import { AutonomyEngine } from "./engine";
-import { compileRule } from "./compiler";
+import { authorRule } from "./author";
+import type { RuleSpec } from "./spec";
 
 let world: DemoWorld;
 let engine: AutonomyEngine;
@@ -129,7 +130,12 @@ describe("auto-suspend on departure", () => {
 
 describe("standing instructions (08) — amber loop emits operations", () => {
   it("ticks + emits announcements for stale courses in review", async () => {
-    const rule = compileRule("if a course sits in review more than 8 days, tell me", "james", "stale-review");
+    const authored = await authorRule(
+      "tell me when a course sits in review more than 8 days",
+      "james",
+      "stale-review",
+    );
+    const rule = authored.ok ? (authored as { spec: RuleSpec }).spec : undefined;
     expect(rule).toBeTruthy();
     engine.registerRule(rule!);
     const result = await engine.tick("2026-08-08T23:59:59Z");
@@ -138,7 +144,14 @@ describe("standing instructions (08) — amber loop emits operations", () => {
 });
 
 describe("routine watcher (10) — offers, never auto", () => {
-  it("detects a hand-repeated routine and offers (status offered)", async () => {
+  /**
+   * Phase 4 tightened all three of these, and the old version of this test
+   * asserted the loose behaviour: four `notify.send` calls in one instant
+   * produced a suggestion. That is a batch of work, not a habit — and
+   * `notify.send` writes no record, so there is no subject to be habitual
+   * about.
+   */
+  it("does NOT offer a batch of work done in one afternoon", async () => {
     for (let i = 0; i < 4; i++) {
       await world.spine.submit(
         adapters.fromTyped({
@@ -149,8 +162,65 @@ describe("routine watcher (10) — offers, never auto", () => {
       );
     }
     const suggestions = await engine.detectRoutines();
-    const found = suggestions.find((s) => s.actor === "priya" && s.opName === "notify.send");
-    expect(found).toBeTruthy();
+    expect(
+      suggestions.find((s) => s.actor === "priya"),
+      "four things in one go is a busy afternoon, not a routine",
+    ).toBeUndefined();
+  });
+
+  it("offers the same work repeated across three separate weeks", async () => {
+    // The same action against the same subject — a task for Arun called
+    // "deck" — three weeks running. That is a habit.
+    for (const week of [0, 1, 2]) {
+      const at = new Date(Date.UTC(2026, 6, 6 + week * 7)).toISOString();
+      await world.deps.log.append({
+        id: `act_routine_${week}`,
+        operationId: `op_routine_${week}`,
+        operationName: "task.create",
+        actor: "priya",
+        authority: { kind: "self", actor: "priya" },
+        startedBy: { kind: "typed", at, actor: "priya" },
+        at,
+        changes: [
+          {
+            nodeType: "task",
+            nodeId: `task_r_${week}`,
+            after: { title: "deck", assignedTo: "arun" },
+          },
+        ],
+        outcome: "ran",
+      });
+    }
+    const suggestions = await engine.detectRoutines("2026-07-27T09:00:00.000Z");
+    const found = suggestions.find((s) => s.actor === "priya" && s.opName === "task.create");
+    expect(found, "the same work three weeks running is a routine").toBeTruthy();
     expect(found?.status).toBe("offered");
+  });
+
+  it("offers at most one suggestion a week", async () => {
+    // One bad suggestion teaches people to ignore all of them.
+    for (const week of [0, 1, 2]) {
+      const at = new Date(Date.UTC(2026, 6, 6 + week * 7)).toISOString();
+      for (const [n, who] of [["deck", "arun"], ["notes", "karthik"]] as const) {
+        await world.deps.log.append({
+          id: `act_two_${n}_${week}`,
+          operationId: `op_two_${n}_${week}`,
+          operationName: "task.create",
+          actor: "priya",
+          authority: { kind: "self", actor: "priya" },
+          startedBy: { kind: "typed", at, actor: "priya" },
+          at,
+          changes: [
+            { nodeType: "task", nodeId: `t_${n}_${week}`, after: { title: n, assignedTo: who } },
+          ],
+          outcome: "ran",
+        });
+      }
+    }
+    const first = await engine.detectRoutines("2026-07-27T09:00:00.000Z");
+    expect(first.length).toBe(1);
+    // Same week again — nothing new, however much there is to offer.
+    const second = await engine.detectRoutines("2026-07-28T09:00:00.000Z");
+    expect(second.length).toBe(1);
   });
 });

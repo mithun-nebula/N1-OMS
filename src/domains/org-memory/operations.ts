@@ -66,6 +66,28 @@ export function orgMemoryRecordHandler(
       const result: OperationResult = {
         changes: [{ nodeType: "org-memory", nodeId: id, after: data }],
         publishedTo: [{ kind: "broadcast" }],
+        // Recording a decision had no undo at all. It is broadcast to everyone,
+        // so a decision minuted against the wrong thing is exactly what somebody
+        // wants back. A create, so the undo is a delete — plus the reference
+        // edges, or the records it linked keep pointing at nothing.
+        undo: {
+          description: `Withdraw recorded decision ${id}.`,
+          revert: async () => {
+            for (const link of linked) {
+              await graph.removeEdge(id, link.nodeId, "references");
+            }
+            await graph.removeNode("org-memory", id);
+          },
+          plan: [
+            ...linked.map((link) => ({
+              op: "removeEdge" as const,
+              from: id,
+              to: link.nodeId,
+              edgeType: "references",
+            })),
+            { op: "remove" as const, nodeType: "org-memory", nodeId: id },
+          ],
+        },
         response: { memoryId: id },
       };
       return result;

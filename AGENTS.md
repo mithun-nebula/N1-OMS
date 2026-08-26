@@ -1,8 +1,19 @@
 # AGENTS.md — Organization A spine
 
+> ⚠ **`npm start` is `tsx server.ts --prod`, not `next start`.** Voice needs a
+> WebSocket upgrade, and a Next route handler never sees one, so `server.ts`
+> wraps Next and owns `/api/voice`. Started the old way, every screen works and
+> **voice silently disappears**.
+>
+> 📄 **Touching the UI, the app shell, `package.json` or `public/`? Read
+> `docs/VOICE-UI-CONTRACT.md` first** — five load-bearing pieces, all of which
+> fail with no error and a green test suite.
+
 ## Commands
 
-- `npm run dev` — Next.js dev server (App Router, Turbopack).
+- `npm run dev` — the custom server (`server.ts`) wrapping Next. **Not `next dev`.**
+- `npm run dev:next` — plain `next dev`. Faster for layout work, **no voice**.
+- `npm start` — production. **Not `next start`** — see below.
 - `npm run build` — production build.
 - `npm run lint` — ESLint (flat config).
 - `npm run typecheck` — `tsc --noEmit`.

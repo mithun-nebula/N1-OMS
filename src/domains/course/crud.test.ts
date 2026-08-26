@@ -108,3 +108,40 @@ describe("course.assign — each assignee gets their own linked task", () => {
     expect(attack.status).toBe("forbidden");
   });
 });
+
+describe("course.assign — a standing rule can never hand work to people unattended", () => {
+  it("parks a delegated assign for confirmation, and says why", async () => {
+    const { spine } = await world();
+    const created = await spine.submit(
+      adapters.fromForm({ actor: "james", name: "course.create", args: { title: "AI Basics" } }),
+    );
+    const courseId = (created.result?.response as { courseId: string }).courseId;
+
+    const res = await spine.submit(
+      adapters.fromStandingRule({
+        ruleId: "r1",
+        ruleAuthor: "james",
+        name: "course.assign",
+        args: { courseId, assignees: ["priya"] },
+      }),
+    );
+
+    expect(res.status).toBe("awaiting-confirmation");
+    // The reason, not just the status: an ungraduated rule parks as
+    // "not-earned" anyway, so only "never-graduate" proves the category is
+    // doing the work. A graduated rule would sail past "not-earned".
+    expect(res.reason).toBe("never-graduate");
+  });
+
+  it("a person filling in the form still needs no second confirmation", async () => {
+    const { spine } = await world();
+    const created = await spine.submit(
+      adapters.fromForm({ actor: "james", name: "course.create", args: { title: "By Hand" } }),
+    );
+    const courseId = (created.result?.response as { courseId: string }).courseId;
+    const byHand = await spine.submit(
+      adapters.fromForm({ actor: "james", name: "course.assign", args: { courseId, assignees: ["priya"] } }),
+    );
+    expect(byHand.status).toBe("ran");
+  });
+});

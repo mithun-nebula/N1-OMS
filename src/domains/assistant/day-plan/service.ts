@@ -4,12 +4,14 @@ import type { QuestionLimiter } from "@/domains/workplace/shared/limiter";
 import { generateBrief } from "../briefing";
 import {
   DayPlanStore,
+  isDropped,
+  shortfallOf,
   type DayPlan,
   type MeetingItem,
   type PlanItem,
 } from "./store";
 import { classifyMiss, restOfDayAtRisk } from "./miss-classifier";
-import { applyDayToStreak } from "./streak";
+import { applyDayToStreak, assessDay } from "./streak";
 import { DAY_MINUTES, byTime, dayWindowStart, localDateOf, overlaps, previousDay } from "./time";
 
 /*
@@ -28,6 +30,8 @@ import { DAY_MINUTES, byTime, dayWindowStart, localDateOf, overlaps, previousDay
  */
 function isMovable(item: PlanItem): boolean {
   if (item.done) return false;
+  // Dropped work holds no time in the day — it is neither placed nor anchored.
+  if (isDropped(item)) return false;
   if (item.autoScheduled === true) return true;
   if (item.autoScheduled === false) return false;
   return item.start === undefined;
@@ -62,6 +66,9 @@ function scheduleWork(plan: DayPlan): void {
 
   for (const m of plan.meetings) anchor(m.start, m.end);
   for (const p of plan.plan) {
+    // A dropped item must not go on reserving the slot it used to hold, or the
+    // rest of the day is laid out around work nobody is doing.
+    if (isDropped(p)) continue;
     if (!isMovable(p)) anchor(p.start, p.end);
   }
   fixed.sort((a, b) => a.start - b.start);
@@ -71,6 +78,7 @@ function scheduleWork(plan: DayPlan): void {
   let cursor = opensAt;
 
   for (const item of plan.plan) {
+    if (isDropped(item)) continue;
     if (!isMovable(item)) continue;
     const length = lengthOf(item);
     let start = Math.max(cursor, opensAt);
@@ -89,6 +97,77 @@ function scheduleWork(plan: DayPlan): void {
     fixed.sort((a, b) => a.start - b.start);
     cursor = end;
   }
+}
+
+/**
+ * What the day actually was — the thing close-out **tells** you.
+ *
+ * Every field is derived from the plan as it already stands. No new state is
+ * recorded to produce it, which is the point: the application is reporting what
+ * it knows rather than asking somebody to retype it.
+ */
+export interface CloseOutSummary {
+  committed: number;
+  done: number;
+  /** Minutes committed to, and minutes actually accounted for. */
+  committedMinutes: number;
+  workedMinutes: number;
+  dropped: number;
+  /** A9's shortfall — what was owed and not delivered. */
+  shortfallMinutes: number;
+  ranOver: Array<{ id: string; label: string; byMinutes: number }>;
+  /** Still open, and what each one is owed. Drives the three taps. */
+  unfinished: Array<{
+    id: string;
+    label: string;
+    estimateMinutes: number;
+    progressMinutes: number;
+    shortfallMinutes: number;
+    interrupted: boolean;
+  }>;
+  /** Already settled by the conversation — nothing left to ask about. */
+  answered: boolean;
+}
+
+/**
+ * How far back the morning brief looks for work still owed.
+ *
+ * A constant, deliberately, and not something the model is asked to judge. Two
+ * working weeks is long enough that nothing quietly falls off the end and short
+ * enough that a brief does not become an archive.
+ */
+export const LOOKBACK_DAYS = 14;
+
+/** One piece of work still owed, and how long it has been owed for. */
+export interface CarriedItem {
+  key: string;
+  label: string;
+  ref?: { nodeType: string; nodeId: string };
+  /** A9's remainder — what is left, not the whole estimate. */
+  minutesLeft: number;
+  estimateMinutes: number;
+  /** A3 — named as such, so the brief does not read as a reprimand. */
+  interrupted: boolean;
+  /**
+   * Working days this has been carried. 1 means "since yesterday".
+   *
+   * "Red" is a UI word and does not appear anywhere in the data. The screen may
+   * paint this; chat says "four days overdue".
+   */
+  overdueDays: number;
+  firstSeen: string;
+  lastSeen: string;
+}
+
+/**
+ * What makes two occurrences of work across two days the same work.
+ *
+ * The backing record when there is one — the same task re-picked on Tuesday is
+ * the same debt, whatever it was relabelled to. Otherwise the label, which is
+ * all a free-text item has.
+ */
+function keyOf(item: PlanItem): string {
+  return item.ref ? `${item.ref.nodeType}:${item.ref.nodeId}` : `label:${item.label}`;
 }
 
 /** Exactly the columns appendix A8 grants a manager. Nothing else may leave. */
@@ -116,7 +195,7 @@ async function loadMeetings(graph: RecordStore, actor: string, date: string): Pr
     // Compared as local days, not UTC ones.
     .filter((n) => localDateOf(String((n.data as { from?: string }).from ?? "")) === date)
     .map((n) => {
-      const d = n.data as { title?: string; from?: string; to?: string };
+      const d = n.data as { title?: string; from?: string; to?: string; link?: string };
       // A meeting with no time falls back to the hour the working day opens,
       // in local terms like everything else here.
       const opensAt = dayWindowStart(date);
@@ -125,6 +204,8 @@ async function loadMeetings(graph: RecordStore, actor: string, date: string): Pr
         title: d.title ?? n.id,
         start: d.from ?? new Date(opensAt).toISOString(),
         end: d.to ?? new Date(opensAt + 60 * 60_000).toISOString(),
+        // E7's third place: each person's day. Absent for in-person meetings.
+        link: d.link,
       };
     });
 }
@@ -162,35 +243,172 @@ export class DayPlanService {
       plan: [],
       meetings: await loadMeetings(this.deps.graph, actor, date),
       streak: this.store.streakFor(actor),
+      // What last night's close-out offered up. Offered first in the picker,
+      // exactly like a brief item answered "Handle" — and still uncommitted,
+      // because A1 keeps planning in the morning.
+      suggested: await this.seedsFromYesterday(actor, date),
     };
     this.store.put(plan);
     return { open: "brief", plan };
   }
 
   /**
-   * Yesterday's unfinished work and anything the person pushed to "Later".
+   * Work still owed, walking back further than yesterday.
+   *
+   * ── Why this had to widen ───────────────────────────────────────────────
+   *
+   * `carryForward` reached back exactly one day. So an item committed on
+   * Monday and not re-picked on Tuesday **vanished** — Wednesday's brief looked
+   * at Tuesday, found nothing, and the work was simply gone. And something
+   * pending four days read identically to something pending since yesterday,
+   * when the four-day one is the whole point of a brief.
+   *
+   * Walks back `LOOKBACK_DAYS`, newest first, and carries three rules with it:
+   *
+   *  - **Dropped ends it.** `isDropped` is skipped in the old code on purpose —
+   *    "dropped is a decision, not a debt". Seeing the drop on the newest day
+   *    first is what stops a wider window resurrecting a decision made on
+   *    Wednesday from an unfinished copy on Monday.
+   *  - **Done ends it too**, for the same reason and by the same mechanism.
+   *  - **A day on leave is skipped, not counted.** A3 — the time was taken from
+   *    them. Being away must not accrue overdue days.
+   */
+  /**
+   * Public because the chat brief needs the numbers, not the sentences.
+   *
+   * `carryForward` renders these into `brief.changed` for the existing
+   * dashboard slideshow. The chat brief wants `overdueDays` itself, so it can
+   * say "four days overdue" rather than parsing it back out of prose.
+   */
+  async carriedWork(actor: ActorId, date: string): Promise<CarriedItem[]> {
+    return this.carriedItems(actor, date);
+  }
+
+  private async carriedItems(actor: ActorId, date: string): Promise<CarriedItem[]> {
+    const carried = new Map<string, CarriedItem>();
+    // Newest first, so a later "done" or "dropped" settles the item before an
+    // older unfinished copy of it is ever considered.
+    const settled = new Set<string>();
+
+    let cursor = previousDay(date);
+    for (let back = 0; back < LOOKBACK_DAYS; back += 1, cursor = previousDay(cursor)) {
+      await this.store.load(actor, cursor);
+      const day = this.store.get(actor, cursor);
+      if (!day) continue;
+      // Skipped entirely: not read, and not counted toward `overdueDays`.
+      if (day.onLeave) continue;
+
+      for (const item of day.plan) {
+        const key = keyOf(item);
+        if (item.done || isDropped(item)) {
+          settled.add(key);
+          continue;
+        }
+        if (settled.has(key)) continue;
+
+        const existing = carried.get(key);
+        if (existing) {
+          // Seen on an earlier day too: one more day it has been owed.
+          existing.overdueDays += 1;
+          existing.firstSeen = cursor;
+          // A3 is sticky across the window. If a meeting ate the slot on any
+          // of these days, the time was taken from them, and a flat "three
+          // days overdue" is exactly the reprimand A3 forbids. Interrupted
+          // once is interrupted in the telling.
+          if (item.miss?.kind === "interrupted" || item.interrupted === true) {
+            existing.interrupted = true;
+          }
+          continue;
+        }
+        carried.set(key, {
+          key,
+          label: item.label,
+          ref: item.ref,
+          // A9: the *remainder*, not the whole item. Taken from the most
+          // recent day, which is the one that knows how much is left.
+          minutesLeft: shortfallOf(item),
+          estimateMinutes: item.estimateMinutes,
+          interrupted: item.miss?.kind === "interrupted" || item.interrupted === true,
+          overdueDays: 1,
+          firstSeen: cursor,
+          lastSeen: cursor,
+        });
+      }
+    }
+    // Oldest debt first — it is the one a person needs to see.
+    return [...carried.values()].sort((a, b) => b.overdueDays - a.overdueDays);
+  }
+
+  /**
+   * Yesterday's unfinished work and anything pushed to "Later", as brief lines.
    *
    * Interrupted work is named as such: the time was taken from them, and the
    * brief must not read as a reprimand for it (appendix A3).
+   *
+   * The one-day wording is preserved exactly. "Overdue" language only appears
+   * once something has genuinely been carried more than once — saying "1 day
+   * overdue" about yesterday's work would be technically true and read as
+   * nagging.
    */
   private async carryForward(actor: ActorId, date: string): Promise<string[]> {
+    const lines: string[] = [];
+    for (const item of await this.carriedItems(actor, date)) {
+      const partly = item.minutesLeft > 0 && item.minutesLeft < item.estimateMinutes;
+      const overdue = item.overdueDays > 1;
+
+      if (item.interrupted) {
+        lines.push(
+          overdue
+            ? `${item.label} was interrupted and is ${item.overdueDays} days overdue${partly ? ` — ${item.minutesLeft}m left` : ""}.`
+            : partly
+              ? `${item.label} was interrupted yesterday — ${item.minutesLeft}m of it is still left.`
+              : `${item.label} was interrupted yesterday and is still open.`,
+        );
+      } else {
+        lines.push(
+          overdue
+            ? `${item.label} is ${item.overdueDays} days overdue${partly ? ` — ${item.minutesLeft}m left` : ""}.`
+            : partly
+              ? `${item.label} is part done — ${item.minutesLeft}m left from yesterday.`
+              : `${item.label} is still open from yesterday.`,
+        );
+      }
+    }
+
+    // Deferred stays a one-day thing: "you left this for today" is only true
+    // of yesterday, and carrying it further would nag about a brief item
+    // somebody dismissed a week ago.
     const previous = previousDay(date);
     await this.store.load(actor, previous);
     const yesterday = this.store.get(actor, previous);
-    if (!yesterday || yesterday.onLeave) return [];
-    const lines: string[] = [];
-    for (const item of yesterday.plan) {
-      if (item.done) continue;
-      lines.push(
-        item.miss?.kind === "interrupted" || item.interrupted
-          ? `${item.label} was interrupted yesterday and is still open.`
-          : `${item.label} is still open from yesterday.`,
-      );
-    }
-    for (const text of yesterday.deferred ?? []) {
-      lines.push(`${text} (you left this for today)`);
+    if (yesterday && !yesterday.onLeave) {
+      for (const text of yesterday.deferred ?? []) {
+        lines.push(`${text} (you left this for today)`);
+      }
     }
     return lines;
+  }
+
+  /**
+   * Carried-over work offered back by last night's close-out.
+   *
+   * Also the safety net for a conversation nobody finished: if yesterday was
+   * never assessed, fold it in now. Without this, closing the tab halfway
+   * through close-out would lose that day's streak effect permanently —
+   * `finishCloseOut` would be the only path to assessment and nothing would
+   * ever call it. `applyDayToStreak` is idempotent, so a day already assessed
+   * is left exactly as it was.
+   */
+  private async seedsFromYesterday(actor: ActorId, date: string): Promise<string[]> {
+    const previous = previousDay(date);
+    await this.store.load(actor, previous);
+    const yesterday = this.store.get(actor, previous);
+    if (!yesterday) return [];
+    if (yesterday.plan.length > 0 && yesterday.streak.lastAssessedDate !== previous) {
+      applyDayToStreak(yesterday, this.store.streakFor(actor));
+      this.store.put(yesterday);
+    }
+    return [...(yesterday.seeded ?? [])];
   }
 
   briefItems(plan: DayPlan): Array<{ text: string; replies: string[] }> {
@@ -241,6 +459,36 @@ export class DayPlanService {
     if (plan.briefStep >= items.length) {
       plan.phase = "planning";
     }
+    this.store.put(plan);
+    return plan;
+  }
+
+  /**
+   * The brief has been delivered, all of it, in one go.
+   *
+   * ── Why this exists ─────────────────────────────────────────────────────
+   *
+   * A1 is conversation-first and `selectItem` enforces it: nothing can be
+   * chosen while the day is still in `briefing`. The slideshow satisfied that
+   * by stepping — each `answerBrief` advanced `briefStep`, and the phase moved
+   * to `planning` once the last item was acknowledged.
+   *
+   * The chat brief has no steps. It says everything at once and asks what the
+   * person is taking on, which means **presenting it is answering it** — but
+   * nothing was telling the engine that, so the phase stayed at `briefing` and
+   * every `selectItem` from chat was refused. Found by running a real morning:
+   * three items were named, all three were refused, and the day stayed empty.
+   *
+   * Idempotent, and it does not touch a day already planned.
+   */
+  markBriefDelivered(actor: ActorId, date: string): DayPlan {
+    const plan = this.require(actor, date);
+    if (plan.phase !== "briefing") return plan;
+    // Straight past the steps rather than looping `answerBrief`: the replies
+    // it records ("Handle" / "Later") are the slideshow's, and inventing them
+    // here would put words in somebody's mouth.
+    plan.briefStep = this.briefItems(plan).length;
+    plan.phase = "planning";
     this.store.put(plan);
     return plan;
   }
@@ -332,7 +580,13 @@ export class DayPlanService {
         title: p.label,
         start: p.start,
         done: p.done,
-        tag: p.miss?.kind === "interrupted" ? "carried-over" : p.miss?.kind === "ran-over" ? "ran-over" : undefined,
+        tag: isDropped(p)
+          ? "dropped"
+          : p.miss?.kind === "interrupted"
+            ? "carried-over"
+            : p.miss?.kind === "ran-over"
+              ? "ran-over"
+              : undefined,
       });
     }
     // Chronological, and tolerant of the several timestamp formats in play.
@@ -357,18 +611,48 @@ export class DayPlanService {
     return plan;
   }
 
+  /**
+   * Tick an item off — or, with `progressMinutes`, record that some of it got
+   * done without claiming it is finished.
+   *
+   * Appendix A9: "half done: progress recorded, remainder carried forward.
+   * Only the shortfall counts against the day." Before this, an item was done
+   * or not done, so finishing 90% of something counted exactly the same as
+   * never starting it.
+   *
+   * The partial path deliberately does **not** classify a miss. A miss is a
+   * judgement about finished work, and A4 is explicit that asking "why didn't
+   * you finish?" while somebody is still doing the work is the fastest way to
+   * make the application feel like a supervisor. Recording progress is not
+   * finishing; the question, if there is one, comes at close-out.
+   */
   async tick(
     actor: ActorId,
     date: string,
     itemId: string,
-    input: { actualMinutes?: number; at?: string },
-  ): Promise<{ item?: PlanItem; miss?: PlanItem["miss"]; offerNow?: boolean }> {
+    input: { actualMinutes?: number; at?: string; progressMinutes?: number },
+  ): Promise<{ item?: PlanItem; miss?: PlanItem["miss"]; offerNow?: boolean; shortfallMinutes?: number }> {
     const plan = this.require(actor, date);
     const item = plan.plan.find((p) => p.id === itemId);
     if (!item) return {};
+
+    if (input.progressMinutes !== undefined) {
+      const added = Number(input.progressMinutes);
+      if (!Number.isFinite(added) || added <= 0) {
+        return { item, shortfallMinutes: shortfallOf(item) };
+      }
+      if (item.done || isDropped(item)) return { item, shortfallMinutes: 0 };
+      // Several sittings add up — 20 minutes now and 20 later is 40 done.
+      item.progressMinutes = (item.progressMinutes ?? 0) + Math.round(added);
+      this.store.put(plan);
+      return { item, shortfallMinutes: shortfallOf(item) };
+    }
+
     item.done = true;
     item.doneAt = input.at ?? new Date().toISOString();
     item.actualMinutes = input.actualMinutes;
+    // Finished: whatever was part-done is now simply done, and `shortfallOf`
+    // returns zero regardless. The recorded progress stays for the history.
     if (item.actualMinutes && item.actualMinutes > item.estimateMinutes) {
       const live = await loadMeetings(this.deps.graph, actor, date);
       const byId = new Map<string, MeetingItem>();
@@ -378,7 +662,7 @@ export class DayPlanService {
       if (classification.kind === "interrupted") {
         item.interrupted = true;
       } else {
-        const remaining = plan.plan.filter((p) => !p.done);
+        const remaining = plan.plan.filter((p) => !p.done && !isDropped(p));
         const offerNow = restOfDayAtRisk(item, remaining, item.doneAt ?? "");
         item.miss.offerNow = offerNow;
       }
@@ -397,7 +681,58 @@ export class DayPlanService {
       }
     }
     this.store.put(plan);
-    return { item, miss: item.miss, offerNow: item.miss?.offerNow };
+    return { item, miss: item.miss, offerNow: item.miss?.offerNow, shortfallMinutes: 0 };
+  }
+
+  /**
+   * Appendix A9 — "item dropped mid-day: allowed. Asked once why, does not
+   * break the streak."
+   *
+   * Nothing implemented this: there was no drop path anywhere, so the only way
+   * to abandon a committed item was to leave it open and let it fail the day.
+   *
+   * Three deliberate choices:
+   *
+   *  - It works on a **committed** day. `require`, not `requirePlanning` —
+   *    dropping mid-day is the entire point, and A1b already has the morning
+   *    plan as "a starting point, not a contract".
+   *  - The item is **marked**, never removed, so the day stays an honest record
+   *    and `assessDay` can see it was dropped rather than simply missing.
+   *  - The reason is **optional**, and asking for it does not spend the
+   *    two-a-day question budget. That budget exists to stop the application
+   *    interrupting *you*; this prompt is part of an action you started. A drop
+   *    that silently refuses to hear why, because a miss question was asked
+   *    earlier, would be worse than not asking.
+   *
+   * Idempotent: dropping twice keeps the first decision and its reason.
+   */
+  dropItem(
+    actor: ActorId,
+    date: string,
+    itemId: string,
+    reason?: string,
+    at?: string,
+  ): { item?: PlanItem; error?: string } {
+    const plan = this.require(actor, date);
+    const item = plan.plan.find((p) => p.id === itemId);
+    if (!item) return { error: "No such item on today's plan." };
+    if (item.done) {
+      return { error: "That is already finished — there is nothing to drop." };
+    }
+    if (!isDropped(item)) {
+      item.dropped = {
+        at: at ?? new Date().toISOString(),
+        reason: reason?.trim() || undefined,
+      };
+    } else if (reason?.trim() && !item.dropped!.reason) {
+      // Asked once, answered late — keep the answer.
+      item.dropped!.reason = reason.trim();
+    }
+    // The day closes up around it, so later work is not left sitting behind a
+    // slot nobody is working.
+    scheduleWork(plan);
+    this.store.put(plan);
+    return { item };
   }
 
   recordMissReason(actor: ActorId, date: string, itemId: string, reason: string): { asked: boolean; learnedEstimate?: number } {
@@ -446,6 +781,132 @@ export class DayPlanService {
     plan.onLeave = true;
     this.store.put(plan);
     return plan;
+  }
+
+  /**
+   * What you did today — **told**, not asked.
+   *
+   * The requirement behind this phase says clock-out should "ask what have you
+   * done today". Deliberately not doing that. The application has every ticked
+   * item, every estimate and every actual; A2 is explicit that asking what it
+   * already knows is what destroys trust in it. So this reports the day, and
+   * the only questions are about the part it genuinely cannot know — what to
+   * do with work that is still open.
+   */
+  closeOutSummary(actor: ActorId, date: string): CloseOutSummary {
+    const plan = this.require(actor, date);
+    const outcome = assessDay(plan);
+    const open = plan.plan.filter((p) => !p.done && !isDropped(p) && !p.carriedOver);
+    return {
+      committed: plan.plan.length,
+      done: plan.plan.filter((p) => p.done).length,
+      committedMinutes: plan.plan.reduce((sum, p) => sum + (Number(p.estimateMinutes) || 0), 0),
+      // What the day actually absorbed: finished work at what it really took,
+      // plus recorded progress on what is still open.
+      workedMinutes: plan.plan.reduce((sum, p) => {
+        if (isDropped(p)) return sum;
+        if (p.done) return sum + (Number(p.actualMinutes) || Number(p.estimateMinutes) || 0);
+        return sum + (Number(p.progressMinutes) || 0);
+      }, 0),
+      dropped: plan.plan.filter(isDropped).length,
+      shortfallMinutes: outcome.shortfallMinutes,
+      ranOver: plan.plan
+        .filter((p) => p.miss?.kind === "ran-over" && !isDropped(p))
+        .map((p) => ({
+          id: p.id,
+          label: p.label,
+          byMinutes: Math.max(
+            0,
+            Math.round((Number(p.actualMinutes) || 0) - (Number(p.estimateMinutes) || 0)),
+          ),
+        })),
+      unfinished: open.map((p) => ({
+        id: p.id,
+        label: p.label,
+        estimateMinutes: Number(p.estimateMinutes) || 0,
+        progressMinutes: Number(p.progressMinutes) || 0,
+        shortfallMinutes: shortfallOf(p),
+        interrupted: p.miss?.kind === "interrupted" || p.interrupted === true,
+      })),
+      answered: open.length === 0,
+    };
+  }
+
+  /**
+   * Open the close-out conversation. **Does not fold the day into the streak.**
+   *
+   * That is the trap here: `finalizeDay` is idempotent by design, so assessing
+   * the day now and taking the answers afterwards would mean every answer
+   * arrives too late to change anything — the conversation would be theatre.
+   * `finishCloseOut` is what assesses.
+   */
+  beginCloseOut(actor: ActorId, date: string): CloseOutSummary {
+    const plan = this.require(actor, date);
+    if (!plan.closeOut) {
+      plan.closeOut = { startedAt: new Date().toISOString() };
+      this.store.put(plan);
+    }
+    return this.closeOutSummary(actor, date);
+  }
+
+  /**
+   * "I mean to do this, just not today."
+   *
+   * Note what this deliberately does **not** do: excuse the item from the day.
+   * The plan for this phase describes carrying over as "does not count against
+   * the day", and read as "excused like a dropped item" that would make the
+   * streak trivially gameable — tap carry-over on everything and every day is
+   * clean. A7 says a day is clean "when every committed item was finished
+   * within its time", so an item you did not finish keeps the day from being
+   * clean.
+   *
+   * What it does mean is the thing that actually matters to somebody: carrying
+   * work over does not *break* a streak the way a ran-over miss does. That is
+   * already how `applyDayToStreak` behaves — not clean, not ran-over, count
+   * untouched — so carrying over needs no streak change at all. What it needs
+   * is to be offered back tomorrow, which is what the seed does.
+   */
+  carryOverItem(actor: ActorId, date: string, itemId: string): { item?: PlanItem; error?: string } {
+    const plan = this.require(actor, date);
+    const item = plan.plan.find((p) => p.id === itemId);
+    if (!item) return { error: "No such item on today's plan." };
+    if (item.done) return { error: "That is already finished." };
+    if (isDropped(item)) return { error: "That was dropped." };
+    item.carriedOver = { at: new Date().toISOString() };
+    this.seed(plan, item.label);
+    this.store.put(plan);
+    return { item };
+  }
+
+  /** Offer something up for tomorrow without committing to it. */
+  private seed(plan: DayPlan, label: string): void {
+    const text = label.trim();
+    if (!text) return;
+    if ((plan.seeded ?? []).includes(text)) return;
+    plan.seeded = [...(plan.seeded ?? []), text];
+  }
+
+  /**
+   * The conversation is over: seed tomorrow, then fold the day in.
+   *
+   * Anything still open that was never answered is treated as carried over —
+   * walking away from the conversation should not silently lose the work.
+   */
+  finishCloseOut(actor: ActorId, date: string): { plan: DayPlan; seeded: string[] } {
+    const plan = this.require(actor, date);
+    for (const item of plan.plan) {
+      if (item.done || isDropped(item)) continue;
+      if (!item.carriedOver) item.carriedOver = { at: new Date().toISOString() };
+      this.seed(plan, item.label);
+    }
+    plan.closeOut = {
+      startedAt: plan.closeOut?.startedAt ?? new Date().toISOString(),
+      finishedAt: new Date().toISOString(),
+    };
+    this.store.put(plan);
+    // Only now. Every answer above is already on the plan being assessed.
+    this.finalizeDay(actor, date);
+    return { plan, seeded: plan.seeded ?? [] };
   }
 
   finalizeDay(actor: ActorId, date: string): DayPlan {

@@ -7,6 +7,7 @@ import {
   flattenRequirements,
   type ChangeSummary,
   type OperationContext,
+  type OperationHandler,
   type OperationRegistry,
   type OperationResult,
   type UndoInfo,
@@ -66,6 +67,28 @@ export class Spine {
 
   constructor(private readonly deps: SpineDeps) {
     this.gate = new GateEngine(deps.operations, deps.permissions, deps.autonomy);
+  }
+
+  /**
+   * The declaration an operation makes about itself, for a caller that must
+   * decide **before** submitting.
+   *
+   * Read-only, and it changes nothing: the agent's propose-gate has to know
+   * whether an operation would park, and the only honest source for that is the
+   * handler. Deriving it a second time in the assistant is how `category` and
+   * `involvesMoneyOrPeople` came to disagree in the first place.
+   */
+  operationHandler(name: string): OperationHandler | undefined {
+    return this.deps.operations.get(name);
+  }
+
+  /**
+   * One recorded action, for a caller that must decide how to treat it before
+   * touching it. `undo_last` reads the operation name out of this so it can
+   * inherit that operation's gating rather than reaching round it.
+   */
+  async activityEntry(id: string): Promise<ActivityEntry | undefined> {
+    return this.deps.log.get(id);
   }
 
   async submit(operation: Operation): Promise<SubmissionResult> {

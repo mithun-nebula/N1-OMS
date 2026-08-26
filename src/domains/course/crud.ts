@@ -44,6 +44,8 @@ export function courseCreateHandler(
 ): OperationHandler<{ title: string; modules?: string[]; owner?: ActorId }> {
   return {
     name: "course.create",
+    // Writes one course node. Routine: a graduated rule may do it unattended.
+    category: "routine",
     validate: (args) =>
       args.title?.trim()
         ? { ok: true }
@@ -93,6 +95,19 @@ export function courseAssignHandler(
 ): OperationHandler<{ courseId: string; assignees: ActorId[] }> {
   return {
     name: "course.assign",
+    // Hands real work to up to three people and notifies each, so a delegated
+    // run always parks — "people" is in NEVER_GRADUATE (`gate/autonomy.ts`),
+    // which is the SECOND of gate.ts's two parking conditions (`:99`).
+    //
+    // `involvesMoneyOrPeople` stays false, but NOT for the reason this comment
+    // used to give ("a manager assigning by hand needs no second tap"). That
+    // reason is wrong: BOTH parking conditions require `delegated`, so a hand
+    // form never parks whatever this flag says. Proved in
+    // `spine/gate/parking-audit.test.ts`.
+    //
+    // ⚠ The flag and the category are not interchangeable, and an agent must
+    // check BOTH — `spine/operation/declarations.test.ts` pins every one.
+    category: "people",
     validate: (args) => {
       const missing: string[] = [];
       if (!args.courseId) missing.push("courseId");
@@ -201,6 +216,8 @@ export function courseDeleteHandler(
 ): OperationHandler<{ courseId: string }> {
   return {
     name: "course.delete",
+    // Removes one course node; linked tasks are left alone. Routine.
+    category: "routine",
     validate: (args) =>
       args.courseId
         ? { ok: true }

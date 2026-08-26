@@ -43,6 +43,9 @@ export default async function CalendarPage({
         from: d.from ? String(d.from) : undefined,
         to: d.to ? String(d.to) : undefined,
         detail: d.detail ? String(d.detail) : undefined,
+        // E7's second place: the calendar entry itself shows the join link.
+        // Only meeting-derived entries carry one, and only online/both ones.
+        link: d.link ? String(d.link) : undefined,
         peopleIds,
         people: peopleIds.map((id) => directory().nameOf(id)),
         cancelled: Boolean(d.cancelled),

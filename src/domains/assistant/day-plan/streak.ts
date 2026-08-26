@@ -1,9 +1,23 @@
-import type { DayPlan, StreakRecord } from "./store";
+import { isDropped, shortfallOf, type DayPlan, type StreakRecord } from "./store";
 
 export interface DayOutcome {
   cleanDay: boolean;
   ranOver: boolean;
   allDone: boolean;
+  /**
+   * A9 — "only the shortfall counts against the day."
+   *
+   * Minutes committed to and not delivered, across the items the person was
+   * actually accountable for. An item 90% done contributes the missing 10%,
+   * not the whole estimate: the day it cost is six minutes, not an hour.
+   *
+   * This is what "counts against the day" now means. `cleanDay` is deliberately
+   * left as A7 states it — "every committed item was finished within its time"
+   * — because a partly-done item is, plainly, not finished. What A9 changes is
+   * the *size* of the failure, not whether one occurred, and that is the number
+   * the close-out summary reports back.
+   */
+  shortfallMinutes: number;
 }
 
 /** Work the person was not held responsible for — the time was taken from them. */
@@ -33,17 +47,26 @@ function wasInterrupted(item: DayPlan["plan"][number]): boolean {
  * allDone`, which reduces algebraically to `allDone && !ranOver` — the
  * `interruptedOnly` term was computed and then cancelled out, so interrupted
  * work stalled the streak instead of being excused.
+ *
+ * A9 adds two more things that are excluded rather than failed: **dropped**
+ * work, and the finished part of **partly-done** work. Both extend
+ * `accountable` — the filter is the one place this judgement is made, so a new
+ * kind of excusable outcome is one predicate, not a rewrite.
  */
 export function assessDay(plan: DayPlan): DayOutcome {
   if (plan.plan.length === 0) {
-    return { cleanDay: false, ranOver: false, allDone: true };
+    return { cleanDay: false, ranOver: false, allDone: true, shortfallMinutes: 0 };
   }
-  const allDone = plan.plan.every((p) => p.done);
-  const ranOver = plan.plan.some((p) => p.miss?.kind === "ran-over");
-  const accountable = plan.plan.filter((p) => !wasInterrupted(p));
+  // Dropped work joins interrupted work in being excluded rather than failed
+  // — A9 says dropping "does not break the streak", and the only way to
+  // honour that is to stop holding the person to an item they decided against.
+  const accountable = plan.plan.filter((p) => !wasInterrupted(p) && !isDropped(p));
+  const allDone = accountable.every((p) => p.done);
+  const ranOver = plan.plan.some((p) => !isDropped(p) && p.miss?.kind === "ran-over");
   const someDone = plan.plan.some((p) => p.done);
   const cleanDay = !ranOver && someDone && accountable.every((p) => p.done);
-  return { cleanDay, ranOver, allDone };
+  const shortfallMinutes = accountable.reduce((sum, p) => sum + shortfallOf(p), 0);
+  return { cleanDay, ranOver, allDone, shortfallMinutes };
 }
 
 /**

@@ -63,6 +63,93 @@ describe("durable undo — the plan replays when the closure is gone", () => {
     expect(data.title).toBe("Original title");
   });
 
+  it("reverts a whole meeting — record, calendar entry, edge and room — from the plan alone", async () => {
+    const { spine, deps } = await buildDemoWorld();
+
+    const created = await spine.submit(
+      adapters.fromForm({
+        actor: "james",
+        name: "meeting.create",
+        args: {
+          title: "Course review",
+          // `both` is the default kind, so this is the ordinary path rather
+          // than a special case: a link AND a room.
+          kind: "both",
+          from: "2026-12-01T15:00:00Z",
+          to: "2026-12-01T16:00:00Z",
+          attendees: ["priya", "arun"],
+        },
+      }),
+    );
+    expect(created.status).toBe("ran");
+    const { meetingId, entryId, bookingId } = created.result?.response as {
+      meetingId: string;
+      entryId: string;
+      bookingId: string;
+    };
+    expect(bookingId).toBeTruthy();
+
+    // Stand in for a restart: a brand-new Spine over the same stores has an
+    // empty in-process undo map, exactly like a fresh process would. So the
+    // closure is gone and only the persisted plan can do this.
+    const restarted = new Spine(deps);
+    const entry = await deps.log.get(created.activityEntry!.id);
+    expect(entry!.undoPlan?.length).toBeGreaterThan(0);
+
+    const replayed = await restarted.undo(created.activityEntry!.id, "james");
+    expect(replayed.status).toBe("undone");
+
+    // All four, or the undo left something behind: a calendar entry people
+    // plan around, or a room blocked for a meeting nobody can see.
+    expect(await deps.graph.getNode("meeting", meetingId)).toBeUndefined();
+    expect(await deps.graph.getNode("calendar-entry", entryId)).toBeUndefined();
+    expect(await deps.graph.getNode("booking", bookingId)).toBeUndefined();
+    expect(await deps.graph.edgesOf(meetingId, "out")).toEqual([]);
+  });
+
+  it("reverts a meeting cancellation from the plan alone, room included", async () => {
+    const { spine, deps } = await buildDemoWorld();
+    const created = await spine.submit(
+      adapters.fromForm({
+        actor: "james",
+        name: "meeting.create",
+        args: {
+          title: "Standup",
+          kind: "in-person",
+          from: "2026-12-02T09:00:00Z",
+          to: "2026-12-02T09:30:00Z",
+          attendees: ["priya"],
+        },
+      }),
+    );
+    const { meetingId, entryId, bookingId } = created.result?.response as {
+      meetingId: string;
+      entryId: string;
+      bookingId: string;
+    };
+    const cancelled = await spine.submit(
+      adapters.fromForm({ actor: "james", name: "meeting.cancel", args: { meetingId } }),
+    );
+    expect(await deps.graph.getNode("booking", bookingId)).toBeUndefined();
+
+    const restarted = new Spine(deps);
+    const replayed = await restarted.undo(cancelled.activityEntry!.id, "james");
+    expect(replayed.status).toBe("undone");
+
+    // `put` replaces the record wholesale with what was there before the
+    // cancellation, where `cancelled` was absent rather than false.
+    expect(
+      ((await deps.graph.getNode("meeting", meetingId))?.data as { cancelled?: boolean }).cancelled,
+    ).toBeFalsy();
+    expect(
+      ((await deps.graph.getNode("calendar-entry", entryId))?.data as { cancelled?: boolean })
+        .cancelled,
+    ).toBeFalsy();
+    // The room comes back, or the meeting returns to the calendar with nowhere
+    // to happen.
+    expect(await deps.graph.getNode("booking", bookingId)).toBeTruthy();
+  });
+
   it("refuses to undo the same entry twice", async () => {
     const { spine } = await buildDemoWorld();
     const created = await spine.submit(

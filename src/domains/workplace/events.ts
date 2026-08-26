@@ -61,6 +61,13 @@ export function eventCreateHandler(
       return {
         changes: [{ nodeType: "event", nodeId: id, after: data }],
         publishedTo: [{ kind: "broadcast" }],
+        // Creating an event had no undo at all, and it is broadcast to the whole
+        // organisation. A create, so the undo is a delete.
+        undo: {
+          description: `Remove event ${id}.`,
+          revert: async () => { await graph.removeNode("event", id); },
+          plan: [{ op: "remove", nodeType: "event", nodeId: id }],
+        },
         response: { eventId: id },
       };
     },

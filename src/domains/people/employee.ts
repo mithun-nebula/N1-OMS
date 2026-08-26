@@ -210,6 +210,7 @@ export function employeeCreateHandler(
         displayName: args.name,
         role: args.role as RbacRole,
         team: args.team,
+        actor: ctx.actor,
       });
       if (!account.ok) {
         // Do not leave a record with no way to sign in.
@@ -226,9 +227,9 @@ export function employeeCreateHandler(
         changes: [{ nodeType: "employee", nodeId: id, after: data }],
         undo: {
           description: `Remove ${args.name} and their login.`,
-          revert: async () => {
+          revert: async (undoCtx) => {
             await graph.removeNode("employee", id);
-            await removeAccount(args.username);
+            await removeAccount(args.username, undoCtx.actor);
             if (args.managerId) {
               await graph.removeEdge(id, args.managerId, "reports-to");
             }
@@ -416,7 +417,7 @@ export function employeeDeactivateHandler(
       recordNodeIds: [args.employeeId],
     }),
     involvesMoneyOrPeople: () => true,
-    execute: async (args) => {
+    execute: async (args, ctx) => {
       const node = await graph.getNode("employee", args.employeeId);
       const before = node?.data as EmployeeData | undefined;
       if (!before) throw new Error(`No employee ${args.employeeId}.`);
@@ -429,7 +430,7 @@ export function employeeDeactivateHandler(
       };
       // The record and its whole history stay — only the login stops working.
       await graph.putNode("employee", args.employeeId, after);
-      await setAccountEnabled(args.employeeId, false);
+      await setAccountEnabled(args.employeeId, false, ctx.actor);
       await refresh(graph);
 
       return {
@@ -538,7 +539,7 @@ export function employeeReactivateHandler(
       },
     ],
     involvesMoneyOrPeople: () => true,
-    execute: async (args) => {
+    execute: async (args, ctx) => {
       const node = await graph.getNode("employee", args.employeeId);
       const before = node?.data as EmployeeData | undefined;
       if (!before) throw new Error(`No employee ${args.employeeId}.`);
@@ -550,7 +551,7 @@ export function employeeReactivateHandler(
       await graph.putNode("employee", args.employeeId, after);
       // Coming back means a fresh temporary password, changed at first sign-in.
       const { resetPassword } = await import("@/server/accounts");
-      await resetPassword(account.username, args.temporaryPassword);
+      await resetPassword(account.username, args.temporaryPassword, ctx.actor);
       await refresh(graph);
 
       return {
@@ -559,9 +560,9 @@ export function employeeReactivateHandler(
         ],
         undo: {
           description: `Make ${before.name} inactive again.`,
-          revert: async () => {
+          revert: async (undoCtx) => {
             await graph.putNode("employee", args.employeeId, before);
-            await setAccountEnabled(args.employeeId, false);
+            await setAccountEnabled(args.employeeId, false, undoCtx.actor);
             await refresh(graph);
           },
           plan: [

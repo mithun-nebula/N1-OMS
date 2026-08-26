@@ -7,7 +7,7 @@ import {
   type QuestionLimiterPersistence,
 } from "@/domains/workplace/shared/limiter";
 import { DayPlanService } from "@/domains/assistant/day-plan/service";
-import { openDay } from "@/domains/assistant/assistant.test";
+import { openDay } from "@/domains/assistant/day-plan/test-support";
 import {
   DayPlanStore,
   type DayPlan,
@@ -26,6 +26,18 @@ import {
 /** Writes are fire-and-forget throughout; let the queued microtasks land. */
 const flush = () => new Promise((r) => setTimeout(r, 0));
 
+/**
+ * These pin the cap at 2 explicitly.
+ *
+ * They were written when 2 was the only cap there was, and every assertion in
+ * them counts to it. Phase 2 made the allowance a per-actor setting defaulting
+ * to six, so leaving them bare would have quietly changed what they test from
+ * "a spent allowance survives a restart" to "six is the default" — a different
+ * claim, tested elsewhere.
+ *
+ * Pinning keeps every assertion exactly as it was, and exercises the override
+ * as a side effect.
+ */
 describe("the question allowance is kept across a restart", () => {
   class FakeBudget implements QuestionLimiterPersistence {
     rows = new Map<string, number>();
@@ -42,13 +54,13 @@ describe("the question allowance is kept across a restart", () => {
 
   it("two questions asked before the restart are still two questions asked", async () => {
     const budget = new FakeBudget();
-    const before = createQuestionLimiter(budget);
+    const before = createQuestionLimiter(budget, { defaultCap: 2 });
     expect(before.tryConsume("james", "2026-08-08")).toBe(true);
     expect(before.tryConsume("james", "2026-08-08")).toBe(true);
     expect(before.tryConsume("james", "2026-08-08")).toBe(false);
     await flush();
 
-    const after = createQuestionLimiter(budget);
+    const after = createQuestionLimiter(budget, { defaultCap: 2 });
     await after.load("2026-08-08");
     expect(after.remaining("james", "2026-08-08")).toBe(0);
     expect(after.tryConsume("james", "2026-08-08")).toBe(false);
@@ -56,12 +68,12 @@ describe("the question allowance is kept across a restart", () => {
 
   it("a new day starts with a full allowance", async () => {
     const budget = new FakeBudget();
-    const before = createQuestionLimiter(budget);
+    const before = createQuestionLimiter(budget, { defaultCap: 2 });
     before.tryConsume("james", "2026-08-08");
     before.tryConsume("james", "2026-08-08");
     await flush();
 
-    const after = createQuestionLimiter(budget);
+    const after = createQuestionLimiter(budget, { defaultCap: 2 });
     await after.load("2026-08-09");
     expect(after.remaining("james", "2026-08-09")).toBe(QUESTIONS_PER_DAY);
   });
@@ -73,7 +85,7 @@ describe("the question allowance is kept across a restart", () => {
     // Stands in for `configureQuestionLimiter`: the point is that building the
     // durable limiter and hydrating it are one step. They used to be two, and
     // `buildDemoWorld` only ever performed the first.
-    const limiter = createQuestionLimiter(budget);
+    const limiter = createQuestionLimiter(budget, { defaultCap: 2 });
     await limiter.load("2026-08-08");
 
     expect(limiter.remaining("james", "2026-08-08")).toBe(0);
@@ -83,7 +95,7 @@ describe("the question allowance is kept across a restart", () => {
     const budget = new FakeBudget();
     await budget.save("james", "2026-08-08", 1);
 
-    const limiter = createQuestionLimiter(budget);
+    const limiter = createQuestionLimiter(budget, { defaultCap: 2 });
     limiter.tryConsume("james", "2026-08-08");
     limiter.tryConsume("james", "2026-08-08");
     await limiter.load("2026-08-08");

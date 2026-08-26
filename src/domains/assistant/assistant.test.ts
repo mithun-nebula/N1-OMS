@@ -5,10 +5,15 @@ import { enforceAppendixD } from "./appendix-d";
 import { peopleSpecialist, type AssistantCtx } from "./specialists";
 import { DayPlanService } from "./day-plan/service";
 import { applyDayPlanReactions } from "./day-plan/reactions";
+import { assessDay } from "./day-plan/streak";
+import { firstAtRisk, restOfDayAtRisk } from "./day-plan/miss-classifier";
+import { readFileSync } from "node:fs";
 import { dayWindowStart } from "./day-plan/time";
+import { openDay } from "./day-plan/test-support";
 import {
   DayPlanStore,
   type DayPlan,
+  type PlanItem,
   type DayPlanPersistence,
   type StreakRecord,
 } from "./day-plan/store";
@@ -28,22 +33,6 @@ function add(
 ): string {
   const res = service.selectItem("james", "2026-08-08", { label, estimateMinutes, ...opts });
   return res.item!.id;
-}
-
-/**
- * Start a day and work through its brief, the way a person does.
- *
- * A1 is conversation-first and the service now enforces it, so a test cannot
- * jump straight from `startDay` to `selectItem` any more than the UI can.
- */
-export async function openDay(svc: DayPlanService, actor: string, date: string): Promise<void> {
-  await svc.startDay(actor, date);
-  // Bounded: the brief is a handful of items, never dozens.
-  for (let i = 0; i < 50; i += 1) {
-    const plan = svc.getStore().get(actor, date);
-    if (!plan || plan.phase !== "briefing") return;
-    svc.answerBrief(actor, date, "Got it");
-  }
 }
 
 beforeEach(async () => {
@@ -138,15 +127,31 @@ describe("A3/A4 — interrupted keeps streak; ran-over asks once (2/day)", () =>
     expect(store.streakFor("james").clean).toBe(1);
   });
 
-  it("ran-over questions respect the two-questions-per-day limit", async () => {
+  it("ran-over questions respect the allowance, whatever it is set to", async () => {
+    // Pinned to two: written when that was the only cap, and the property is
+    // "the overrun question spends the allowance and stops", not the number.
+    // Phase 2 made it a per-actor setting defaulting to six.
+    const local = new DayPlanStore();
+    const svc = new DayPlanService(local, {
+      graph: world.deps.graph,
+      limiter: createQuestionLimiter(undefined, { defaultCap: 2 }),
+      actorLookup: () => ({ spine: world.spine }),
+    });
+    await openDay(svc, "james", "2026-08-08");
     const ids: string[] = [];
     for (let i = 1; i <= 3; i++) {
-      ids.push(add(`Work ${i}`, 30, { start: `2026-08-08T0${i}:00:00Z`, end: `2026-08-08T0${i}:30:00Z` }));
-      await service.tick("james", "2026-08-08", ids[i - 1], { actualMinutes: 90 });
+      const res = svc.selectItem("james", "2026-08-08", {
+        label: `Work ${i}`,
+        estimateMinutes: 30,
+        start: `2026-08-08T0${i}:00:00Z`,
+        end: `2026-08-08T0${i}:30:00Z`,
+      });
+      ids.push(res.item!.id);
+      await svc.tick("james", "2026-08-08", ids[i - 1], { actualMinutes: 90 });
     }
-    expect(service.recordMissReason("james", "2026-08-08", ids[0], "underestimated").asked).toBe(true);
-    expect(service.recordMissReason("james", "2026-08-08", ids[1], "blocked").asked).toBe(true);
-    expect(service.recordMissReason("james", "2026-08-08", ids[2], "grew").asked).toBe(false);
+    expect(svc.recordMissReason("james", "2026-08-08", ids[0], "underestimated").asked).toBe(true);
+    expect(svc.recordMissReason("james", "2026-08-08", ids[1], "blocked").asked).toBe(true);
+    expect(svc.recordMissReason("james", "2026-08-08", ids[2], "grew").asked).toBe(false);
   });
 });
 
@@ -258,6 +263,374 @@ describe("A9 — edge cases", () => {
     service.markLeave("james", "2026-08-08");
     service.finalizeDay("james", "2026-08-08");
     expect(store.streakFor("james").clean).toBe(0);
+  });
+});
+
+describe("A9 — an item can be dropped mid-day", () => {
+  it("dropping does not break the streak", async () => {
+    const keep = add("A", 60);
+    const drop = add("B", 60);
+    service.commitPlan("james", "2026-08-08");
+    await service.tick("james", "2026-08-08", keep, { actualMinutes: 60 });
+
+    service.dropItem("james", "2026-08-08", drop, "Not needed");
+    service.finalizeDay("james", "2026-08-08");
+
+    // A9: "allowed. Asked once why, does not break the streak."
+    expect(store.streakFor("james").clean).toBe(1);
+  });
+
+  it("works on a committed day — that is the whole point", () => {
+    const id = add("A", 60);
+    service.commitPlan("james", "2026-08-08");
+    const res = service.dropItem("james", "2026-08-08", id, "No time");
+    expect(res.error).toBeUndefined();
+    expect(res.item?.dropped?.reason).toBe("No time");
+  });
+
+  it("marks the item rather than deleting it — the day stays honest", () => {
+    const id = add("A", 60);
+    service.dropItem("james", "2026-08-08", id);
+    const plan = store.get("james", "2026-08-08")!;
+    expect(plan.plan).toHaveLength(1);
+    expect(plan.plan[0].id).toBe(id);
+    expect(plan.plan[0].dropped?.at).toBeTruthy();
+    // No reason given is fine: the tap is the decision.
+    expect(plan.plan[0].dropped?.reason).toBeUndefined();
+  });
+
+  it("is excluded from accountable, so an otherwise clean day still counts", async () => {
+    const done = add("A", 60);
+    add("B", 60);
+    const plan = store.get("james", "2026-08-08")!;
+    await service.tick("james", "2026-08-08", done, { actualMinutes: 60 });
+    // Unfinished and not dropped: the day is not clean.
+    expect(assessDay(plan).cleanDay).toBe(false);
+    service.dropItem("james", "2026-08-08", plan.plan[1].id);
+    expect(assessDay(plan).cleanDay).toBe(true);
+  });
+
+  it("a dropped item is not carried into tomorrow — dropping is a decision, not a debt", async () => {
+    const id = add("A", 60);
+    service.dropItem("james", "2026-08-08", id, "Not needed");
+    service.commitPlan("james", "2026-08-08");
+    await service.startDay("james", "2026-08-09");
+    const tomorrow = store.get("james", "2026-08-09")!;
+    expect(tomorrow.brief.changed.some((line) => line.includes("A"))).toBe(false);
+  });
+
+  it("dropping something already finished is refused", async () => {
+    const id = add("A", 60);
+    await service.tick("james", "2026-08-08", id, { actualMinutes: 60 });
+    expect(service.dropItem("james", "2026-08-08", id).error).toBeTruthy();
+  });
+
+  it("dropping twice keeps the first decision", () => {
+    const id = add("A", 60);
+    service.dropItem("james", "2026-08-08", id, "Not needed");
+    service.dropItem("james", "2026-08-08", id, "Changed my mind");
+    expect(store.get("james", "2026-08-08")!.plan[0].dropped?.reason).toBe("Not needed");
+  });
+
+  it("dropped work stops holding a slot, so later work moves up", () => {
+    const first = add("A", 120);
+    add("B", 60);
+    const plan = store.get("james", "2026-08-08")!;
+    const bStartedAt = plan.plan[1].start;
+    service.dropItem("james", "2026-08-08", first);
+    expect(plan.plan[1].start).not.toBe(bStartedAt);
+    expect(plan.plan[1].start).toBe(new Date(dayWindowStart("2026-08-08")).toISOString());
+  });
+});
+
+describe("A9 — half done means half counted", () => {
+  it("records progress without marking the item done", async () => {
+    const id = add("A", 60);
+    const res = await service.tick("james", "2026-08-08", id, { progressMinutes: 30 });
+    expect(res.item?.done).toBeFalsy();
+    expect(res.item?.progressMinutes).toBe(30);
+    expect(res.shortfallMinutes).toBe(30);
+  });
+
+  it("does not ask why while the work is still going (A4)", async () => {
+    const id = add("A", 60);
+    const res = await service.tick("james", "2026-08-08", id, { progressMinutes: 90 });
+    expect(res.miss).toBeUndefined();
+    expect(res.offerNow).toBeFalsy();
+  });
+
+  it("several sittings add up", async () => {
+    const id = add("A", 60);
+    await service.tick("james", "2026-08-08", id, { progressMinutes: 20 });
+    const res = await service.tick("james", "2026-08-08", id, { progressMinutes: 20 });
+    expect(res.item?.progressMinutes).toBe(40);
+    expect(res.shortfallMinutes).toBe(20);
+  });
+
+  it("an almost-finished item is not a whole failure — only the shortfall counts", async () => {
+    const id = add("A", 60);
+    await service.tick("james", "2026-08-08", id, { progressMinutes: 54 });
+    const plan = store.get("james", "2026-08-08")!;
+    // The day it cost is six minutes, not an hour.
+    expect(assessDay(plan).shortfallMinutes).toBe(6);
+
+    // Untouched, the same item would have cost the whole estimate.
+    const untouched = add("B", 60);
+    expect(assessDay(plan).shortfallMinutes).toBe(66);
+    expect(untouched).toBeTruthy();
+  });
+
+  it("the remainder is what carries to tomorrow, not the whole item", async () => {
+    const id = add("A", 60);
+    await service.tick("james", "2026-08-08", id, { progressMinutes: 45 });
+    service.commitPlan("james", "2026-08-08");
+    await service.startDay("james", "2026-08-09");
+    const changed = store.get("james", "2026-08-09")!.brief.changed;
+    expect(changed.some((l) => l.includes("A is part done — 15m left from yesterday."))).toBe(true);
+  });
+
+  it("full completion behaves exactly as before", async () => {
+    const id = add("A", 60);
+    const res = await service.tick("james", "2026-08-08", id, { actualMinutes: 60 });
+    expect(res.item?.done).toBe(true);
+    expect(res.shortfallMinutes).toBe(0);
+    service.finalizeDay("james", "2026-08-08");
+    expect(store.streakFor("james").clean).toBe(1);
+  });
+
+  it("finishing after part-doing owes nothing", async () => {
+    const id = add("A", 60);
+    await service.tick("james", "2026-08-08", id, { progressMinutes: 30 });
+    await service.tick("james", "2026-08-08", id, { actualMinutes: 60 });
+    expect(assessDay(store.get("james", "2026-08-08")!).shortfallMinutes).toBe(0);
+  });
+
+  it("dropped and interrupted work owes nothing either", async () => {
+    const dropped = add("A", 60);
+    const done = add("B", 60);
+    service.dropItem("james", "2026-08-08", dropped);
+    await service.tick("james", "2026-08-08", done, { actualMinutes: 60 });
+    expect(assessDay(store.get("james", "2026-08-08")!).shortfallMinutes).toBe(0);
+  });
+
+  it("progress on a finished or dropped item is ignored", async () => {
+    const id = add("A", 60);
+    service.dropItem("james", "2026-08-08", id);
+    const res = await service.tick("james", "2026-08-08", id, { progressMinutes: 30 });
+    expect(res.item?.progressMinutes).toBeUndefined();
+  });
+});
+
+describe("A2/A9 — clocking out has a conversation", () => {
+  it("the summary matches the plan, and is told rather than asked", async () => {
+    const a = add("A", 60);
+    const b = add("B", 30);
+    add("C", 45);
+    service.commitPlan("james", "2026-08-08");
+    await service.tick("james", "2026-08-08", a, { actualMinutes: 60 });
+    await service.tick("james", "2026-08-08", b, { actualMinutes: 90 });
+
+    const summary = service.beginCloseOut("james", "2026-08-08");
+    expect(summary.committed).toBe(3);
+    expect(summary.done).toBe(2);
+    expect(summary.committedMinutes).toBe(135);
+    expect(summary.workedMinutes).toBe(150);
+    // "B ran over by an hour" — the application knows, so it says so.
+    expect(summary.ranOver).toEqual([{ id: b, label: "B", byMinutes: 60 }]);
+    expect(summary.unfinished.map((u) => u.label)).toEqual(["C"]);
+    expect(summary.answered).toBe(false);
+  });
+
+  it("does NOT fold the day into the streak — the answers come first", async () => {
+    const id = add("A", 60);
+    service.commitPlan("james", "2026-08-08");
+    await service.tick("james", "2026-08-08", id, { actualMinutes: 60 });
+
+    service.beginCloseOut("james", "2026-08-08");
+    // finalizeDay is idempotent, so assessing here would make every answer
+    // that follows arrive too late to change anything.
+    expect(store.streakFor("james").lastAssessedDate).toBeUndefined();
+
+    service.finishCloseOut("james", "2026-08-08");
+    expect(store.streakFor("james").lastAssessedDate).toBe("2026-08-08");
+    expect(store.streakFor("james").clean).toBe(1);
+  });
+
+  it("assesses exactly once, however many times it is finished", async () => {
+    const id = add("A", 60);
+    await service.tick("james", "2026-08-08", id, { actualMinutes: 60 });
+    service.finishCloseOut("james", "2026-08-08");
+    service.finishCloseOut("james", "2026-08-08");
+    service.finishCloseOut("james", "2026-08-08");
+    expect(store.streakFor("james").clean).toBe(1);
+  });
+
+  it("each of the three taps does the right thing", async () => {
+    const carry = add("A", 60);
+    const drop = add("B", 60);
+    const part = add("C", 60);
+    service.commitPlan("james", "2026-08-08");
+    service.beginCloseOut("james", "2026-08-08");
+
+    service.carryOverItem("james", "2026-08-08", carry);
+    service.dropItem("james", "2026-08-08", drop, "Not needed");
+    await service.tick("james", "2026-08-08", part, { progressMinutes: 40 });
+
+    const plan = store.get("james", "2026-08-08")!;
+    expect(plan.plan.find((p) => p.id === carry)!.carriedOver).toBeTruthy();
+    expect(plan.plan.find((p) => p.id === drop)!.dropped?.reason).toBe("Not needed");
+    expect(plan.plan.find((p) => p.id === part)!.progressMinutes).toBe(40);
+
+    // Only what is genuinely still open is asked about again.
+    expect(service.closeOutSummary("james", "2026-08-08").unfinished.map((u) => u.label)).toEqual(["C"]);
+  });
+
+  it("carried-over work is offered in tomorrow's picker, not committed", async () => {
+    const id = add("Finish the deck", 60);
+    service.commitPlan("james", "2026-08-08");
+    service.beginCloseOut("james", "2026-08-08");
+    service.carryOverItem("james", "2026-08-08", id);
+    service.finishCloseOut("james", "2026-08-08");
+
+    await service.startDay("james", "2026-08-09");
+    const tomorrow = store.get("james", "2026-08-09")!;
+    // Seeded — offered first in the picker.
+    expect(tomorrow.suggested).toContain("Finish the deck");
+    // But NOT committed: A1 keeps planning in the morning, with a time on it.
+    expect(tomorrow.plan).toHaveLength(0);
+    expect(tomorrow.phase).toBe("briefing");
+  });
+
+  it("anything left unanswered is carried over rather than silently lost", () => {
+    add("A", 60);
+    service.commitPlan("james", "2026-08-08");
+    service.beginCloseOut("james", "2026-08-08");
+    const { seeded } = service.finishCloseOut("james", "2026-08-08");
+    expect(seeded).toEqual(["A"]);
+    expect(store.get("james", "2026-08-08")!.plan[0].carriedOver).toBeTruthy();
+  });
+
+  it("carrying over does not make the day clean — that would game the streak", () => {
+    const id = add("A", 60);
+    service.commitPlan("james", "2026-08-08");
+    service.carryOverItem("james", "2026-08-08", id);
+    service.finishCloseOut("james", "2026-08-08");
+    // A7: clean means every committed item was finished within its time.
+    expect(store.streakFor("james").clean).toBe(0);
+  });
+
+  it("but carrying over does not BREAK a streak either", async () => {
+    // Day one, clean.
+    const one = add("A", 60);
+    await service.tick("james", "2026-08-08", one, { actualMinutes: 60 });
+    service.finishCloseOut("james", "2026-08-08");
+    expect(store.streakFor("james").clean).toBe(1);
+
+    // Day two, carried over — held, not lost.
+    await openDay(service, "james", "2026-08-09");
+    service.selectItem("james", "2026-08-09", { label: "B", estimateMinutes: 60 });
+    const plan = store.get("james", "2026-08-09")!;
+    service.carryOverItem("james", "2026-08-09", plan.plan[0].id);
+    service.finishCloseOut("james", "2026-08-09");
+    expect(store.streakFor("james").clean).toBe(1);
+  });
+
+  it("a day whose close-out was abandoned is still assessed when the next one starts", async () => {
+    const id = add("A", 60);
+    await service.tick("james", "2026-08-08", id, { actualMinutes: 60 });
+    service.beginCloseOut("james", "2026-08-08");
+    // Tab closed. Nothing finished the conversation.
+    expect(store.streakFor("james").lastAssessedDate).toBeUndefined();
+
+    await service.startDay("james", "2026-08-09");
+    expect(store.streakFor("james").lastAssessedDate).toBe("2026-08-08");
+    expect(store.streakFor("james").clean).toBe(1);
+  });
+});
+
+describe("A4 — the live overrun warning, while it is still happening", () => {
+  /**
+   * The dashboard evaluates exactly this every 60 seconds against the wall
+   * clock. Testing `firstAtRisk` directly is testing the thing that decides —
+   * the strip is a rendering of its result, and the wiring is asserted below.
+   */
+  function live(): PlanItem[] {
+    return store
+      .get("james", "2026-08-08")!
+      .plan.filter((p) => !p.done && !p.dropped);
+  }
+
+  it("names the displaced work when later work is genuinely at risk", () => {
+    add("Module 4", 60);
+    add("Friday prep", 60);
+    const items = live();
+    // 11:00: Module 4's 09:00–10:00 window is long gone and Friday prep's
+    // 10:00 slot has already started.
+    const displaced = firstAtRisk(items[0], items, "2026-08-08T11:00:00");
+    expect(displaced?.label).toBe("Friday prep");
+  });
+
+  it("stays silent when nothing later is at risk", () => {
+    add("Module 4", 60);
+    const items = live();
+    expect(firstAtRisk(items[0], items, "2026-08-08T11:00:00")).toBeUndefined();
+  });
+
+  it("stays silent while the overrunning item is still inside its window", () => {
+    add("Module 4", 60);
+    add("Friday prep", 60);
+    const items = live();
+    // 09:30 — running, not yet over. Nothing has been displaced.
+    const displaced = firstAtRisk(items[0], items, "2026-08-08T09:30:00");
+    expect(displaced).toBeUndefined();
+  });
+
+  it("says nothing about work that is already done or dropped", () => {
+    const first = add("Module 4", 60);
+    const later = add("Friday prep", 60);
+    service.dropItem("james", "2026-08-08", later);
+    const items = live();
+    expect(items.map((p) => p.id)).not.toContain(later);
+    expect(firstAtRisk(items[0], items, "2026-08-08T11:00:00")).toBeUndefined();
+    expect(first).toBeTruthy();
+  });
+
+  it("agrees exactly with restOfDayAtRisk — one predicate, never two", () => {
+    add("Module 4", 60);
+    add("Friday prep", 60);
+    const items = live();
+    for (const asOf of [
+      "2026-08-08T09:30:00",
+      "2026-08-08T11:00:00",
+      "2026-08-08T23:00:00",
+      "not-a-time",
+    ]) {
+      expect(restOfDayAtRisk(items[0], items, asOf)).toBe(
+        firstAtRisk(items[0], items, asOf) !== undefined,
+      );
+    }
+  });
+
+  it("the dashboard shows it as an offer and never opens the chat", () => {
+    const source = readFileSync("src/app/dashboard/dashboard-client.tsx", "utf8");
+    // It uses the shared predicate rather than a second implementation.
+    expect(source).toContain("firstAtRisk");
+    // A4: an offer about what to do next — the three taps, and no "why".
+    expect(source).toContain("is running over");
+    expect(source).toContain("will not fit");
+    expect(source).toContain("Move it");
+    expect(source).toContain("Leave it");
+    // Comments stripped first: the module's own doc quotes A4's "why didn't
+    // you finish?" as the thing never to say, and matching that would be the
+    // test failing on the documentation of the rule it is checking.
+    const code = source
+      .replace(/\/\*[\s\S]*?\*\//g, "")
+      .replace(/^\s*\/\/.*$/gm, "");
+    expect(code).not.toMatch(/why (haven't|didn't) you/i);
+    // Once per item per day, and it survives a reload.
+    expect(source).toContain("overrunSeen");
+    // A poll while somebody is looking, not a server job.
+    expect(source).toContain("60_000");
   });
 });
 

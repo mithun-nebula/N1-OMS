@@ -308,7 +308,7 @@ export function leavingApplySeparationHandler(
       // Their login has to stop working. Marking the record separated used to
       // leave the account fully usable, so "no rule outlives its owner" did not
       // hold and a departed employee kept a valid session for up to a week.
-      await setAccountEnabled(args.employeeId, false);
+      await setAccountEnabled(args.employeeId, false, ctx.actor);
 
       const result: OperationResult = {
         changes: [

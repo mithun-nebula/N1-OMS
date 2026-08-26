@@ -92,12 +92,34 @@ export function leaveApproveHandler(
   return {
     name: "leave.approve",
     category: "people",
-    validate: (args) => {
-      const missing: string[] = [];
-      if (!args.leaveId) missing.push("leaveId");
-      return missing.length === 0
-        ? { ok: true }
-        : { ok: false, missing, detail: "A leave id is required." };
+    /**
+     * ⚠ Checks the STATE, not only the shape.
+     *
+     * This used to require nothing but the id, so an already-approved request
+     * could be approved again — and `execute` decrements the employee's balance
+     * every time it runs, so approving twice took the days twice.
+     *
+     * Found by Phase 3's drift test rather than by anybody reading it: the
+     * propose-gate re-validates at submit time so that a request withdrawn
+     * between the two turns is caught, and that only works if `validate` looks
+     * at the record. **Re-validation is exactly as good as `validate` is.**
+     */
+    validate: async (args) => {
+      if (!args.leaveId) {
+        return { ok: false, missing: ["leaveId"], detail: "A leave id is required." };
+      }
+      const leave = await readLeave(graph, args.leaveId);
+      if (!leave) {
+        return { ok: false, missing: ["leaveId"], detail: `No leave request ${args.leaveId}.` };
+      }
+      if (leave.status !== "Pending") {
+        return {
+          ok: false,
+          missing: [],
+          detail: `That request is already ${String(leave.status).toLowerCase()}, so it cannot be approved.`,
+        };
+      }
+      return { ok: true };
     },
     permission: async (args) => {
       const leave = await readLeave(graph, args.leaveId);
@@ -166,17 +188,30 @@ export function leaveDeclineHandler(
   return {
     name: "leave.decline",
     category: "people",
-    validate: (args) => {
+    /** State as well as shape — see `leave.approve` above for why. */
+    validate: async (args) => {
       const missing: string[] = [];
       if (!args.leaveId) missing.push("leaveId");
       if (!args.reason) missing.push("reason");
-      return missing.length === 0
-        ? { ok: true }
-        : {
-            ok: false,
-            missing,
-            detail: "A leave id and a reason are required.",
-          };
+      if (missing.length > 0) {
+        return {
+          ok: false,
+          missing,
+          detail: "A leave id and a reason are required.",
+        };
+      }
+      const leave = await readLeave(graph, args.leaveId);
+      if (!leave) {
+        return { ok: false, missing: ["leaveId"], detail: `No leave request ${args.leaveId}.` };
+      }
+      if (leave.status !== "Pending") {
+        return {
+          ok: false,
+          missing: [],
+          detail: `That request is already ${String(leave.status).toLowerCase()}, so it cannot be declined.`,
+        };
+      }
+      return { ok: true };
     },
     permission: async (args) => {
       const leave = await readLeave(graph, args.leaveId);
@@ -264,6 +299,16 @@ export function employeeUpdateContactHandler(
           revert: async () => {
             await graph.putNode("employee", args.employeeId, before);
           },
+          // Serialisable, so the undo still works after a restart — the closure
+          // above dies with the process (registry.ts, `UndoInfo.plan`). `put`
+          // rather than `patch`, mirroring the revert exactly: it restores the
+          // record as it was, including a contact that was previously absent,
+          // which a patch of `{contact: undefined}` would not.
+          //
+          // This is what took `employee.updateContact` off KNOWN_UNDO_GAPS. It
+          // was one of only two entries there that Phase 3's "no undo, no tool"
+          // rule would otherwise have denied a tool.
+          plan: [{ op: "put", nodeType: "employee", nodeId: args.employeeId, data: before }],
         },
       };
       return result;

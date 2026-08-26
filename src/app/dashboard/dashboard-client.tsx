@@ -1,6 +1,9 @@
 "use client";
 
 import Link from "next/link";
+import { firstAtRisk } from "@/domains/assistant/day-plan/miss-classifier";
+import { at } from "@/domains/assistant/day-plan/time";
+import type { PlanItem } from "@/domains/assistant/day-plan/store";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { isApprover as roleIsApprover } from "@/server/roles";
 import { Icon } from "../ui/icons";
@@ -23,6 +26,8 @@ interface MeetingItem {
   from?: string;
   to?: string;
   kind?: string;
+  /** E7: the link is visible in each person's day. Absent for in-person. */
+  link?: string;
 }
 
 interface PendingLeave {
@@ -46,6 +51,14 @@ interface TodayState {
     tag?: string;
     ref?: { nodeType: string; nodeId: string };
     missOffered?: boolean;
+    /** A9 — dropped mid-day: still listed, off the day's account. */
+    dropped?: { at: string; reason?: string };
+    /** A9 — minutes done on unfinished work, and what is still owed. */
+    progressMinutes?: number;
+    shortfallMinutes?: number;
+    /** The window this item holds in the day (A4's live overrun check). */
+    start?: string;
+    end?: string;
   }>;
   rows: Array<{ kind: "work" | "meeting"; id: string; title: string; start?: string; done?: boolean; tag?: string }>;
   tally: { meetings: number; work: number; free: number };
@@ -55,6 +68,27 @@ interface TodayState {
   resumePrompt?: string;
   /** What past runs of a record actually took, keyed `nodeType:nodeId`. */
   estimateHints: Record<string, number>;
+  /** The close-out conversation, present once clocking out has opened it. */
+  closeOut?: {
+    committed: number;
+    done: number;
+    committedMinutes: number;
+    workedMinutes: number;
+    dropped: number;
+    shortfallMinutes: number;
+    ranOver: Array<{ id: string; label: string; byMinutes: number }>;
+    unfinished: Array<{
+      id: string;
+      label: string;
+      estimateMinutes: number;
+      progressMinutes: number;
+      shortfallMinutes: number;
+      interrupted: boolean;
+    }>;
+    answered: boolean;
+    finished: boolean;
+  };
+  seeded?: string[];
   overCapacity?: boolean;
   offerNow?: boolean;
   asked?: boolean;
@@ -130,10 +164,112 @@ export function DashboardClient({
   const [taskEstimates, setTaskEstimates] = useState<Record<string, number>>({});
   const [tickFor, setTickFor] = useState<string | null>(null);
   const [missFor, setMissFor] = useState<string | null>(null);
+  const [dropFor, setDropFor] = useState<string | null>(null);
+  /** Ticks every minute so A4's overrun check runs against the wall clock. */
+  const [nowMs, setNowMs] = useState<number>(() => Date.now());
+  const [dismissTick, setDismissTick] = useState(0);
   const [learned, setLearned] = useState<{ label: string; planned: number; suggested: number } | null>(null);
   const [closingOut, setClosingOut] = useState(false);
 
   const isApprover = roleIsApprover(role);
+
+  /*
+   * ── A4: tell me while it is happening ────────────────────────────────────
+   *
+   * "The moment it runs over — an offer. No question is asked… 'Module 4 is
+   * running over. Your 12:00 session will not fit. [Move it] [Drop the Friday
+   * prep] [Leave it]'"
+   *
+   * A client poll, not a server job. A4 makes this a *dashboard prompt* and
+   * says plainly that "the chat never opens by itself while you are working" —
+   * a scan that fires when nobody is looking produces a stale notification, not
+   * help. Phase 2's question scheduler is the thing that genuinely needs a
+   * server tick; this is not.
+   */
+  useEffect(() => {
+    const id = setInterval(() => setNowMs(Date.now()), 60_000);
+    return () => clearInterval(id);
+  }, []);
+
+  const seenKey = day ? `orga.overrunSeen.${userId}.${day.date}` : null;
+
+  /**
+   * Which items have already had their say today — once per item per day.
+   *
+   * A warning that repeats every minute is an alarm clock, so a dismissal has
+   * to survive a reload. Kept in `localStorage` rather than on the item: it is
+   * a per-viewer courtesy, not a fact about the day, and it must not travel to
+   * a manager through any projection of the plan.
+   *
+   * Read where it is used rather than hydrated into state by an effect —
+   * `dismissTick` is what makes a dismissal recompute this.
+   */
+  function seenOverruns(): Set<string> {
+    if (!seenKey) return new Set();
+    try {
+      const raw = window.localStorage.getItem(seenKey);
+      return new Set(raw ? (JSON.parse(raw) as string[]) : []);
+    } catch {
+      // A browser refusing storage costs at most a repeated warning.
+      return new Set();
+    }
+  }
+
+  function dismissOverrun(itemId: string) {
+    try {
+      if (seenKey) {
+        const next = seenOverruns().add(itemId);
+        window.localStorage.setItem(seenKey, JSON.stringify([...next]));
+      }
+    } catch {}
+    setDismissTick((n) => n + 1);
+  }
+
+  /**
+   * All four conditions, or say nothing:
+   *   1 committed and not done · 2 past its planned end
+   *   3 something later is genuinely displaced · 4 not already shown today
+   *
+   * Condition 3 is the one that keeps it quiet. A4: "if nothing later is at
+   * risk, it says nothing at all." `firstAtRisk` is the same predicate the
+   * post-hoc question uses, so the two can never disagree about that.
+   */
+  const overrun = ((): { item: PlanItem; displaced: PlanItem } | null => {
+    void dismissTick;
+    if (!day || day.phase !== "planned") return null;
+    // Not while the day is being closed — that conversation asks its own way.
+    if (day.closeOut) return null;
+    const seen = seenOverruns();
+    const nowIso = new Date(nowMs).toISOString();
+    const live: PlanItem[] = day.plan
+      .filter((p) => !p.done && !p.dropped)
+      .map((p) => ({
+        id: p.id,
+        label: p.label,
+        estimateMinutes: p.estimateMinutes,
+        start: p.start,
+        end: p.end,
+        done: p.done,
+        dropped: p.dropped,
+      }));
+    for (const item of live) {
+      if (seen.has(item.id)) continue;
+      const end = at(item.end);
+      if (!Number.isFinite(end) || end >= nowMs) continue;
+      const displaced = firstAtRisk(item, live, nowIso);
+      if (!displaced) continue;
+      return { item, displaced };
+    }
+    return null;
+  })();
+
+  /** A4's "[Move it]" — the displaced work goes to the end and is re-placed. */
+  async function moveLater(itemId: string) {
+    if (!day) return;
+    const rest = day.plan.filter((p) => p.id !== itemId).map((p) => p.id);
+    dismissOverrun(overrun?.item.id ?? itemId);
+    await post({ action: "reorder", orderedIds: [...rest, itemId] });
+  }
 
   const refreshDay = useCallback(() => {
     // Promise-chained (not awaited) so the state write happens in a later
@@ -189,6 +325,13 @@ export function DashboardClient({
     await post({ action: "start" });
   }
 
+  /**
+   * Clocking out opens the close-out conversation — it does not end the day.
+   *
+   * The day is folded into the streak by `finishCloseOut`, once the answers are
+   * in. `finalizeDay` is idempotent, so assessing here would mean every answer
+   * that followed arrived too late to count.
+   */
   async function clockOut() {
     setClosingOut(true);
     const date = new Date().toISOString().slice(0, 10);
@@ -199,6 +342,42 @@ export function DashboardClient({
       await refreshDay();
     }
     setClosingOut(false);
+  }
+
+  /** A9 — "I mean to do this, just not today." Offered back tomorrow. */
+  async function carryOver(itemId: string) {
+    await post({ action: "carryOver", itemId });
+  }
+
+  /** The conversation is over: seed tomorrow, then assess the day once. */
+  async function finishCloseOut() {
+    setClosingOut(true);
+    await post({ action: "finishCloseOut" });
+    setClosingOut(false);
+  }
+
+  /**
+   * A9 — "item dropped mid-day: allowed. Asked once why, does not break the
+   * streak."
+   *
+   * Asked *once*: the strip closes on the first answer and does not come back
+   * for that item. Skipping is a real option — the reason is a courtesy, not a
+   * toll on deciding you are not doing something.
+   */
+  async function dropItem(itemId: string, reason?: string) {
+    setDropFor(null);
+    await post({ action: "drop", itemId, reason });
+  }
+
+  /**
+   * A9 — "half done: progress recorded, remainder carried forward."
+   *
+   * Not a tick: the item stays open, the backing task stays open, and no
+   * why-question is asked. Only the remainder is owed tomorrow.
+   */
+  async function recordProgress(itemId: string, progressMinutes: number) {
+    setTickFor(null);
+    await post({ action: "tick", itemId, progressMinutes });
   }
 
   async function addItem(label: string, minutes: number, ref?: { nodeType: string; nodeId: string }) {
@@ -348,6 +527,161 @@ export function DashboardClient({
           )}
         </div>
       </header>
+
+      {/* ============ A4 — interrupt to help, never to interrogate ============ */}
+      {overrun && (
+        <section
+          className="pop-in flex flex-wrap items-center gap-2 rounded-2xl border border-peach-strong/40 bg-peach/[.14] px-4 py-3 text-[13px]"
+          role="status"
+        >
+          {/*
+            An OFFER about what to do next — never "why haven't you finished?".
+            A4: "Asking 'why didn't you finish?' while somebody is still doing
+            the work is the fastest way to make the application feel like a
+            supervisor. Saying 'this is overrunning and your afternoon will not
+            fit' at that same moment is genuinely helpful. Same timing, opposite
+            effect."
+          */}
+          <span className="min-w-0 flex-1 text-ink">
+            <span className="font-semibold">{overrun.item.label}</span> is running over.{" "}
+            {overrun.displaced.start ? (
+              <>
+                Your {fmtClock(overrun.displaced.start)}{" "}
+                <span className="font-semibold">{overrun.displaced.label}</span> will not fit.
+              </>
+            ) : (
+              <>
+                <span className="font-semibold">{overrun.displaced.label}</span> will not fit.
+              </>
+            )}
+          </span>
+          <span className="flex shrink-0 flex-wrap items-center gap-1.5 text-[11px]">
+            <button
+              onClick={() => moveLater(overrun.displaced.id)}
+              className="press rounded-full bg-accent px-2.5 py-1 font-bold text-white"
+            >
+              Move it
+            </button>
+            <button
+              onClick={() => {
+                dismissOverrun(overrun.item.id);
+                void dropItem(overrun.displaced.id, "No time");
+              }}
+              className="press rounded-full bg-white/70 px-2.5 py-1 font-semibold text-ink"
+            >
+              Drop {overrun.displaced.label}
+            </button>
+            <button
+              onClick={() => dismissOverrun(overrun.item.id)}
+              className="press px-2 py-1 font-semibold text-ink-soft hover:text-ink"
+            >
+              Leave it
+            </button>
+          </span>
+        </section>
+      )}
+
+      {/* ============ Close-out (A2/A9) — it TELLS you, then asks what it cannot know ============ */}
+      {day?.closeOut && !day.closeOut.finished && (
+        <section className="rise rounded-3xl bg-chrome-card p-5 text-chrome-ink shadow-card sm:p-6" style={stagger(1)}>
+          <h2 className="text-lg font-bold">How today went</h2>
+
+          {/*
+            The summary is a STATEMENT, never "what did you do today?".
+            The application has every ticked item, estimate and actual — A2:
+            asking what it already knows is what makes people stop trusting it.
+          */}
+          <p className="mt-1.5 text-sm text-chrome-soft">
+            <span className="font-semibold text-chrome-ink">
+              {day.closeOut.done} of {day.closeOut.committed} done.
+            </span>{" "}
+            {fmtMin(day.closeOut.workedMinutes)} of {fmtMin(day.closeOut.committedMinutes)} committed
+            work.
+            {day.closeOut.dropped > 0 && ` ${day.closeOut.dropped} dropped.`}
+            {day.closeOut.ranOver.map((r) => (
+              <span key={r.id}>
+                {" "}
+                {r.label} ran over by {fmtMin(r.byMinutes)}.
+              </span>
+            ))}
+          </p>
+
+          {day.closeOut.unfinished.length > 0 ? (
+            <>
+              <p className="mt-4 text-[13px] font-semibold">
+                Still open — what should happen to {day.closeOut.unfinished.length === 1 ? "it" : "these"}?
+              </p>
+              <div className="mt-2 space-y-2">
+                {day.closeOut.unfinished.map((u) => (
+                  <div key={u.id} className="rounded-xl bg-white/[.05] px-3 py-2.5">
+                    <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                      <span className="min-w-0 flex-1 truncate text-[13px]">{u.label}</span>
+                      {u.progressMinutes > 0 && (
+                        <span className="shrink-0 text-[11px] text-chrome-soft">
+                          {fmtMin(u.progressMinutes)} done · {fmtMin(u.shortfallMinutes)} left
+                        </span>
+                      )}
+                      {u.interrupted && (
+                        <span className="shrink-0 rounded-full bg-peach px-2 py-0.5 text-[9px] font-bold text-peach-strong">
+                          interrupted
+                        </span>
+                      )}
+                    </div>
+                    {/* Buttons, never typing. A1: "chat-first must never mean
+                        typing-first" — which holds at six in the evening more
+                        than it does at nine in the morning. */}
+                    <div className="mt-2 flex flex-wrap items-center gap-1.5 text-[11px]">
+                      <button
+                        onClick={() => carryOver(u.id)}
+                        className="press rounded-full bg-mint px-2.5 py-1 font-bold text-mint-strong"
+                      >
+                        Carry over
+                      </button>
+                      <button
+                        onClick={() => dropItem(u.id)}
+                        className="press rounded-full bg-white/[.08] px-2.5 py-1 font-semibold text-chrome-ink"
+                      >
+                        Drop it
+                      </button>
+                      <button
+                        onClick={() => recordProgress(u.id, Math.round(u.estimateMinutes / 2))}
+                        className="press rounded-full bg-lilac px-2.5 py-1 font-bold text-lilac-strong"
+                      >
+                        Part done
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </>
+          ) : (
+            <p className="mt-4 text-[13px] text-chrome-soft">
+              Nothing left open. {day.closeOut.shortfallMinutes === 0 ? "A clean day." : ""}
+            </p>
+          )}
+
+          {/*
+            Seeds, not a plan. The requirement asked for "what is your next day
+            plan?" here; A1 puts planning in the morning, once a day, with
+            mandatory time estimates. Two planning conversations would either
+            contradict each other or make the morning one pointless.
+            Clock-out seeds; morning commits.
+          */}
+          <div className="mt-4 flex flex-wrap items-center gap-2 border-t border-white/10 pt-3">
+            <p className="flex-1 text-[11px] text-chrome-soft">
+              Anything carried over is offered again tomorrow morning — you will still choose it,
+              and give it a time, then.
+            </p>
+            <button
+              onClick={finishCloseOut}
+              disabled={closingOut}
+              className="press shrink-0 rounded-full bg-accent px-4 py-2 text-xs font-bold text-chrome disabled:opacity-40"
+            >
+              {closingOut ? "Finishing…" : "That's the day"}
+            </button>
+          </div>
+        </section>
+      )}
 
       {/* ============ The day card — rings + flow ============ */}
       <section
@@ -563,6 +897,13 @@ export function DashboardClient({
                         <div className="flex items-center gap-2.5">
                           {row.kind === "meeting" ? (
                             <Icon name="meetings" className="h-3.5 w-3.5 shrink-0 text-chrome-soft" />
+                          ) : planItem?.dropped ? (
+                            <span
+                              className="grid h-5 w-5 shrink-0 place-items-center rounded-md border-[1.5px] border-chrome-soft/40 text-[11px] text-chrome-soft"
+                              title="Dropped"
+                            >
+                              &times;
+                            </span>
                           ) : row.done ? (
                             <span className="grid h-5 w-5 shrink-0 place-items-center rounded-md bg-accent text-chrome">
                               <Icon name="check" className="h-3 w-3" />
@@ -576,10 +917,14 @@ export function DashboardClient({
                               <Icon name="check" className="h-3 w-3" />
                             </button>
                           )}
-                          <span className={`min-w-0 flex-1 truncate text-[13px] ${row.done ? "text-chrome-soft line-through" : ""}`}>
+                          <span
+                            className={`min-w-0 flex-1 truncate text-[13px] ${
+                              row.done || planItem?.dropped ? "text-chrome-soft line-through" : ""
+                            }`}
+                          >
                             {row.title}
                           </span>
-                          {planItem && !row.done && day.plan.length > 1 && (
+                          {planItem && !row.done && !planItem.dropped && day.plan.length > 1 && (
                             <span className="flex shrink-0 flex-col leading-none">
                               <button
                                 onClick={() => move(row.id, -1)}
@@ -601,7 +946,17 @@ export function DashboardClient({
                               </button>
                             </span>
                           )}
-                          {row.start && (
+                          {planItem && !row.done && !planItem.dropped && (
+                            <button
+                              onClick={() => setDropFor(dropFor === row.id ? null : row.id)}
+                              title="Not doing this today"
+                              aria-label={`Drop ${row.title}`}
+                              className="press shrink-0 px-1 text-[13px] leading-none text-chrome-soft transition-colors hover:text-peach-strong"
+                            >
+                              &times;
+                            </button>
+                          )}
+                          {row.start && !planItem?.dropped && (
                             <span className="shrink-0 text-[11px] text-chrome-soft">{fmtClock(row.start)}</span>
                           )}
                           {planItem && (
@@ -609,7 +964,13 @@ export function DashboardClient({
                           )}
                           {row.tag && (
                             <span className="shrink-0 rounded-full bg-peach px-2 py-0.5 text-[9px] font-bold text-peach-strong">
-                              {row.tag === "carried-over" ? "carried over — meeting" : row.tag === "ran-over" ? "ran over" : row.tag}
+                              {row.tag === "carried-over"
+                                ? "carried over — meeting"
+                                : row.tag === "ran-over"
+                                  ? "ran over"
+                                  : row.tag === "dropped"
+                                    ? "dropped"
+                                    : row.tag}
                             </span>
                           )}
                         </div>
@@ -625,7 +986,58 @@ export function DashboardClient({
                             <button onClick={() => tick(row.id, undefined)} className="press rounded-full bg-white/[.08] px-2.5 py-1 font-semibold text-chrome-ink">
                               Just done
                             </button>
+                            {/* A9 — half done is a real outcome, not a failure. */}
+                            <span className="ml-1 text-chrome-soft">or part done:</span>
+                            <button
+                              onClick={() => recordProgress(row.id, Math.round(planItem.estimateMinutes / 2))}
+                              className="press rounded-full bg-lilac px-2.5 py-1 font-bold text-lilac-strong"
+                            >
+                              Half
+                            </button>
+                            <button
+                              onClick={() => recordProgress(row.id, Math.round(planItem.estimateMinutes * 0.75))}
+                              className="press rounded-full bg-lilac px-2.5 py-1 font-bold text-lilac-strong"
+                            >
+                              Most of it
+                            </button>
                           </div>
+                        )}
+                        {dropFor === row.id && (
+                          <div className="pop-in mt-2 flex flex-wrap items-center gap-1.5 pl-7 text-[11px]">
+                            <span className="text-chrome-soft">Not doing this today —</span>
+                            {["Not needed", "No time", "Blocked", "Doing it another day"].map((r) => (
+                              <button
+                                key={r}
+                                onClick={() => dropItem(row.id, r)}
+                                className="press rounded-full bg-white/[.08] px-2.5 py-1 font-semibold text-chrome-ink"
+                              >
+                                {r}
+                              </button>
+                            ))}
+                            <button
+                              onClick={() => dropItem(row.id)}
+                              className="text-chrome-soft hover:text-chrome-ink"
+                            >
+                              skip
+                            </button>
+                          </div>
+                        )}
+                        {planItem &&
+                          !row.done &&
+                          !planItem.dropped &&
+                          (planItem.progressMinutes ?? 0) > 0 && (
+                            <p className="mt-1 pl-7 text-[11px] text-chrome-soft">
+                              {fmtMin(planItem.progressMinutes ?? 0)} done —{" "}
+                              <span className="font-semibold text-lilac-strong">
+                                {fmtMin(planItem.shortfallMinutes ?? 0)} left
+                              </span>
+                              , carried to tomorrow.
+                            </p>
+                          )}
+                        {planItem?.dropped?.reason && (
+                          <p className="mt-1 pl-7 text-[11px] text-chrome-soft">
+                            Dropped — {planItem.dropped.reason.toLowerCase()}
+                          </p>
                         )}
                         {missFor === row.id && (
                           <div className="pop-in mt-2 flex flex-wrap items-center gap-1.5 pl-7 text-[11px]">
@@ -692,21 +1104,35 @@ export function DashboardClient({
               {meetings.slice(0, 4).map((m, i) => {
                 const s = KIND_STYLE[m.kind ?? ""] ?? KIND_DEFAULT;
                 return (
-                  <Link
+                  // The whole row used to be one <Link>. The join link has to
+                  // sit outside it — an anchor inside an anchor is invalid, and
+                  // the browser drops one of them.
+                  <div
                     key={m.id}
-                    href="/meetings"
                     style={{ animationDelay: `${200 + i * 60}ms` }}
                     className={`rise lift flex items-center gap-3 rounded-2xl border-l-[3px] px-3.5 py-2.5 ${s.bg} ${s.edge}`}
                   >
-                    <div className="min-w-0 flex-1">
+                    <Link href="/meetings" className="min-w-0 flex-1">
                       <div className="truncate text-[13px] font-semibold text-ink">{m.title}</div>
                       <div className="mt-0.5 flex items-center gap-1.5 text-[11px] text-ink-soft">
                         <Icon name="clock" className="h-3 w-3" />
                         {m.from ?? "unscheduled"}
                         {m.kind && <span className={`font-semibold ${s.text}`}>· {m.kind}</span>}
                       </div>
-                    </div>
-                  </Link>
+                    </Link>
+                    {/* Only when there is one. An in-person meeting renders no
+                        "Join" at all rather than a dead one. */}
+                    {m.link && (
+                      <a
+                        href={m.link}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="press shrink-0 rounded-lg bg-chrome px-2.5 py-1 text-[11px] font-semibold text-chrome-ink"
+                      >
+                        Join
+                      </a>
+                    )}
+                  </div>
                 );
               })}
             </div>

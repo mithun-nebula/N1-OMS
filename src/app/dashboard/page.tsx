@@ -40,8 +40,10 @@ export default async function DashboardPage() {
       return !d.cancelled && (d.attendees ?? []).includes(user.id);
     }))
     .map((n) => {
-      const d = n.data as { title: string; from?: string; to?: string; kind?: string };
-      return { id: n.id, title: d.title, from: d.from, to: d.to, kind: d.kind };
+      // `link` was dropped here, so the meeting reached each person's day with
+      // no way to join it — one of the three places E7 names.
+      const d = n.data as { title: string; from?: string; to?: string; kind?: string; link?: string };
+      return { id: n.id, title: d.title, from: d.from, to: d.to, kind: d.kind, link: d.link };
     })
     .slice(0, 5);
 

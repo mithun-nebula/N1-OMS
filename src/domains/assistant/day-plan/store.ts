@@ -18,6 +18,15 @@ export interface PlanItem {
   done?: boolean;
   doneAt?: string;
   actualMinutes?: number;
+  /**
+   * Appendix A9 — "half done: progress recorded, remainder carried forward.
+   * Only the shortfall counts against the day."
+   *
+   * Minutes actually spent on an item that is **not** finished. Accumulates
+   * across several sittings. `actualMinutes` is the different fact: what a
+   * *completed* item took, which is what estimate learning reads.
+   */
+  progressMinutes?: number;
   miss?: {
     kind: "interrupted" | "ran-over";
     cause?: string;
@@ -27,6 +36,22 @@ export interface PlanItem {
     offerNow?: boolean;
   };
   interrupted?: boolean;
+  /**
+   * Appendix A9 — "item dropped mid-day: allowed. Asked once why, does not
+   * break the streak."
+   *
+   * The item is **marked**, never removed. A day that quietly loses the work
+   * somebody decided against is not an honest record of the day, and the
+   * carried-forward brief would have nothing to explain its absence.
+   */
+  dropped?: { at: string; reason?: string };
+  /**
+   * Answered "carried over" at close-out: the person means to do it, just not
+   * today. Unlike `dropped` this is **not** excused from the day — see
+   * `carryOverItem` for why leaving it accountable is what keeps the streak
+   * from being gameable.
+   */
+  carriedOver?: { at: string };
 }
 
 export interface MeetingItem {
@@ -35,6 +60,16 @@ export interface MeetingItem {
   start: string;
   end: string;
   arrivedDuringDay?: boolean;
+  /**
+   * The join link, for an online or `both` meeting.
+   *
+   * E7 names three places the link must be visible, and *"each person's day"*
+   * is one of them. This field did not exist, so the day plan dropped it and
+   * the only way to join a meeting from your own day was to go and find it on
+   * another screen. Undefined for an in-person meeting — never an empty string,
+   * which would render as a dead link.
+   */
+  link?: string;
 }
 
 export interface StreakRecord {
@@ -70,6 +105,20 @@ export interface DayPlan {
   suggested?: string[];
   /** Brief items pushed to "Later" — they reappear in tomorrow's brief. */
   deferred?: string[];
+  /**
+   * What close-out offered up for **tomorrow**. Read by `startDay` into the
+   * next day's `suggested`, the same way `deferred` feeds the next brief.
+   *
+   * Seeds, not commitments: A1 keeps planning in the morning, once a day, with
+   * mandatory time estimates. Clock-out seeds; morning commits.
+   */
+  seeded?: string[];
+  /**
+   * The close-out conversation. `finishedAt` is what gates folding the day into
+   * the streak — `finalizeDay` is idempotent, so assessing before the answers
+   * arrive would silently discard every one of them.
+   */
+  closeOut?: { startedAt: string; finishedAt?: string };
 }
 
 /**
@@ -107,8 +156,31 @@ export interface DaySummary {
   committedMinutes: number;
   ranOver: number;
   interrupted: number;
+  dropped: number;
+  /** Minutes committed to and not delivered — A9's "shortfall". */
+  shortfallMinutes: number;
   onLeave: boolean;
   phase: DayPhase;
+}
+
+/**
+ * What is still owed on an item, in minutes.
+ *
+ * Zero once it is done or dropped. For an untouched item it is the whole
+ * estimate — which is what makes "only the shortfall counts" reduce to the old
+ * whole-item behaviour when nobody has recorded any progress.
+ */
+export function shortfallOf(item: PlanItem): number {
+  if (item.done || isDropped(item)) return 0;
+  const estimate = Number(item.estimateMinutes);
+  const planned = Number.isFinite(estimate) && estimate > 0 ? estimate : 0;
+  const doneSoFar = Number(item.progressMinutes);
+  return Math.max(0, planned - (Number.isFinite(doneSoFar) ? doneSoFar : 0));
+}
+
+/** Dropped work is off the day: it is neither owed nor held against anyone. */
+export function isDropped(item: PlanItem): boolean {
+  return item.dropped !== undefined;
 }
 
 export function summariseDay(plan: DayPlan): DaySummary {
@@ -119,6 +191,8 @@ export function summariseDay(plan: DayPlan): DaySummary {
     committedMinutes: plan.plan.reduce((sum, p) => sum + p.estimateMinutes, 0),
     ranOver: plan.plan.filter((p) => p.miss?.kind === "ran-over").length,
     interrupted: plan.plan.filter((p) => p.miss?.kind === "interrupted" || p.interrupted).length,
+    dropped: plan.plan.filter(isDropped).length,
+    shortfallMinutes: plan.plan.reduce((sum, p) => sum + shortfallOf(p), 0),
     onLeave: Boolean(plan.onLeave),
     phase: plan.phase,
   };

@@ -23,7 +23,12 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Invalid JSON body." }, { status: 400 });
   }
   await ensureAccountsReady();
-  const result = await changePassword(user.username, body.current ?? "", body.next ?? "");
+  const result = await changePassword(
+    user.username,
+    body.current ?? "",
+    body.next ?? "",
+    user.id,
+  );
   if (!result.ok) {
     return NextResponse.json({ error: result.error }, { status: 400 });
   }

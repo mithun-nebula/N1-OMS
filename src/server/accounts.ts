@@ -5,6 +5,9 @@ import { env } from "@/config/env";
 import { directory } from "./directory";
 import { temporaryPasswordExpiry } from "./roles";
 import type { Pool } from "pg";
+import type { ActivityLog, ActivityEntry } from "@/spine/activity-log/types";
+import type { ChangeSummary } from "@/spine/operation/registry";
+import { generateOperationId } from "@/spine/operation/types";
 
 export interface Account {
   username: string;
@@ -143,6 +146,12 @@ let accountList: Account[] = buildDefaultAccounts();
 let byUsername = new Map(accountList.map((a) => [a.username, a]));
 let byPerson = new Map(accountList.map((a) => [a.personId, a]));
 let dbPool: Pool | null = null;
+/**
+ * Optional, exactly like `DayPlanStore`'s persistence. Absent (as in every
+ * existing test) appending is a no-op, so nothing that already worked has to
+ * change to accommodate the log.
+ */
+let activityLog: ActivityLog | null = null;
 
 interface AccountRow {
   username: string;
@@ -176,8 +185,9 @@ function rowToAccount(row: AccountRow): Account {
  * empty DB, then hydrates the in-memory maps from Postgres. Without a pool:
  * keeps the in-memory defaults (resets on restart). All reads stay sync.
  */
-export async function configureAccounts(pool?: Pool): Promise<void> {
+export async function configureAccounts(pool?: Pool, log?: ActivityLog): Promise<void> {
   dbPool = pool ?? null;
+  activityLog = log ?? null;
   if (!pool) return;
 
   await pool.query(`
@@ -232,6 +242,60 @@ async function insertAccount(pool: Pool, a: Account): Promise<void> {
       a.temporaryPasswordExpiresAt ?? null,
     ],
   );
+}
+
+// ── the record of who changed what ──
+
+/**
+ * Accounts decide who can sign in and what they may do, and until now not one
+ * of these writes left a trace — `log.append` existed only in `spine.ts`.
+ * Granting somebody the admin role was unrecordable.
+ *
+ * They are logged rather than turned into gated operations on purpose:
+ * `configureAccounts(pool)` runs inside `buildDemoWorld()` *before* the spine
+ * exists, because `verifyCredentials` has to work for the very first sign-in.
+ * Routing these through `Spine.submit()` would mean solving that ordering
+ * problem for marginal gain. The gap being closed is "we cannot prove what
+ * happened", and an append-only entry closes exactly that.
+ *
+ * No `undoDescription` and no `undoPlan`: there is no safe automatic undo for
+ * "made someone an admin", and `spine.undo` correctly refuses an entry that
+ * carries neither.
+ *
+ * ***Never pass a password, a hash, or a temporary password in `changes`.***
+ * Record *that* a password changed, never what to.
+ */
+async function recordAccountChange(input: {
+  operationName: string;
+  actor: string;
+  changes: ChangeSummary[];
+}): Promise<void> {
+  const log = activityLog;
+  if (!log) return;
+  try {
+    const at = new Date().toISOString();
+    const entry: ActivityEntry = {
+      id: await log.nextId(),
+      operationId: generateOperationId(),
+      operationName: input.operationName,
+      actor: input.actor,
+      authority: { kind: "self", actor: input.actor },
+      startedBy: { kind: "form", at, actor: input.actor },
+      at,
+      changes: input.changes,
+      outcome: "ran",
+    };
+    await log.append(entry);
+  } catch (error) {
+    // The record must never be able to fail the change it describes — the same
+    // rule the day-plan reactions follow. A lost entry is bad; a password reset
+    // that half-happened because logging threw is worse.
+    console.warn(
+      `[accounts] could not record ${input.operationName}: ${
+        error instanceof Error ? error.message : String(error)
+      }`,
+    );
+  }
 }
 
 // ── sync reads (unchanged signatures — the gate consumes these synchronously) ──
@@ -313,6 +377,8 @@ export async function addAccount(input: {
   role: RbacRole;
   team?: string;
   mustChangePassword?: boolean;
+  /** Who is creating this login. Recorded on the activity entry. */
+  actor: string;
 }): Promise<{ ok: boolean; error?: string }> {
   if (byUsername.has(input.username)) {
     return { ok: false, error: "Username already exists." };
@@ -336,6 +402,24 @@ export async function addAccount(input: {
   byUsername.set(account.username, account);
   byPerson.set(account.personId, account);
   if (dbPool) await insertAccount(dbPool, account);
+  await recordAccountChange({
+    operationName: "account.add",
+    actor: input.actor,
+    changes: [
+      {
+        nodeType: "account",
+        nodeId: account.username,
+        after: {
+          username: account.username,
+          personId: account.personId,
+          role: account.role,
+          displayName: account.displayName,
+          team: account.team,
+          mustChangePassword: account.mustChangePassword,
+        },
+      },
+    ],
+  });
   return { ok: true };
 }
 
@@ -357,6 +441,8 @@ export async function addAccountForPerson(input: {
   displayName: string;
   role: RbacRole;
   team?: string;
+  /** Who is creating this login. Recorded on the activity entry. */
+  actor: string;
 }): Promise<{ ok: boolean; error?: string }> {
   if (byUsername.has(input.username)) {
     return { ok: false, error: "That username is already taken." };
@@ -378,12 +464,31 @@ export async function addAccountForPerson(input: {
   byUsername.set(account.username, account);
   byPerson.set(account.personId, account);
   if (dbPool) await insertAccount(dbPool, account);
+  await recordAccountChange({
+    operationName: "account.addForPerson",
+    actor: input.actor,
+    changes: [
+      {
+        nodeType: "account",
+        nodeId: account.username,
+        after: {
+          username: account.username,
+          personId: account.personId,
+          role: account.role,
+          displayName: account.displayName,
+          team: account.team,
+          mustChangePassword: true,
+        },
+      },
+    ],
+  });
   return { ok: true };
 }
 
 /** Remove a login entirely. Used to undo a person who was just created. */
-export async function removeAccount(username: string): Promise<void> {
+export async function removeAccount(username: string, actor: string): Promise<void> {
   const account = byUsername.get(username);
+  // Nothing happened, so nothing is recorded.
   if (!account) return;
   accountList = accountList.filter((a) => a.username !== username);
   byUsername.delete(account.username);
@@ -391,6 +496,22 @@ export async function removeAccount(username: string): Promise<void> {
   if (dbPool) {
     await dbPool.query("DELETE FROM orga_accounts WHERE username=$1", [username]);
   }
+  await recordAccountChange({
+    operationName: "account.remove",
+    actor,
+    changes: [
+      {
+        nodeType: "account",
+        nodeId: username,
+        before: {
+          username: account.username,
+          personId: account.personId,
+          role: account.role,
+          displayName: account.displayName,
+        },
+      },
+    ],
+  });
 }
 
 /**
@@ -401,11 +522,13 @@ export async function removeAccount(username: string): Promise<void> {
 export async function setAccountEnabled(
   personId: string,
   enabled: boolean,
+  actor: string,
 ): Promise<void> {
   const account = byPerson.get(personId);
   if (!account) return;
   if (enabled) {
     // Re-enabling needs a fresh temporary password, set by whoever reactivates.
+    // Nothing changed here, so there is nothing to record.
     return;
   }
   account.passwordHash = hashPassword(randomUnusablePassword());
@@ -417,6 +540,20 @@ export async function setAccountEnabled(
       [account.username, account.passwordHash],
     );
   }
+  // The hash is deliberately absent: the entry says the login was disabled,
+  // never what it was disabled to.
+  await recordAccountChange({
+    operationName: "account.setEnabled",
+    actor,
+    changes: [
+      {
+        nodeType: "account",
+        nodeId: account.username,
+        before: { enabled: true },
+        after: { enabled: false, personId: account.personId },
+      },
+    ],
+  });
 }
 
 function randomUnusablePassword(): string {
@@ -426,13 +563,27 @@ function randomUnusablePassword(): string {
 export async function updateRole(
   username: string,
   role: RbacRole,
+  actor: string,
 ): Promise<{ ok: boolean; error?: string }> {
   const account = byUsername.get(username);
   if (!account) return { ok: false, error: "Account not found." };
+  const previousRole = account.role;
   account.role = role;
   if (dbPool) {
     await dbPool.query("UPDATE orga_accounts SET role=$2 WHERE username=$1", [username, role]);
   }
+  await recordAccountChange({
+    operationName: "account.updateRole",
+    actor,
+    changes: [
+      {
+        nodeType: "account",
+        nodeId: username,
+        before: { role: previousRole },
+        after: { role },
+      },
+    ],
+  });
   return { ok: true };
 }
 
@@ -440,6 +591,7 @@ export async function changePassword(
   username: string,
   current: string,
   next: string,
+  actor: string,
 ): Promise<{ ok: boolean; error?: string }> {
   const account = byUsername.get(username);
   if (!account) return { ok: false, error: "Account not found." };
@@ -459,12 +611,25 @@ export async function changePassword(
       [username, account.passwordHash],
     );
   }
+  // THAT it changed, never what to. No password, no hash, not even a length.
+  await recordAccountChange({
+    operationName: "account.changePassword",
+    actor,
+    changes: [
+      {
+        nodeType: "account",
+        nodeId: username,
+        after: { passwordChanged: true, mustChangePassword: false },
+      },
+    ],
+  });
   return { ok: true };
 }
 
 export async function resetPassword(
   username: string,
   next: string,
+  actor: string,
 ): Promise<{ ok: boolean; error?: string }> {
   const account = byUsername.get(username);
   if (!account) return { ok: false, error: "Account not found." };
@@ -482,6 +647,23 @@ export async function resetPassword(
       [username, account.passwordHash, account.temporaryPasswordExpiresAt],
     );
   }
+  // An admin reset is the single most impersonation-shaped write in the system,
+  // so it is recorded — and the temporary password itself never is.
+  await recordAccountChange({
+    operationName: "account.resetPassword",
+    actor,
+    changes: [
+      {
+        nodeType: "account",
+        nodeId: username,
+        after: {
+          passwordReset: true,
+          mustChangePassword: true,
+          temporaryPasswordExpiresAt: account.temporaryPasswordExpiresAt,
+        },
+      },
+    ],
+  });
   return { ok: true };
 }
 

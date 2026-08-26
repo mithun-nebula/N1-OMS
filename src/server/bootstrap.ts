@@ -91,8 +91,9 @@ export async function buildDemoWorld(): Promise<DemoWorld> {
   const limiter = await configureQuestionLimiter(pool, localDate());
   const registry = new OperationRegistry();
 
-  // Durable accounts (hydrate from DB / seed defaults)
-  await configureAccounts(pool);
+  // Durable accounts (hydrate from DB / seed defaults). The log goes in too:
+  // account writes are the one category that used to leave no trace at all.
+  await configureAccounts(pool, log);
 
   const owners = new Map<string, ActorId>();
   const teams = new Map<ActorId, string>();

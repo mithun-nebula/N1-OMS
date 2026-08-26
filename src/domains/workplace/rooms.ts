@@ -156,6 +156,25 @@ export function roomBookHandler(
               { kind: "record", nodeType: "room", nodeId: roomId },
               { kind: "actor", actor: clash.by },
             ],
+            // Booking a room had NO undo at all, which under Phase 3's
+            // "no undo, no tool" rule would have kept `room.book` out of the
+            // catalogue entirely — and it is one of the four operations that
+            // plan names as a straight-through write tool.
+            //
+            // This path also MOVED somebody else's booking out of the way, so
+            // undoing it has to put that back where it was, or a stranger is
+            // left in a room they never chose with nothing recording why.
+            undo: {
+              description: `Release ${booking.id} and put ${clash.id} back.`,
+              revert: async () => {
+                await graph.removeNode("booking", booking.id);
+                await graph.putNode("booking", clash.id, { ...clash, roomId });
+              },
+              plan: [
+                { op: "remove", nodeType: "booking", nodeId: booking.id },
+                { op: "patch", nodeType: "booking", nodeId: clash.id, data: { roomId } },
+              ],
+            },
             response: { resolved: true, bookingId: booking.id, displaced: clash.id, movedTo },
           };
         }
@@ -170,6 +189,14 @@ export function roomBookHandler(
       const result: OperationResult = {
         changes: [{ nodeType: "booking", nodeId: booking.id, after: booking }],
         publishedTo: [{ kind: "record", nodeType: "room", nodeId: roomId }],
+        // A booking is a create, so its undo is a delete — the easy case, and
+        // the one that was missing. See the displacing path above for why the
+        // other branch needs two steps.
+        undo: {
+          description: `Release booking ${booking.id}.`,
+          revert: async () => { await graph.removeNode("booking", booking.id); },
+          plan: [{ op: "remove", nodeType: "booking", nodeId: booking.id }],
+        },
         response: { resolved: true, bookingId: booking.id },
       };
       return result;

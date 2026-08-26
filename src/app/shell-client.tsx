@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
-import { VoiceButton } from "./voice-input";
+import { VoiceButton } from "./voice-session";
 import { NotificationsBell } from "./chrome/notifications";
 import { ThemeToggle } from "./chrome/theme-toggle";
 import { Icon, type IconName } from "./ui/icons";
@@ -23,6 +23,9 @@ const PRIMARY: NavItem[] = [
   { href: "/calendar", label: "Calendar", icon: "calendar" },
   { href: "/team", label: "Team", icon: "team" },
   { href: "/messages", label: "Messages", icon: "chat" },
+  // Feature 07. The endpoint has existed since Phase 1a with no screen behind
+  // it, which is why the conversation it stores has never been read back.
+  { href: "/assistant", label: "Assistant", icon: "spark" },
 ];
 
 const SECONDARY: NavItem[] = [

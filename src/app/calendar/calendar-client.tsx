@@ -10,6 +10,7 @@ interface CalendarCell {
   date: string;
   meetings: number;
   events: Array<{ id: string; title: string }>;
+  meetingEntries: Array<{ id: string; title: string; link?: string }>;
 }
 
 interface CalendarEntry {
@@ -23,6 +24,8 @@ interface CalendarEntry {
   peopleIds: string[];
   people: string[];
   cancelled: boolean;
+  /** The join link, for entries that project an online or `both` meeting. */
+  link?: string;
 }
 
 interface UndoableAction {
@@ -395,6 +398,30 @@ export function CalendarClient({
                               {e.to && ` → ${e.to}`}
                               {e.detail && <span className="text-ink-faint">· {e.detail}</span>}
                             </div>
+                            {/* E7 names the calendar entry as one of the three
+                                places the link must be visible. Rendered only
+                                when there is one — an in-person meeting and a
+                                plain event both get nothing here. */}
+                            {e.link && !e.cancelled && (
+                              <div className="mt-1.5 flex flex-wrap items-center gap-2">
+                                <a
+                                  href={e.link}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className="press rounded-lg bg-chrome px-2.5 py-1 text-[11px] font-semibold text-chrome-ink"
+                                >
+                                  Join
+                                </a>
+                                <a
+                                  href={e.link}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className="min-w-0 truncate text-[11px] text-ink-soft hover:text-ink hover:underline"
+                                >
+                                  {e.link}
+                                </a>
+                              </div>
+                            )}
                             {e.people.length > 0 && (
                               <div className="mt-2 flex flex-wrap gap-1">
                                 {e.peopleIds.map((pid, idx) => (

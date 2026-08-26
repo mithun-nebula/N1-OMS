@@ -34,7 +34,13 @@ export async function POST(request: Request) {
     case "accept-graduation":
       return NextResponse.json({ ok: engine.acceptGraduation(body.ruleId!, user.id) });
     case "revoke":
-      return NextResponse.json({ ok: engine.revoke(body.ruleId!, user.id) });
+      // `revoke` has always accepted `isAdmin` and this route never passed it,
+      // so an admin could not revoke anybody else's rule — only their own.
+      return NextResponse.json({
+        ok: engine.revoke(body.ruleId!, user.id, {
+          isAdmin: user.role === "admin" || user.role === "super-admin",
+        }),
+      });
     case "accept-suggestion":
       return NextResponse.json({ ok: engine.acceptSuggestion(body.suggestionId!) });
     case "detect-routines":

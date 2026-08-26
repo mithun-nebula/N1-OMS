@@ -21,7 +21,15 @@ const KIND_STYLE: Record<string, { edge: string; pill: string }> = {
   "in-person": { edge: "border-peach-strong", pill: "bg-peach text-peach-strong" },
   both: { edge: "border-lilac-strong", pill: "bg-lilac text-lilac-strong" },
 };
-const KIND_DEFAULT = KIND_STYLE.online;
+/*
+ * Appendix E7: `both` "should be the easy default, not an afterthought."
+ *
+ * This lands together with room booking (plan section 2.5.8) and not before:
+ * `both` means a room AND a link, so making it the default fires the
+ * room-booking path on most meetings. Landing the default while `roomId` was
+ * still stored inertly would have made the new default a regression.
+ */
+const KIND_DEFAULT = KIND_STYLE.both;
 
 interface DecisionLine {
   text: string;
@@ -43,10 +51,11 @@ export function MeetingsClient({
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState({
     title: "",
-    kind: "online",
+    kind: "both",
     from: "",
     to: "",
     attendees: [] as string[],
+    externals: "",
   });
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editForm, setEditForm] = useState({ title: "", from: "", to: "" });
@@ -72,10 +81,19 @@ export function MeetingsClient({
       from: new Date(form.from).toISOString(),
       to: new Date(form.to).toISOString(),
       attendees: form.attendees,
+      // E7: people outside the organisation are invited by email, need no
+      // account, and see nothing else. `externals` was a typed field on the
+      // record and the only mention of it in `src/` — never in the form.
+      // Google sends them the invitation, so no mail transport is needed.
+      externals: form.externals
+        .split(/[,;\s]+/)
+        .map((e) => e.trim())
+        .filter((e) => e.includes("@"))
+        .map((email) => ({ email })),
     });
     if (outcome.status === "ran") {
       setShowForm(false);
-      setForm({ title: "", kind: "online", from: "", to: "", attendees: [] });
+      setForm({ title: "", kind: "both", from: "", to: "", attendees: [], externals: "" });
     }
   }
 
@@ -157,9 +175,10 @@ export function MeetingsClient({
           />
           <div className="flex flex-wrap gap-2">
             <select value={form.kind} onChange={(e) => setForm({ ...form, kind: e.target.value })} className={inputCls}>
+              {/* E7's order, not the old one: the default reads first. */}
+              <option value="both">Both — room and link</option>
               <option value="online">Online</option>
               <option value="in-person">In person</option>
-              <option value="both">Both</option>
             </select>
             <input type="datetime-local" value={form.from} onChange={(e) => setForm({ ...form, from: e.target.value })} className={inputCls} />
             <input type="datetime-local" value={form.to} onChange={(e) => setForm({ ...form, to: e.target.value })} className={inputCls} />
@@ -179,6 +198,12 @@ export function MeetingsClient({
               </button>
             ))}
           </div>
+          <input
+            value={form.externals}
+            onChange={(e) => setForm({ ...form, externals: e.target.value })}
+            placeholder="People outside the organisation — email addresses, comma separated"
+            className={`${inputCls} w-full py-2`}
+          />
           <AccentButton onClick={createMeeting} disabled={busy || !form.title}>
             Create meeting
           </AccentButton>
@@ -232,8 +257,32 @@ export function MeetingsClient({
                       <Icon name="clock" className="h-3 w-3" />
                       {m.from && new Date(m.from).toLocaleString([], { dateStyle: "medium", timeStyle: "short" })}
                       {m.to && ` → ${new Date(m.to).toLocaleTimeString([], { timeStyle: "short" })}`}
-                      {m.link && <span className="text-mint-strong">· link preserved across edits</span>}
                     </div>
+                    {/* E7 names three places the link must be visible and this
+                        is one of them. The screen used to render the WORDS
+                        "link preserved across edits" and never the URL — a
+                        claim about the link standing in for the link itself. */}
+                    {m.link && (
+                      <div className="mt-1.5 flex flex-wrap items-center gap-2">
+                        <a
+                          href={m.link}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="press rounded-lg bg-chrome px-2.5 py-1 text-[11px] font-semibold text-chrome-ink"
+                        >
+                          Join
+                        </a>
+                        <a
+                          href={m.link}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="min-w-0 truncate text-[11px] text-ink-soft hover:text-ink hover:underline"
+                        >
+                          {m.link}
+                        </a>
+                        <span className="text-[11px] text-ink-faint">· stays the same when the meeting moves</span>
+                      </div>
+                    )}
                     <div className="mt-2.5 flex flex-wrap items-center justify-between gap-2">
                       {m.attendees.length > 0 ? (
                         <div className="flex items-center gap-2">
@@ -264,7 +313,10 @@ export function MeetingsClient({
                         </div>
                       ) : (
                         <button onClick={() => setAddingTo(m.id)} className="press text-[11px] font-medium text-accent-strong hover:underline">
-                          + Add attendee (auto-sends link)
+                          {/* The label promised a link on EVERY meeting,
+                              including in-person ones that have none. Found by
+                              creating one and looking at it, not by a test. */}
+                          {m.link ? "+ Add attendee (auto-sends link)" : "+ Add attendee"}
                         </button>
                       )}
                     </div>

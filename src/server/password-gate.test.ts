@@ -31,6 +31,7 @@ describe("temporary passwords", () => {
       password: "handed-over-by-admin",
       displayName: "New Joiner",
       role: "employee",
+      actor: "admin",
     });
     expect(created.ok).toBe(true);
 
@@ -38,7 +39,7 @@ describe("temporary passwords", () => {
     const firstSignIn = verifyCredentials("newjoiner", "handed-over-by-admin");
     expect(firstSignIn?.mustChangePassword).toBe(true);
 
-    await changePassword("newjoiner", "handed-over-by-admin", "my-own-password");
+    await changePassword("newjoiner", "handed-over-by-admin", "my-own-password", "newjoiner");
     expect(verifyCredentials("newjoiner", "my-own-password")?.mustChangePassword).toBe(false);
     // The admin's value is now useless.
     expect(verifyCredentials("newjoiner", "handed-over-by-admin")).toBeNull();
@@ -48,7 +49,7 @@ describe("temporary passwords", () => {
     // Baseline: a seeded demo account is usable as-is.
     expect(verifyCredentials("employee", "employee123")?.mustChangePassword).toBe(false);
 
-    const reset = await resetPassword("employee", "temp-pass-123");
+    const reset = await resetPassword("employee", "temp-pass-123", "admin");
     expect(reset.ok).toBe(true);
 
     const signedIn = verifyCredentials("employee", "temp-pass-123");
@@ -58,22 +59,22 @@ describe("temporary passwords", () => {
   });
 
   it("changing your own password clears the flag", async () => {
-    await resetPassword("manager", "temp-pass-456");
+    await resetPassword("manager", "temp-pass-456", "admin");
     expect(findAccount("manager")?.mustChangePassword).toBe(true);
 
-    const changed = await changePassword("manager", "temp-pass-456", "chosen-by-me");
+    const changed = await changePassword("manager", "temp-pass-456", "chosen-by-me", "james");
     expect(changed.ok).toBe(true);
     expect(findAccount("manager")?.mustChangePassword).toBe(false);
     expect(verifyCredentials("manager", "chosen-by-me")?.mustChangePassword).toBe(false);
   });
 
   it("a failed change leaves the flag set", async () => {
-    await resetPassword("intern", "temp-pass-789");
-    const wrongCurrent = await changePassword("intern", "not-the-temp", "whatever-123");
+    await resetPassword("intern", "temp-pass-789", "admin");
+    const wrongCurrent = await changePassword("intern", "not-the-temp", "whatever-123", "ravi");
     expect(wrongCurrent.ok).toBe(false);
     expect(findAccount("intern")?.mustChangePassword).toBe(true);
 
-    const tooShort = await changePassword("intern", "temp-pass-789", "abc");
+    const tooShort = await changePassword("intern", "temp-pass-789", "abc", "ravi");
     expect(tooShort.ok).toBe(false);
     expect(findAccount("intern")?.mustChangePassword).toBe(true);
   });
@@ -84,6 +85,7 @@ describe("temporary passwords", () => {
       password: "handed-over",
       displayName: "Never Logged In",
       role: "employee",
+      actor: "admin",
     });
     const account = findAccount("neverloggedin")!;
     expect(account.temporaryPasswordExpiresAt).toBeDefined();
@@ -102,8 +104,9 @@ describe("temporary passwords", () => {
       password: "handed-over",
       displayName: "Settled",
       role: "employee",
+      actor: "admin",
     });
-    await changePassword("settled", "handed-over", "chosen-by-me");
+    await changePassword("settled", "handed-over", "chosen-by-me", "settled");
     const account = findAccount("settled")!;
     expect(account.mustChangePassword).toBe(false);
     expect(account.temporaryPasswordExpiresAt).toBeUndefined();
@@ -113,7 +116,7 @@ describe("temporary passwords", () => {
   });
 
   it("a reset restarts the clock", async () => {
-    await resetPassword("employee", "second-temp-pass");
+    await resetPassword("employee", "second-temp-pass", "admin");
     const account = findAccount("employee")!;
     expect(account.temporaryPasswordExpiresAt).toBeDefined();
     expect(new Date(account.temporaryPasswordExpiresAt!).getTime()).toBeGreaterThan(
@@ -122,12 +125,12 @@ describe("temporary passwords", () => {
   });
 
   it("the flag lives on the account, so it is visible however the session was issued", async () => {
-    await resetPassword("hr", "temp-pass-000");
+    await resetPassword("hr", "temp-pass-000", "admin");
     // A session token minted *before* the reset would still say false. Reading
     // the account is what makes the reset take effect immediately.
     expect(accountOfActor("shruti")?.mustChangePassword).toBe(true);
 
-    await changePassword("hr", "temp-pass-000", "shruti-new-pass");
+    await changePassword("hr", "temp-pass-000", "shruti-new-pass", "shruti");
     expect(accountOfActor("shruti")?.mustChangePassword).toBe(false);
   });
 });

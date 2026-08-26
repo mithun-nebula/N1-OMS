@@ -2,7 +2,8 @@ import { NextResponse } from "next/server";
 import { getSessionUser } from "@/server/auth";
 import { getDayPlanService, getSpine, getWorld } from "@/server/runtime";
 import { attendanceId, type AttendanceData } from "@/domains/people/attendance";
-import type { DayPlan } from "@/domains/assistant/day-plan/store";
+import { shortfallOf, type DayPlan } from "@/domains/assistant/day-plan/store";
+import type { CloseOutSummary } from "@/domains/assistant/day-plan/service";
 import * as adapters from "@/spine/adapters";
 import { localDate } from "@/domains/assistant/day-plan/time";
 import { getQuestionLimiter } from "@/server/limiter";
@@ -36,6 +37,14 @@ interface TodayState {
     tag?: string;
     ref?: { nodeType: string; nodeId: string };
     missOffered?: boolean;
+    /** A9 — dropped mid-day: still on the plan, off the day's account. */
+    dropped?: { at: string; reason?: string };
+    /** A9 — minutes done on unfinished work, and what is still owed. */
+    progressMinutes?: number;
+    shortfallMinutes?: number;
+    /** The window this item holds in the day (A4's live overrun check). */
+    start?: string;
+    end?: string;
   }>;
   rows: Array<{ kind: "work" | "meeting"; id: string; title: string; start?: string; done?: boolean; tag?: string }>;
   tally: { meetings: number; work: number; free: number };
@@ -49,6 +58,11 @@ interface TodayState {
    * covers records this person already has open, so it discloses nothing.
    */
   estimateHints: Record<string, number>;
+  /**
+   * The close-out conversation, once clocking out has opened it. Absent until
+   * then — the dashboard is "mainly focused on progress" during the day.
+   */
+  closeOut?: CloseOutSummary & { finished: boolean };
 }
 
 async function stateFor(actor: string): Promise<TodayState> {
@@ -114,20 +128,40 @@ async function stateFor(actor: string): Promise<TodayState> {
       label: p.label,
       estimateMinutes: p.estimateMinutes,
       done: p.done,
-      tag: p.miss?.kind === "interrupted" ? "carried-over" : p.miss?.kind === "ran-over" ? "ran-over" : undefined,
+      tag: p.dropped
+        ? "dropped"
+        : p.miss?.kind === "interrupted"
+          ? "carried-over"
+          : p.miss?.kind === "ran-over"
+            ? "ran-over"
+            : undefined,
       ref: p.ref,
+      dropped: p.dropped,
+      progressMinutes: p.progressMinutes,
+      shortfallMinutes: shortfallOf(p),
+      // A4's live warning compares the wall clock against these, on the
+      // client, so it can fire between polls rather than only on a refresh.
+      start: p.start,
+      end: p.end,
       // A4 counts the *question*, not the answer. This checked only whether an
       // answer had been given, so a third and fourth overrun prompt still
       // appeared once the budget was spent — the limit capped replies rather
       // than asks. `recordMissReason` still consumes on answer; this stops the
       // ask being made at all.
       missOffered:
-        p.miss?.offerNow && !p.miss?.asked && !p.miss?.lapsed && questionsLeft > 0,
+        !p.dropped &&
+        p.miss?.offerNow &&
+        !p.miss?.asked &&
+        !p.miss?.lapsed &&
+        questionsLeft > 0,
     })),
     rows,
     tally,
     streak,
     suggested: plan.suggested ?? [],
+    closeOut: plan.closeOut
+      ? { ...service.closeOutSummary(actor, date), finished: Boolean(plan.closeOut.finishedAt) }
+      : undefined,
     // A9: "you were choosing what to do today — shall we finish?" `startDay`
     // has always produced this line and the route discarded its return value,
     // so it was never delivered to anyone.
@@ -245,8 +279,12 @@ export async function POST(request: Request) {
         // first. This used to run on the client *after* the tick, which meant a
         // refused `task.complete` left a ticked plan item and an open task with
         // no way back.
+        // A partial record is not a completion, so the backing task stays
+        // open and nothing is submitted through the gate for it.
+        const partial =
+          body.progressMinutes === undefined ? undefined : Number(body.progressMinutes);
         const item = service.getStore().get(user.id, date)?.plan.find((p) => p.id === itemId);
-        if (item?.ref?.nodeType === "task" && !item.done) {
+        if (partial === undefined && item?.ref?.nodeType === "task" && !item.done) {
           const submitted = await (await getSpine()).submit(
             adapters.fromTyped({
               actor: user.id,
@@ -268,8 +306,28 @@ export async function POST(request: Request) {
         }
         const result = await service.tick(user.id, date, itemId, {
           actualMinutes: body.actualMinutes === undefined ? undefined : Number(body.actualMinutes),
+          progressMinutes: partial,
         });
-        return NextResponse.json({ ...(await stateFor(user.id)), offerNow: result.offerNow });
+        return NextResponse.json({
+          ...(await stateFor(user.id)),
+          offerNow: result.offerNow,
+          shortfallMinutes: result.shortfallMinutes,
+        });
+      }
+      case "drop": {
+        // A9: dropped mid-day is allowed, asked once why, and does not break
+        // the streak. The reason is optional — the tap is the decision, the
+        // sentence is a courtesy.
+        const result = service.dropItem(
+          user.id,
+          date,
+          String(body.itemId ?? ""),
+          body.reason === undefined ? undefined : String(body.reason),
+        );
+        if (result.error) {
+          return NextResponse.json({ error: result.error }, { status: 422 });
+        }
+        return NextResponse.json(await stateFor(user.id));
       }
       case "missReason": {
         // A5: the answer becomes better planning, not a black mark. The
@@ -288,8 +346,36 @@ export async function POST(request: Request) {
         });
       }
       case "closeOut":
-        service.finalizeDay(user.id, date);
+        // Opens the conversation; does NOT fold the day into the streak.
+        // `finalizeDay` is idempotent, so assessing here would mean every
+        // answer that follows arrives too late to change anything.
+        service.beginCloseOut(user.id, date);
         break;
+      case "chatBrief": {
+        // The morning brief as a conversation rather than the slideshow.
+        // `briefItems()` stays exactly where it is — the dashboard renders it
+        // and the clock-in popup is deferred UI, not deleted UI. Two surfaces
+        // over one set of bands.
+        const { briefFor } = await import("@/domains/assistant/day-plan/chat-brief");
+        const { getCommitmentStore } = await import("@/server/runtime");
+        const due = await (await getCommitmentStore()).dueBy(user.id, date);
+        const brief = await briefFor(service, user.id, date, {
+          commitments: due.map((c) => ({ id: c.id, what: c.what, dueDate: c.dueDate })),
+        });
+        return NextResponse.json({ ...(await stateFor(user.id)), brief });
+      }
+      case "carryOver": {
+        const result = service.carryOverItem(user.id, date, String(body.itemId ?? ""));
+        if (result.error) {
+          return NextResponse.json({ error: result.error }, { status: 422 });
+        }
+        break;
+      }
+      case "finishCloseOut": {
+        // The conversation is over. Seed tomorrow, then assess — once.
+        const { seeded } = service.finishCloseOut(user.id, date);
+        return NextResponse.json({ ...(await stateFor(user.id)), seeded });
+      }
       default:
         return NextResponse.json({ error: `Unknown action “${action}”.` }, { status: 422 });
     }

@@ -101,14 +101,22 @@ DIRECT_URL="postgresql://postgres.<ref>:<password>@<region>.pooler.supabase.com:
 ```
 
 ### Commands
+
+> ⚠ **Since Phase 6 the entry point is `server.ts`, not `next start`.** Voice
+> holds a WebSocket, and a Next route handler never sees the upgrade. Started the
+> old way every screen works and voice silently disappears — see
+> `docs/VOICE-UI-CONTRACT.md`.
 ```bash
-npm run dev          # Next.js dev server → http://localhost:3000
+npm run dev          # server.ts + Next → http://localhost:3000   (NOT `next dev`)
+npm run dev:next     # plain `next dev` — faster for layout work, NO VOICE
+npm start            # production (NOT `next start`) — run `npm run build` first
 npm run build        # production build
 npm run lint         # ESLint
 npm run typecheck    # tsc --noEmit
-npm test             # Vitest run (149 tests; 8 Postgres tests skip without DATABASE_URL)
+npm test             # Vitest run (968 passing, 37 skipped as of 2026-08-27)
 npm run test:watch   # Vitest watch mode
-npm run test:db      # Vitest ONLY the Postgres durability tests (loads .env → DATABASE_URL)
+npm run test:db      # ONLY the Postgres durability tests — reads ORG_TEST_DATABASE_URL,
+                     # NEVER DATABASE_URL, and refuses if the two are equal
 ```
 
 ### Demo logins

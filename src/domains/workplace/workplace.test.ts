@@ -1,5 +1,7 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, beforeEach } from "vitest";
+import { resetStubVideo, stubVideoCalls } from "@/config/video-stub";
 import { buildDemoWorld } from "@/server/bootstrap";
+import { getQuestionLimiter } from "@/server/limiter";
 import * as adapters from "@/spine/adapters";
 import { monthView } from "./calendar";
 import { repeatFaults } from "./equipment";
@@ -247,9 +249,14 @@ describe("equipment — repeat-fault detection", () => {
   });
 });
 
-describe("utilities — two-questions-per-day limit", () => {
-  it("allows two captures then refuses the third", async () => {
+describe("utilities — the shared question allowance", () => {
+  it("allows exactly the allowance, then refuses", async () => {
     const { spine } = await world();
+    // Pinned to two, which is what this test was written against. The default
+    // became six in Phase 2, and the property here is "utility.capture spends
+    // the SHARED allowance and stops when it runs out" — not what the number
+    // happens to be. Pinning keeps the assertions below exactly as they were.
+    getQuestionLimiter().setCapFor("arun", 2);
     const a = await spine.submit(adapters.fromForm({ actor: "arun", name: "utility.capture", args: { subject: "Hall 1 AC", detail: "on 9-6" } }));
     const b = await spine.submit(adapters.fromForm({ actor: "arun", name: "utility.capture", args: { subject: "Hall 2 AC", detail: "on 9-6" } }));
     const c = await spine.submit(adapters.fromForm({ actor: "arun", name: "utility.capture", args: { subject: "Small Room AC", detail: "on 9-6" } }));
@@ -316,5 +323,451 @@ describe("notify.send — a line in the bell, no record written", () => {
       adapters.fromForm({ actor: "james", name: "notify.send", args: { message: "to nobody", to: [] } }),
     );
     expect(res.status).toBe("rejected");
+  });
+});
+
+describe("E5 — every change names what it was and who did it", () => {
+  it("a calendar edit tells everyone what moved, and who moved it", async () => {
+    const { spine, deps } = await world();
+    const created = await spine.submit(
+      adapters.fromForm({
+        actor: "james",
+        name: "calendar.create",
+        args: {
+          title: "Sprint review",
+          kind: "meeting",
+          date: "2026-08-12",
+          from: "2026-08-12T10:00:00Z",
+          to: "2026-08-12T11:00:00Z",
+          people: ["priya", "arun"],
+        },
+      }),
+    );
+    const entryId = (created.result?.response as { entryId: string }).entryId;
+
+    await spine.submit(
+      adapters.fromForm({
+        actor: "arun",
+        name: "calendar.edit",
+        args: { entryId, date: "2026-08-14" },
+      }),
+    );
+
+    const toPriya = deps.bus.forActor("priya").map((n) => n.message);
+    const edit = toPriya.find((m) => m.includes("moved"));
+    expect(edit).toBeTruthy();
+    // Both halves of E5, in one sentence: WHO did it...
+    expect(edit).toContain("Arun");
+    // ...and WHAT changed — the old day and the new one, not just "changed".
+    expect(edit).toContain("Sprint review");
+    expect(edit).toContain("Wednesday 12 August");
+    expect(edit).toContain("Friday 14 August");
+  });
+
+  it("no meeting or calendar notification falls back to '<type>:<id> changed'", async () => {
+    const { spine, deps } = await world();
+
+    // All nine operations, in one run.
+    const madeEntry = await spine.submit(
+      adapters.fromForm({
+        actor: "james",
+        name: "calendar.create",
+        args: { title: "Open day", kind: "event", date: "2026-08-20", people: ["priya", "arun"] },
+      }),
+    );
+    const entryId = (madeEntry.result?.response as { entryId: string }).entryId;
+    await spine.submit(
+      adapters.fromForm({ actor: "james", name: "calendar.edit", args: { entryId, title: "Open day (final)" } }),
+    );
+    await spine.submit(
+      adapters.fromForm({ actor: "james", name: "calendar.addPeople", args: { entryId, people: ["karthik"] } }),
+    );
+    await spine.submit(
+      adapters.fromForm({ actor: "james", name: "calendar.removePeople", args: { entryId, people: ["priya"] } }),
+    );
+    await spine.submit(
+      adapters.fromForm({ actor: "james", name: "calendar.cancel", args: { entryId } }),
+    );
+
+    const madeMeeting = await spine.submit(
+      adapters.fromForm({
+        actor: "james",
+        name: "meeting.create",
+        args: {
+          title: "Course review",
+          kind: "online",
+          from: "2026-09-10T15:00:00Z",
+          to: "2026-09-10T16:00:00Z",
+          attendees: ["priya", "arun"],
+        },
+      }),
+    );
+    const meetingId = (madeMeeting.result?.response as { meetingId: string }).meetingId;
+    await spine.submit(
+      adapters.fromForm({
+        actor: "james",
+        name: "meeting.update",
+        args: { meetingId, from: "2026-09-10T17:00:00Z", to: "2026-09-10T18:00:00Z" },
+      }),
+    );
+    await spine.submit(
+      adapters.fromForm({ actor: "james", name: "meeting.addAttendee", args: { meetingId, attendee: "karthik" } }),
+    );
+    await spine.submit(
+      adapters.fromForm({ actor: "james", name: "meeting.cancel", args: { meetingId } }),
+    );
+
+    // `summarizeChanges` is the fallback the spine uses when an operation
+    // supplies no message. If any of the nine still relies on it, one of these
+    // strings shows up in the bell.
+    const everything = deps.bus.published().map((n) => n.message);
+    const fallbacks = everything.filter((m) => /^(meeting|calendar-entry):\S+ changed/.test(m));
+    expect(fallbacks).toEqual([]);
+
+    // And every one of them named a person, which the fallback never does.
+    for (const actor of ["priya", "arun", "karthik"]) {
+      for (const message of deps.bus.forActor(actor)) {
+        expect(message.message).toMatch(/^(James|Arun|Priya|Karthik)\b/);
+      }
+    }
+  });
+});
+
+describe("E7 — the link reaches the people, not the caller", () => {
+  it("puts the link in every attendee's notification on create", async () => {
+    const { spine, deps } = await world();
+    const created = await spine.submit(
+      adapters.fromForm({
+        actor: "james",
+        name: "meeting.create",
+        args: {
+          title: "Course review",
+          kind: "online",
+          from: "2026-09-10T15:00:00Z",
+          to: "2026-09-10T16:00:00Z",
+          attendees: ["priya", "arun"],
+        },
+      }),
+    );
+    const meetingId = (created.result?.response as { meetingId: string }).meetingId;
+    const link = ((await deps.graph.getNode("meeting", meetingId))?.data as { link?: string }).link!;
+    expect(link).toBeTruthy();
+
+    // The BUS, not the response. The response was only ever visible to whoever
+    // made the call — which is precisely the defect E7's ★ rule describes.
+    for (const attendee of ["priya", "arun"]) {
+      const messages = deps.bus.forActor(attendee).map((n) => n.message);
+      expect(messages.some((m) => m.includes(link))).toBe(true);
+    }
+  });
+
+  it("sends the link to a late-added attendee automatically", async () => {
+    const { spine, deps } = await world();
+    const created = await spine.submit(
+      adapters.fromForm({
+        actor: "james",
+        name: "meeting.create",
+        args: {
+          title: "Course review",
+          kind: "both",
+          from: "2026-09-11T15:00:00Z",
+          to: "2026-09-11T16:00:00Z",
+          attendees: ["priya"],
+        },
+      }),
+    );
+    const meetingId = (created.result?.response as { meetingId: string }).meetingId;
+    const link = ((await deps.graph.getNode("meeting", meetingId))?.data as { link?: string }).link!;
+
+    expect(deps.bus.forActor("karthik").length).toBe(0);
+    await spine.submit(
+      adapters.fromForm({ actor: "james", name: "meeting.addAttendee", args: { meetingId, attendee: "karthik" } }),
+    );
+    const toKarthik = deps.bus.forActor("karthik").map((n) => n.message);
+    expect(toKarthik.some((m) => m.includes(link))).toBe(true);
+    // Named, and named by whom — nobody pasted anything.
+    expect(toKarthik.some((m) => m.startsWith("James") && m.includes("Course review"))).toBe(true);
+  });
+
+  it("leaves no dangling link text on an in-person meeting", async () => {
+    const { spine, deps } = await world();
+    const created = await spine.submit(
+      adapters.fromForm({
+        actor: "james",
+        name: "meeting.create",
+        args: {
+          title: "Standup",
+          kind: "in-person",
+          from: "2026-09-12T09:00:00Z",
+          to: "2026-09-12T09:30:00Z",
+          attendees: ["priya"],
+        },
+      }),
+    );
+    expect(created.status).toBe("ran");
+    const meetingId = (created.result?.response as { meetingId: string }).meetingId;
+    await spine.submit(
+      adapters.fromForm({ actor: "james", name: "meeting.addAttendee", args: { meetingId, attendee: "karthik" } }),
+    );
+
+    // No link, and therefore no "Join:" trailing a blank — a message ending in
+    // an empty URL reads as a bug to the person who receives it.
+    for (const actor of ["priya", "karthik"]) {
+      for (const n of deps.bus.forActor(actor)) {
+        expect(n.message).not.toContain("Join:");
+        expect(n.message.trim()).toBe(n.message);
+      }
+    }
+  });
+});
+
+describe("E7 — cancelling actually ends the link", () => {
+  beforeEach(() => resetStubVideo());
+
+  it("cancels with the PROVIDER's id, not the local one, and clears the link", async () => {
+    const { spine, deps } = await world();
+    const created = await spine.submit(
+      adapters.fromForm({
+        actor: "james",
+        name: "meeting.create",
+        args: {
+          title: "Course review",
+          kind: "online",
+          from: "2026-09-13T15:00:00Z",
+          to: "2026-09-13T16:00:00Z",
+          attendees: ["priya"],
+        },
+      }),
+    );
+    const meetingId = (created.result?.response as { meetingId: string }).meetingId;
+    const record = (await deps.graph.getNode("meeting", meetingId))?.data as {
+      link?: string;
+      linkId: string;
+      providerMeetingId?: string;
+    };
+    // The provider's own id is kept, in its own field, distinct from `linkId`.
+    expect(record.providerMeetingId).toBeTruthy();
+    expect(record.providerMeetingId).not.toBe(record.linkId);
+
+    const cancelled = await spine.submit(
+      adapters.fromForm({ actor: "james", name: "meeting.cancel", args: { meetingId } }),
+    );
+    expect(cancelled.status).toBe("ran");
+
+    // What the provider was actually handed. Passing `linkId` — which is what
+    // happened before this phase — fails right here.
+    const cancels = stubVideoCalls().filter((c) => c.op === "cancel");
+    expect(cancels).toHaveLength(1);
+    expect(cancels[0].arg).toBe(record.providerMeetingId);
+    expect(cancels[0].arg).not.toBe(record.linkId);
+
+    // And `linkEnded` is a fact rather than a claim: the link is gone from the
+    // record because the provider confirmed it.
+    const after = (await deps.graph.getNode("meeting", meetingId))?.data as {
+      link?: string;
+      cancelled?: boolean;
+    };
+    expect(after.cancelled).toBe(true);
+    expect(after.link).toBeUndefined();
+    expect(cancelled.result?.changes[0].after).toMatchObject({ linkEnded: true });
+  });
+
+  it("does not claim linkEnded when the provider refuses", async () => {
+    const { spine, deps } = await world();
+    const created = await spine.submit(
+      adapters.fromForm({
+        actor: "james",
+        name: "meeting.create",
+        args: {
+          title: "Course review",
+          kind: "online",
+          from: "2026-09-14T15:00:00Z",
+          to: "2026-09-14T16:00:00Z",
+          attendees: ["priya"],
+        },
+      }),
+    );
+    const meetingId = (created.result?.response as { meetingId: string }).meetingId;
+    const link = ((await deps.graph.getNode("meeting", meetingId))?.data as { link?: string }).link;
+
+    // Strip the handle the way a record written before this phase would look.
+    const stale = (await deps.graph.getNode("meeting", meetingId))?.data as Record<string, unknown>;
+    delete stale.providerMeetingId;
+    await deps.graph.putNode("meeting", meetingId, stale);
+
+    const cancelled = await spine.submit(
+      adapters.fromForm({ actor: "james", name: "meeting.cancel", args: { meetingId } }),
+    );
+    expect(cancelled.status).toBe("ran");
+    expect(cancelled.result?.changes[0].after).toMatchObject({ linkEnded: false });
+    // The link stays on the record, because it is still live and hiding that
+    // would remove the only evidence.
+    expect(((await deps.graph.getNode("meeting", meetingId))?.data as { link?: string }).link).toBe(link);
+    // And the people affected are told, rather than the failure being swallowed.
+    expect(deps.bus.forActor("priya").some((n) => n.message.includes("could not be ended"))).toBe(true);
+  });
+
+  it("says nothing about a link when there was never one", async () => {
+    const { spine } = await world();
+    const created = await spine.submit(
+      adapters.fromForm({
+        actor: "james",
+        name: "meeting.create",
+        args: {
+          title: "Standup",
+          kind: "in-person",
+          from: "2026-09-15T09:00:00Z",
+          to: "2026-09-15T09:30:00Z",
+          attendees: ["priya"],
+        },
+      }),
+    );
+    const meetingId = (created.result?.response as { meetingId: string }).meetingId;
+    const cancelled = await spine.submit(
+      adapters.fromForm({ actor: "james", name: "meeting.cancel", args: { meetingId } }),
+    );
+    expect((cancelled.result?.changes[0].after as { linkEnded?: boolean }).linkEnded).toBeUndefined();
+    expect(stubVideoCalls().filter((c) => c.op === "cancel")).toHaveLength(0);
+  });
+});
+
+describe("meetings appear on the common calendar", () => {
+  it("creates a calendar entry AND an edge, and monthView shows it with the link", async () => {
+    const { spine, deps } = await world();
+    const created = await spine.submit(
+      adapters.fromForm({
+        actor: "james",
+        name: "meeting.create",
+        args: {
+          title: "Course review",
+          kind: "online",
+          from: "2026-10-08T15:00:00Z",
+          to: "2026-10-08T16:00:00Z",
+          attendees: ["priya", "arun"],
+        },
+      }),
+    );
+    const { meetingId, entryId } = created.result?.response as {
+      meetingId: string;
+      entryId: string;
+    };
+    const link = ((await deps.graph.getNode("meeting", meetingId))?.data as { link?: string }).link;
+
+    // An EDGE, not a merge. `calendar-entry.kind === "meeting"` was only ever a
+    // label; this is a reference.
+    const edges = await deps.graph.edgesOf(meetingId, "out");
+    expect(edges.some((e) => e.to === entryId && e.type === "shown-on")).toBe(true);
+
+    const cells = await monthView(deps.graph, 2026, 10);
+    const day = cells.find((c) => c.date === "2026-10-08")!;
+    expect(day.meetings).toBe(1);
+    const shown = day.meetingEntries.find((m) => m.id === entryId);
+    expect(shown?.title).toBe("Course review");
+    // E7's second place: the link is on the calendar entry.
+    expect(shown?.link).toBe(link);
+  });
+
+  it("moving the meeting moves the calendar entry with it", async () => {
+    const { spine, deps } = await world();
+    const created = await spine.submit(
+      adapters.fromForm({
+        actor: "james",
+        name: "meeting.create",
+        args: {
+          title: "Course review",
+          kind: "online",
+          from: "2026-10-09T15:00:00Z",
+          to: "2026-10-09T16:00:00Z",
+          attendees: ["priya"],
+        },
+      }),
+    );
+    const { meetingId, entryId } = created.result?.response as { meetingId: string; entryId: string };
+    await spine.submit(
+      adapters.fromForm({
+        actor: "james",
+        name: "meeting.update",
+        args: { meetingId, from: "2026-10-12T15:00:00Z", to: "2026-10-12T16:00:00Z" },
+      }),
+    );
+    const entry = (await deps.graph.getNode("calendar-entry", entryId))?.data as {
+      date: string;
+      from: string;
+    };
+    // An entry left on the old day is worse than no entry: people plan around it.
+    expect(entry.date).toBe("2026-10-12");
+    expect(entry.from).toBe("2026-10-12T15:00:00Z");
+  });
+
+  it("cancelling the meeting removes it from BOTH places", async () => {
+    const { spine, deps } = await world();
+    const created = await spine.submit(
+      adapters.fromForm({
+        actor: "james",
+        name: "meeting.create",
+        args: {
+          title: "Course review",
+          kind: "online",
+          from: "2026-10-14T15:00:00Z",
+          to: "2026-10-14T16:00:00Z",
+          attendees: ["priya"],
+        },
+      }),
+    );
+    const { meetingId, entryId } = created.result?.response as { meetingId: string; entryId: string };
+    expect((await monthView(deps.graph, 2026, 10)).find((c) => c.date === "2026-10-14")!.meetings).toBe(1);
+
+    await spine.submit(
+      adapters.fromForm({ actor: "james", name: "meeting.cancel", args: { meetingId } }),
+    );
+    expect((await deps.graph.getNode("meeting", meetingId))?.data).toMatchObject({ cancelled: true });
+    expect((await deps.graph.getNode("calendar-entry", entryId))?.data).toMatchObject({ cancelled: true });
+    expect((await monthView(deps.graph, 2026, 10)).find((c) => c.date === "2026-10-14")!.meetings).toBe(0);
+  });
+
+  it("an in-person meeting is on the calendar with no link at all", async () => {
+    const { spine, deps } = await world();
+    const created = await spine.submit(
+      adapters.fromForm({
+        actor: "james",
+        name: "meeting.create",
+        args: {
+          title: "Standup",
+          kind: "in-person",
+          from: "2026-10-15T09:00:00Z",
+          to: "2026-10-15T09:30:00Z",
+          attendees: ["priya"],
+        },
+      }),
+    );
+    const { entryId } = created.result?.response as { entryId: string };
+    const shown = (await monthView(deps.graph, 2026, 10))
+      .find((c) => c.date === "2026-10-15")!
+      .meetingEntries.find((m) => m.id === entryId);
+    expect(shown).toBeTruthy();
+    expect(shown?.link).toBeUndefined();
+  });
+
+  it("undoing the creation takes the calendar entry and the edge with it", async () => {
+    const { spine, deps } = await world();
+    const created = await spine.submit(
+      adapters.fromForm({
+        actor: "james",
+        name: "meeting.create",
+        args: {
+          title: "Course review",
+          kind: "online",
+          from: "2026-10-16T15:00:00Z",
+          to: "2026-10-16T16:00:00Z",
+          attendees: ["priya"],
+        },
+      }),
+    );
+    const { meetingId, entryId } = created.result?.response as { meetingId: string; entryId: string };
+    const undone = await spine.undo(created.activityEntry!.id, "james");
+    expect(undone.status).toBe("undone");
+    expect(await deps.graph.getNode("meeting", meetingId)).toBeUndefined();
+    expect(await deps.graph.getNode("calendar-entry", entryId)).toBeUndefined();
+    expect(await deps.graph.edgesOf(meetingId, "out")).toEqual([]);
   });
 });

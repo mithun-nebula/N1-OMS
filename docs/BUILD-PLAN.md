@@ -8,7 +8,10 @@
 > behind the gate, reached via their REST APIs. **Their web frontends are
 > discarded.** Every screen is our own.
 >
-> **Locked stack (fully serverless on GCP, Mumbai region):**
+> **Locked stack (fully serverless on GCP, Mumbai region — target, not current):**
+> ⚠️ The database actually runs in **ap-southeast-2 (Sydney)** and stays there.
+> There is no Indian data residency. See §2.3.
+>
 > Next.js (TypeScript) spine on **Cloud Run** (scale-to-zero) · **Supabase** Postgres
 > (ap-south-1) for the connected record + Auth + Storage + Realtime · **Upstash** Redis
 > (serverless) · **N1 forked** and run as containers on **Cloud Run** with its
@@ -55,7 +58,7 @@
                                      │    ← Cloud Scheduler (~2-5 min)│
                                      │  • DB: Supabase Postgres        │
                                      └────────────────────────────────┘
-   Region: asia-south1 (Mumbai) everywhere   ·   No Compute Engine VM
+   Region: asia-south1 (Mumbai) is the GCP *target*; the DB is in Sydney today   ·   No VM
    Backups: Supabase PITR + Cloud Storage versioning   ·   Monitor: Cloud Monitoring
 ```
 
@@ -80,16 +83,16 @@ the **authority for decisions, workflow and permissions**.
 | Layer | Choice | Why |
 |---|---|---|
 | **Spine + web frontend** | **Next.js (TypeScript) on Cloud Run** | One TS stack end-to-end; serverless, scale-to-zero, pay-per-use; server actions/API routes fit the "three starts → one operation" funnel; great real-time story for chat + live calendar. Deploy via buildpacks (no Dockerfile for the spine). |
-| **Spine DB** | **Supabase Postgres (ap-south-1 Mumbai)** | Managed Postgres for the connected-record layer (02); you also get **Auth** (sign-on), **Storage** (docs, feature 32), **Realtime** (live calendar/brief) for free. |
-| **N1 DB** | **Supabase Postgres (separate database)** | N1 supports Postgres; one managed provider, Mumbai region. Avoids Cloud SQL and a VM DB. |
+| **Spine DB** | **Supabase Postgres** — planned ap-south-1 (Mumbai), **actually ap-southeast-2 (Sydney)** | Managed Postgres for the connected-record layer (02); you also get **Auth** (sign-on), **Storage** (docs, feature 32), **Realtime** (live calendar/brief) for free. |
+| **N1 DB** | **Supabase Postgres (separate database)** | N1 supports Postgres; one managed provider. (Region as above — Sydney today, not Mumbai.) Avoids Cloud SQL and a VM DB. |
 | **Queue / cache** | **Upstash Redis (serverless)** | Pay-per-request, scale-to-zero — the "Neon of Redis". Holds BullMQ queues (spine) and RQ queues (N1). |
 | **HR / payroll / compliance** | **N1 (your fork)** on Cloud Run | Payroll + Indian statutory compliance (PF/ESI/TDS) maintained upstream; you own the source; run headless. |
 | **N1 files** | **Cloud Storage bucket** mounted as a volume (GCSFuse) | Persistent object storage; survives Cloud Run scale-to-zero; versioned. |
 | **Scheduling** | **Cloud Scheduler → Cloud Run Jobs** | Replaces N1's always-on scheduler loop and worker daemons with on-demand jobs → nothing runs 24/7. |
 | **Compute** | **Cloud Run only (no Compute Engine VM)** | Managed containers; GCP handles restart/autoscale/healing; no OS/SSH/systemd. |
 | **Reverse proxy / TLS** | **Cloud Run custom domain (managed cert)** | Simplest; optional Cloud Load Balancer later. |
-| **Video** | **Google Meet** (likely, per E7) behind a provider-agnostic adapter | Link rules in E7 are ours; provider swappable. *Decision still open.* |
-| **Reasoning / LLM** | Provider-agnostic client (OpenAI / Anthropic / local) | Powers the assistant, document generation (24), standing-rule interpretation (08). *Decision still open.* |
+| **Video** | ✅ **Decided and built (2026-08-25):** **Google Meet** via the Calendar API (`events.insert` with `conferenceData.createRequest`), behind the existing `config/providers.ts` seam | **OAuth with one shared refresh token, NOT a service account** — a service account acting on somebody's behalf needs domain-wide delegation, which needs Workspace, and the account is personal Gmail. Calendar rather than the Meet REST API because one call returns the link, creates the event **and emails the invitations**, so no `EmailProvider` is needed. `ORG_VIDEO_PROVIDER` swaps it; `stub` stays the default so no test can reach Google. |
+| **Reasoning / LLM** | ✅ **Decided and built (2026-08-24):** `gemini-3.1-flash-lite` on **Vertex AI**, via a service account, behind the existing `config/providers.ts` seam. Vercel AI SDK `ai@7.0.77` + `@ai-sdk/google-vertex@5.0.61` | Powers the assistant (01, 07), and will power document generation (24) and standing-rule interpretation (08). **Not** `@ai-sdk/google` — that is the AI Studio API-key provider and cannot use a service account. Gemini 2.5 Flash has an announced expiry and is not built on. |
 | **Monitor** | **Cloud Monitoring** uptime checks | Built into GCP; pings `/health`; alerts on downtime. |
 
 ### 2.2 How N1 is used — forked, containerized, always-on parts externalized
@@ -119,18 +122,35 @@ service can scale to zero, and nothing of ours runs 24/7.
 - ✅ **Spine:** Next.js (TypeScript) on Cloud Run (serverless, scale-to-zero).
 - ✅ **HR backend:** N1, **our fork**, containerized on Cloud Run (not N1 Cloud, not a VM); headless.
 - ✅ **Always-on eliminated:** N1 scheduler/workers externalized to Cloud Scheduler + Cloud Run Jobs.
-- ✅ **Spine DB / N1 DB:** Supabase Postgres (Mumbai).
+- ⚠️ **Spine DB / N1 DB:** Supabase Postgres — **ap-southeast-2 (Sydney)** in fact, not Mumbai.
 - ✅ **Queue:** Upstash Redis (serverless).
 - ✅ **Files:** Cloud Storage.
-- ✅ **Region:** asia-south1 (Mumbai) — latency + Indian data residency.
+- ⚠️ **Region:** *not* asia-south1, and there is **no Indian data residency**.
+  The database in use is Supabase on **`aws-1-ap-southeast-2` (Sydney)** — see
+  `DATABASE_URL` — and it is staying there. Staff data already leaves India.
+  Corrected 2026-08-24: this line read "asia-south1 (Mumbai) everywhere —
+  latency + Indian data residency", and it was false for weeks. The cost was
+  real: the model region was chosen for a residency reason that did not apply.
+  asia-south1 remains the *target* for the GCP compute below; residency is not
+  a property this system currently has, and nothing may be planned as if it is.
 - ✅ **Payroll/statutory compliance:** in scope → N1's maintained compliance justified.
 - ✅ **Compute:** Cloud Run only — **no VM**.
 - ✅ **Desktop delivery:** browser web app (Win/Linux/Mac, zero install).
 - ✅ **Mobile:** deferred — spine stays API-first.
 
 **Still open (abstracted behind adapters, do not block phases):**
-- ⬜ Video provider (Google Meet likely — E7).
-- ⬜ LLM/reasoning provider.
+- ✅ Video provider — **Google Meet, live 2026-08-25** (`GoogleMeetVideoProvider`, OAuth refresh token, `ORG_VIDEO_PROVIDER=google`).
+- ✅ Assistant read-back — **server-verified, 2026-08-25** (`tools/confirmation.ts`). `drop_item` and `close_out` used to take a `confirmed: boolean` **the model set**, which nothing checked. The guarantee is now a **turn boundary**: a confirmation cannot be spent in the turn that issued it, so a model can chain two tool calls but cannot forge the fact that a person was asked and replied. `requireConfirmation()` is the reusable piece; it is deliberately one weight lighter than `gate.ts`'s propose-gate, which *parks* money/people operations.
+- ✅ Appendix D scoping — `enforceAppendixD(text, surface)` with `"coaching"` (default, full strict set) and `"scheduling"`. **No pattern was altered**; only which surface applies which set. Reasoning lives in the header of `appendix-d.ts`.
+- ✅ **The 59 gated operations reach the assistant (Phase 3, 2026-08-25).** 56 become tools; `record.create/update/delete` never do. Three tiers: **propose** (20 that would park under a standing rule — the agent prepares, a person approves), **read-back** (6 destructive verbs, via the Phase 2.5 confirmation gate), **straight through** (the rest). `gate/gate.ts`, `SEVEN_STARTS`, `Spine.confirm` and `PermissionPolicy` are all unchanged — the gating lives in the tools, and the spine still decides.
+- ✅ Ten specialists, split from seven. None carries more than four READ tools. **None may write while answering a question** — Phase 4.5 gave each one its own domain's writes in `act` mode, and a fan-out only ever builds `ask`, where the write tools are absent rather than refused.
+- ✅ **Standing rules (Phase 4, 2026-08-26).** A sentence becomes a **declarative spec**, read back before it saves, then evaluated forever with **no model in the loop**. `RuleWhen` is a closed union of four kinds; `RuleDo` is `notify.send` and nothing else — a rule may tell somebody something, never create, assign or approve. `stop_all_rules` is the kill switch. The regex `compiler.ts` was deleted rather than extended.
+- ⚠ **Known, from the live run:** a bare threshold phrase — *"courses in review over 5 days."* — still goes to a read tool and is answered as a question, so `author_rule`'s ambiguity branch is never reached. Two measured attempts to move it (a louder tool description, then a prompt section separating *now* from *from now on*) did not change it, and the second was kept because it fixed a different, real defect. Failing this way is the safe direction — a question answered, rather than a forever-rule created by a guess.
+- ✅ **The assistant's system prompt no longer claims to be read-only.** It said *"You can only read. You cannot change, create, delete or approve anything"* for all of Phase 3 and most of Phase 4, while 56 write tools sat in the same catalogue. Nothing failed loudly, which is why it survived: the model wrote anyway when a tool obviously matched, and the contradiction only bit on ambiguous sentences. Now pinned by a test asserting against the **catalogue**, not the wording.
+- ✅ **Measured in Phase 3, FIXED in Phase 4.5 (2026-08-26).** The coordinator's tool definitions cost ~25,000 tokens on every call, because `toolsFor` returned `ALL_TOOLS`; the daily ceiling was sized against 15 tools and allowed **six questions** at 103. The ceiling was raised to 2,000,000 (a cost guard, never a safety guard) and pinned by `tool-cost.test.ts`, and the structural fix has now been done: the coordinator holds **six hot reads earned by call frequency**, three writes promoted back on measured latency, the few tools that cannot be routed, and two doors — `consult_specialists` to ask and `delegate_action` to act. **26,391 → 5,462 tokens per call**, and a write, both calls added together, **26,391 → 9,240**.
+- ⚠ **The cost of that split, measured and not hidden:** a write now takes two model calls. Live, a question runs at a **2.7s median** and a routed write at **5.5s**; the day flow ran at **6.5s** and every one of its writes was over the five-second trigger. Three writes were promoted back under the fallback rule decided in advance — `select_item`, `drop_item`, `remember_commitment`, the top three by call frequency, which turned out to be the same three that failed live. **Three is not enough and it stopped there**: `commit_plan`, `mark_done`, `carry_over` and `settle_commitment` are still routed. The plan's own answer to that is a cheaper router, not a fourth promotion.
+- ⚠ **What the split cost that no test caught, and the lesson.** Both two-turn mechanisms in this codebase end with a plain conversational reply. `approve_proposal` was deliberately kept on the coordinator for exactly that reason — but **the read-back gate has the same shape and nothing kept `drop_item` there**. Told *"forget the Arun prep"* then *"yes, drop it"*, the model reached for `approve_proposal`, the only confirm-shaped tool in view, and nothing was dropped. Phase 2.5 had proved that exact path working. A tool moved out of view is not merely slower to reach; **the nearest thing still in view gets called instead.**
+- ✅ LLM/reasoning provider — **decided and built 2026-08-24**: `gemini-3.1-flash-lite` on Vertex AI. Proven live across Phases 1a, 1b, 2, 2.5 and 3.
 - ⬜ Exact headcount (affects only Cloud Run sizing/concurrency, not architecture).
 - ⬜ Whether a manager sees the *reason* for a missed commitment (appendix A8 — recommend: no).
 
@@ -140,13 +160,13 @@ service can scale to zero, and nothing of ours runs 24/7.
 
 | Feature | Owner | Managed service / OSS used (headless) |
 |---|---|---|
-| 01 Specialist assistants | **build** | — |
+| 01 Specialist assistants | **build** | ✅ **built in 1b, split to ten in Phase 3, given two modes in Phase 4.5** — deterministic fan-out, no regex router. None carries more than four read tools. **A fan-out is consulted for facts and cannot change anything**, because `consult_specialists` builds `ask` mode, where the write tools are absent rather than refused. Acting is `delegate_action`: one named specialist in `act` mode, never a fan-out |
 | 02 One connected record | **build** (linking layer) | — |
 | 03 Three ways to do everything | **build** | — |
 | 04 Roles & permissions | **build** (appendix C is stricter) | (N1 perms ignored/overridden) |
 | 05 Activity record | **build** (once, in the spine) | — |
-| 06 Figures you can question | **build** | — |
-| 07 Personal assistant | **build** | — |
+| 06 Figures you can question | **build** | ⚠️ `explain_figure` built in 1b, but **only one figure type exists** (course completion), so it is thin until more are added |
+| 07 Personal assistant | **build** | ✅ **1a/1b/2/2.5/3/4/4.5 — complete.** 106 tools: 35 read, 8 that write to your own day, all 56 wrappable gated operations, 3 for standing rules. Anything touching money or another person is **prepared, never done** — a person approves. Since 4.5 the **coordinator carries 21 of them**, not all 106; the rest live in the ten specialists and are reached by routing. Conversation persists across devices |
 | 08 Standing instructions | **build** | Cloud Scheduler + Cloud Run Job |
 | 09 Earning the right | **build** | — |
 | 10 Suggestions from watching | **build** | Cloud Run Job |
@@ -165,7 +185,7 @@ service can scale to zero, and nothing of ours runs 24/7.
 | 23 Course building pipeline | **build** | — |
 | 24 Presentations & documents | **build** | LLM + doc renderer (TBD) |
 | 25 Room & hall booking | **build** | — |
-| 26 Meetings & video calls | **build** | Google Meet adapter (TBD) |
+| 26 Meetings & video calls | **build** | Google Meet adapter — **built and live (Phase 2.5)** |
 | 27 Common calendar | **build** (appendix E is custom) | (do NOT reuse ERP calendars) |
 | 28 Meeting decisions carried through | **build** | — |
 | **29 Events** | **build orchestration** | **N1/ERPNext** Event model (optional) |
@@ -188,16 +208,27 @@ parallelise past it.** Phases 2/3/4 can run in parallel after Phase 1.
 > **Progress (updated 2026-08-09):** Phase 1 spine + RBAC + web shell. **Phase 0 local skeleton
 > (GCP excluded)**. **Phase 2 People (14/15)**, **Phase 3 Course (10/11)**, **Phase 4 Workplace
 > (25/25)**, **Phase 5 Assistant & daily flow (25/25)**, **Phase 6 Autonomy (14/14)**, **Phase 7
-> Voice & web surfaces (16/16)** — STT + read-back, shared sidebar, courses/team/calendar pages,
-> equivalence audit, non-negotiable E2E suite, OpenAPI spec. Only Phase 8 (hardening/deploy = GCP)
-> remains.
+> Voice & web surfaces (15/16)** — shared sidebar, courses/team/calendar pages, equivalence
+> audit, non-negotiable E2E suite, OpenAPI spec. Only Phase 8 (hardening/deploy = GCP) remains.
+>
+> ⚠ **16/16 → 15/16 (2026-08-26), and it is a correction rather than a
+> regression in the count.** Voice was rebuilt as a live conversation in the
+> agentic plan's Phase 6. Two of the three voice items came out stronger; the
+> third — *restricted info not read aloud in a shared room* — was previously
+> ticked because **nothing spoke at all**, and now something does. See Phase 7's
+> checklist.
 >
 > **Persistence landed (2026-08-09):** the spine's record/activity/figure stores are now **async**,
 > with a **Postgres** implementation (`src/server/store-pg-*.ts`) selected when `DATABASE_URL` is
 > set — every node, edge, activity entry and figure survives restarts; a seed guard keeps real data.
 > Unset → async in-memory. The gate stays synchronous. `leave.approve` now decrements the employee's
 > leave balance (undo restores it). Six Postgres tables: `orga_nodes`, `orga_edges`, `orga_activity`,
-> `orga_figures`, `orga_accounts`, `orga_autonomy_rules`.
+> `orga_figures`, `orga_accounts`, `orga_autonomy_rules` — plus three added by agent Phase 4:
+> `orga_autonomy_specs` (what each rule watches, so a restart knows more than that a rule is
+> *allowed* to fire), `orga_autonomy_suggestions` and `orga_autonomy_fired` (fire-once keys).
+> ⚠ **None of the three has a test in the database suite** — the autonomy tests run against the
+> in-memory store. Their DDL is proved only by the live run, which saved rules and read them back
+> out of Postgres with `psql`. A real gap, recorded rather than papered over.
 >
 > **Roadmap — team workflow (2026-08-10, planned):** `/standup` (3-line daily check-in), task deadlines
 > on `/calendar`, deadline reminders (PublishBus), team/role task assignment, team workload view on
@@ -244,7 +275,7 @@ parallelise past it.** Phases 2/3/4 can run in parallel after Phase 1.
 - [ ] Cloud Run ↔ N1 networking: VPC connector OR authed private endpoint; N1 web UI NOT public
 - [x] Spine → N1 REST client uses a **service account**, never end-user creds — `src/config/n1-client.ts` (`token KEY:SECRET`, retry) + `src/domains/people/n1-mapping.ts`
 - [x] LLM provider-agnostic client interface (provider swappable) — `src/config/providers.ts` (`LlmProvider`); `ORG_LLM_PROVIDER` selects stub/dev/real
-- [x] Google Meet adapter interface stub — `src/config/providers.ts` (`VideoProvider`); `ORG_VIDEO_PROVIDER` (real client = GCP service account, later)
+- [x] Google Meet adapter — `src/config/providers.ts` (`VideoProvider`), `ORG_VIDEO_PROVIDER`. The **real client landed in Phase 2.5** (`src/config/video-google.ts`): OAuth refresh token, **not** a GCP service account, which could never have worked for a personal Gmail account without Workspace domain-wide delegation. The stub moved to `src/config/video-stub.ts` and now records its calls, following the `llm-fake.ts` convention
 - [ ] Custom domain mapped to Cloud Run (Next.js); managed TLS certificate
 - [ ] Cloud Monitoring uptime checks: spine `/health` + N1 `/api/method/ping`
 - [ ] Backups: enable Supabase PITR; GCS bucket versioning + lifecycle; periodic N1 `bench backup` → GCS Job
@@ -396,7 +427,7 @@ with its reasoning.
 - [x] Meeting entity: in-person / online / both — `meeting` nodes
 - [x] Find-common-free-time across attendees — `busyAt` check in `meeting.create`
 - [x] Room booking via the Phase-25 flow when in-person — `meeting.create` books the room
-- [x] Video provider adapter interface + Google Meet implementation (TBD) — `providers().video` seam (stub link; real Meet = GCP)
+- [x] Video provider adapter interface + Google Meet implementation — `providers().video` seam. **Real Meet links live since 2026-08-25** via `GoogleMeetVideoProvider` (Calendar API, OAuth refresh token). Not GCP/service-account: that route needs Workspace domain-wide delegation and the account is personal Gmail
 - [x] Immutable meeting link (survives move/rename/edit) — `linkId`/`link` preserved across `meeting.update`
 - [x] Auto-send link to late-added attendees — `meeting.addAttendee` returns the link to the new attendee
 - [x] External attendee invite by email (marked external) — `externals[]` marked external
@@ -457,7 +488,7 @@ by voice; store a versioned doc against a course with role access.
 - [x] Permission-bound assistant (cannot leak what the user can't open) — specialists query via `spine.read`; verified by test
 - [x] Appendix-D boundary filter (comments on work; never on person; never compares) — `appendix-d.ts`
 - [x] Daily-briefing generator (changed / needs-you / at-risk) — `briefing.ts`
-- [x] Morning brief: chat-first conversation engine, one item at a time — `DayPlanService` + brief modal
+- [x] Morning brief: chat-first conversation engine — `DayPlanService` + brief modal (slideshow), and since Phase 2 a **chat brief** that opens with everything at once (`day-plan/chat-brief.ts`). Two surfaces, one set of bands
 - [x] Tappable replies rendered inside the conversation — `/today` brief modal chips
 - [x] Mandatory time-per-item enforcement (no commit without a time) — `selectItem` rejects missing time
 - [x] Once-a-day logic (reopening ≠ brief returns) — `startDay` returns dashboard when planned
@@ -499,7 +530,7 @@ assistant never comments on the person or compares people.
 > Standing-rule compiler + tick engine + amber loop + routine watcher + auto-suspend all landed.
 > **Cloud Scheduler / Cloud Run Job** execution is abstracted as `tick(asOf)` + `/api/autonomy/tick`.
 
-- [x] Standing-instruction: plain-language rule → scheduled-check compiler — `src/domains/autonomy/compiler.ts` (heuristic keyword parse + LLM seam)
+- [x] Standing-instruction: plain-language rule → declarative rule spec — `src/domains/autonomy/author.ts` + `spec.ts` + `interpret.ts`. **`compiler.ts` was deleted in agent Phase 4 (2026-08-26):** it pattern-matched sentences into rules, so the set of rules it could produce was whatever the regexes happened to accept and nobody had ever reviewed that set. `RuleWhen` is now a **closed union of four kinds** and `RuleDo` is `notify.send` alone; the model fills blanks in a fixed schema, exactly once at authoring, and anything that does not parse is a refusal rather than a best effort.
 - [x] Supervised-action scaffold (prepare → ask every time) — gate check 5 awaiting-confirmation (existing)
 - [x] Clean-approval counter (10 unchanged approvals; any edit resets) — `GraduatingAutonomyPolicy.recordOutcome`
 - [x] Graduation offer (offered, never assumed) — `offerGraduation` + `acceptGraduation` (author must agree)
@@ -511,8 +542,10 @@ assistant never comments on the person or compares people.
 - [x] Suggestion offer (never auto) — `RoutineSuggestion.status = "offered"`; `acceptSuggestion` required
 - [x] Question-at-right-moment delivery — reuses the global 2/day `QuestionLimiter` (Phase 5)
 - [x] Background execution via Cloud Run Jobs (standing rules, routine watcher, question scheduler) — `tick(asOf)` + `POST /api/autonomy/tick` (Cloud Scheduler calls this in prod)
-- [x] Amber loop: a change → new operation re-enters at the seven starts — `PublishBus.subscribe` → `engine.tick` → `spine.submit` (fromStandingRule adapter)
-- [x] Tests: graduation counts; never-graduate categories; auto-suspend on departure — `src/domains/autonomy/autonomy.test.ts` (9 tests)
+- [x] Amber loop: a change → new operation re-enters at the seven starts — `tick(asOf)` → `spine.submit` (fromStandingRule adapter). **The `PublishBus.subscribe` wiring was removed in agent Phase 4:** a rule that fires from a bus event fires once per event, so a burst of changes meant a burst of notifications, and re-entrancy could start a tick inside a tick. Evaluation is now a **scheduled sweep** with a `ticking` re-entrancy flag and a `DAILY_FIRING_BUDGET` of 20.
+- [x] Fire-once keys, persisted — `src/domains/autonomy/fired.ts` (`orga_autonomy_fired`). Keyed on the record and the threshold, **never on the day count**, so a rule that has fired about a course does not fire again tomorrow simply because the course got a day older.
+- [x] Kill switch — `stop_all_rules`, and `list_rules` says out loud when everything is stopped rather than listing stopped rules as though they were running
+- [x] Tests: graduation counts; never-graduate categories; auto-suspend on departure — `src/domains/autonomy/autonomy.test.ts` (9 tests), plus `durability`, `loop`, `twice-safe`, `author`, `interpret` and `rules` (53 across the domain)
 
 **Exit:** a supervised rule correctly graduates after 10 clean approvals; a money-touching
 variant is refused graduation; the graduated rule auto-suspends when its author's role is
@@ -523,6 +556,16 @@ downgraded in N1.
 
 - **12 Speaking to it** — STT in; **read-back-before-save**; restricted info **not read aloud
   in a shared room** (the "is the room shared?" branch).
+
+> ⚠ **Feature 12 was rebuilt in the agentic plan's Phase 6 (2026-08-26), and the
+> shape below is no longer what runs.** "STT in, read back, save" was
+> command-and-reply: press, release, `webkitSpeechRecognition`, and a
+> four-branch keyword match (`detectIntent`) that covered four intents. What
+> exists now is **a live audio conversation you can interrupt** — one held
+> WebSocket per speaker, relayed by this project's own server to
+> `gemini-live-2.5-flash-native-audio`, holding the coordinator's full tool set.
+> There is no separate STT provider and no TTS provider: one model hears and
+> speaks. See `phases/phase 6/` and `docs/STATUS.md`.
 - **03 Three ways to do everything** — equivalence audit: form, typed, voice all produce the
   *same* operation with the same approval and record.
 - **Web frontend** (Next.js) built to the mock UIs (CONTEXT §7.1); the demo
@@ -532,14 +575,17 @@ downgraded in N1.
 - **Cross-cutting audits** against the non-negotiables (CONTEXT §13).
 
 **Build checklist:**
-> Status: **all features built**. STT via browser Web Speech API; read-back-before-save modal;
-> shared-room detection; three new pages (courses kanban, team directory, calendar month grid);
-> shared sidebar; equivalence audit; non-negotiable E2E suite; OpenAPI spec served.
+> Status (updated 2026-08-26): **all features built except one, and that one
+> regressed rather than never arriving.** Voice is a live conversation, not STT
+> + a modal; the read-back is heard and is stronger than it was; three new pages;
+> shared sidebar; equivalence audit, now including six roles on the spoken path;
+> non-negotiable E2E suite; OpenAPI spec served. **The shared-room clause is
+> open** — see the checklist below.
 
-- [x] STT integration (provider TBD) — browser Web Speech API (`SpeechRecognition`); provider-agnostic seam in `voice-input.tsx`
-- [x] Read-back-before-save confirmation — read-back modal: transcript → interpreted op → [Save] [Cancel]; Cancel ⇒ "Nothing is saved"
-- [x] Shared-room detection → restricted info on-screen-only, not read aloud — shared-room toggle in the read-back modal
-- [x] Form / typed / voice equivalence audit (same operation, approval, record) — `phase7-audit.test.ts`
+- [x] ~~STT integration (provider TBD) — browser Web Speech API~~ → **superseded.** A held socket to a live audio model. `voice-input.tsx` and its `detectIntent` are deleted; `src/server/voice/` + `src/app/voice-session.tsx` replace them
+- [x] ~~Read-back-before-save confirmation — read-back modal~~ → **superseded, and stronger.** Phase 2.5's server-issued confirmation token, now *heard* rather than read, which is what it was always trying to be. All seven of its attacks refused on the spoken path (`src/server/voice/read-back.test.ts`). And for money and people there is no spoken completion at all: `approve_proposal` is **absent** from the live tool set, so the proposal goes to the screen and a finger issues it
+- [ ] ⚠ **Shared-room detection → restricted info not read aloud — REGRESSED, and it is a real gap.** The old clause was satisfied vacuously (nothing spoke). The live model speaks, so anything a tool returns can now be said out loud. It is still permission-filtered per record and per field before it reaches the model, so nothing is spoken that the listener could not have opened — but a shared room has a second listener, and there is no toggle. Recorded, not fixed
+- [x] Form / typed / voice equivalence audit (same operation, approval, record) — `phase7-audit.test.ts`, plus six-role permission equivalence on the **spoken** path in `src/server/voice/tools.test.ts`
 - [x] Web frontend (Next.js) per mock UIs (CONTEXT §7.1) — shared `Shell` + sidebar; `/dashboard` (supersedes `/today`), `/courses`, `/team`, `/calendar`, plus `/leave`, `/me`, `/documents`, `/announcements`, `/events`, `/equipment`, `/hr`, `/decisions`, `/utilities`, `/settings`
 - [x] Screens: home dashboard, course pipeline, team, common calendar — all four built (and extended to the full page set above)
 - [x] Morning-brief + dashboard flow per `Demo-Today-Screen.html` — engine built in Phase 5; the `/today` overlay UI is parked (dashboard replaced it). See `docs/STATUS.md`.
@@ -554,6 +600,11 @@ downgraded in N1.
 - [x] E2E tests for every non-negotiable (CONTEXT §13) — `phase7-audit.test.ts` (consolidated §1–§13)
 
 **Exit:** shippable v1 in the browser with voice; the non-negotiables all hold.
+
+> ⚠ **How it is served changed.** `npm start` is no longer `next start` — a Next
+> route handler never sees an HTTP upgrade, so `server.ts` wraps Next and owns
+> `/api/voice`. A deployment that starts the old way loses voice silently. See
+> `docs/STATUS.md`, "How to run it".
 
 ### Phase 8 — Hardening, compliance & deployment  ·  ~2–3 weeks
 **Goal:** production-grade resilience and compliance on the managed stack.

@@ -67,7 +67,7 @@ export async function PATCH(
     );
   }
 
-  const result = await updateRole(username, body.role as RbacRole);
+  const result = await updateRole(username, body.role as RbacRole, user.id);
   if (!result.ok) {
     return NextResponse.json({ error: result.error }, { status: 404 });
   }
@@ -99,7 +99,7 @@ export async function PUT(
     return NextResponse.json({ error: allowed.error }, { status: allowed.status });
   }
 
-  const result = await resetPassword(username, body.password ?? "");
+  const result = await resetPassword(username, body.password ?? "", user.id);
   if (!result.ok) {
     return NextResponse.json({ error: result.error }, { status: 404 });
   }
