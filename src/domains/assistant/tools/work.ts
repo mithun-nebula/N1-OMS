@@ -3,6 +3,7 @@ import { z } from "zod";
 import { directory } from "@/server/directory";
 import type { ToolSpec } from "./catalogue";
 import { shape, safeFields, visible } from "./shape";
+import { isInTheMeeting } from "@/domains/workplace/meeting-access";
 
 /**
  * Courses, the work hanging off them, and what is in the diary.
@@ -237,12 +238,17 @@ export const listMeetings: ToolSpec = {
         const dir = directory();
         return shape(rows, (r) => {
           const attendees = (visible(r.record.attendees) as string[] | undefined) ?? [];
+          // `link` is here because a person asking about an online meeting
+          // almost always wants to join it, and E7 requires the link to be
+          // reachable rather than described. Absent on in-person meetings —
+          // and absent for anybody NOT ON THIS MEETING, because the link is
+          // the way into the room rather than a fact about it. The same rule
+          // the screens apply; chat and voice must not be the softer door.
+          const fields: string[] = ["title", "from", "to", "kind", "cancelled"];
+          if (isInTheMeeting(ctx.actor, r.record)) fields.push("link");
           return {
             id: r.nodeId,
-            // `link` is here because a person asking about an online meeting
-            // almost always wants to join it, and E7 requires the link to be
-            // reachable rather than described. Absent on in-person meetings.
-            ...safeFields(r.record, ["title", "from", "to", "kind", "cancelled", "link"]),
+            ...safeFields(r.record, fields),
             attendees: attendees.map((a) => dir.nameOf(a)),
           };
         });

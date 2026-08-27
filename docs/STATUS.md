@@ -679,7 +679,150 @@ docs/           spec, research, mock UIs, this status file
 | 10 | Exporting ≠ viewing (appendix C) | ✅ | `export` is a distinct action, absent from the open-calendar bypass, checked before anything is produced. Latent: `type=task`/`course` export skips record scope — safe only because it is admin-only today. |
 | 11 | The common calendar is open to everyone — safeguarded by notify + record + undo, **all three required** (E3) | ⚠️ | *Undo now survives a restart* (all five calendar handlers and all three `record.*` gained serialisable plans this round). Still open: **interns cannot write to the calendar** — `readOnlyRoles` overrides the open-node exemption, contrary to E3; `assertAtomic` is dead code, so "all three" is asserted nowhere; and the write, the log append and the notify are not in one transaction. E5's "undo offered to anyone affected" is a session-local toast for the actor only. |
 | 12 | At most two questions per person per day, everywhere | ⚠️ | **The rule was changed deliberately, and the tick used to be against the old one.** The cap is now **per-person, defaulting to six** (`DEFAULT_QUESTIONS_PER_DAY = 6`, `limiter.ts`) — decided with the product owner in Phase 2 on 2026-08-24. What the cap governs was also made explicit: it bounds **unprompted interruptions** only; a conversation the person started has never been capped and still is not. The mechanism §13 asked for holds — one shared, durable budget across the day plan and `utility.capture`, hydrated at boot, enforced on the *ask* and not merely the answer. **The number does not.** `QUESTIONS_PER_DAY = 2` still exists in `limiter.ts` and is now only a legacy constant. Phase 2 also built the scheduler this line used to say was missing (`day-plan/scheduler.ts`), and Phase 4 fixed its ordering so a bad day cannot spend the whole allowance on miss-reasons. |
-| 13 | Any figure can be opened into the parts it was computed from | ❌ | The mechanism works and the route is permission-checked. The property does not hold: **one figure type exists in the whole product** (course completion), **no UI ever calls `/api/figures/…`**, and every other number on screen — streak, day tally, leave balance, the four stat tiles — is not a Figure and has no parts. The passing test only proves the store can return parts for the seeded course figure. |
+| 13 | Any figure can be opened into the parts it was computed from | 🟡 | The UI half now exists (2026-08-27): `src/app/ui/figure.tsx` (`FigureValue`) renders a recorded figure as a tappable number that fetches `/api/figures/…` and opens its explainer + `computedFrom` parts — wired on `/courses` (kanban % and detail-modal %) and `/team` (Building-now % and person-modal %). Still partial: **one figure type exists in the whole product** (course completion); streak, day tally, leave balance and the stat tiles are plain numbers with no parts. Recording more figure types is backend work — the UI now follows wherever a figure is recorded. Same round also fixed `GET /api/proposals` (returned an unawaited Promise, i.e. `{}`, since nothing had ever called it) and added `/approvals` and `/history` screens plus voice-panel state visuals. |
+
+## The day loop, tightened (2026-08-27)
+
+Four changes, all three ways in (form · chat · voice):
+
+- **Clocking in is now a gate, not a button.** First open of the day shows a
+  blocking prompt offering the same brief three ways — tap through it, do it in
+  chat, or speak it (`clockIn(how)` in `dashboard-client.tsx`; the voice option
+  dispatches `n1:start-voice`, which `voice-session.tsx` listens for). The old
+  "plan the day without clocking in" path is gone: nothing downstream — windows,
+  miss classification, streak — means anything without a start time.
+- **The picker separates started from not started** — "Already in progress" vs
+  "Not started yet" (task `status` is now carried through `dashboard/page.tsx`).
+- **A before-the-end check-in.** Inside the last 10 minutes of an item's window
+  it asks "still on track?" with *On time · Need more time · Blocked*, as a small
+  dashboard strip — appendix A1c's allowed prompt, never a chat that opens
+  itself. `DayPlanService.recordStatusCheck` records it; `report_status`
+  (tool #108, on the `day` specialist) is the same question for chat and voice,
+  and answering it anywhere stops it being re-asked everywhere.
+  - ⚠ Deliberately **exempt from the daily question budget** — A4 separates the
+    helpful offer from the interrogation, and this is the former.
+  - ⚠ "Need more time" **does not extend the committed estimate.** A7 warns that
+    streaks tempt padding; a check-in that rewrote the estimate would make the
+    streak unbreakable. It warns about what is now at risk instead. There is a
+    browser test asserting 60min stays 60min.
+- **The day is laid out from the clock-in, not from a fixed 09:00.** `DayPlan`
+  gained `startedAt`; `scheduleWork` opens the day there, falling back to the
+  09:00 opening when there is none (legacy plans, and planning before clocking
+  in). It is read from the **attendance record** — `startDay` fetches it via
+  `clockInFor`, and the `attendance.checkIn` reaction calls `markDayStart` for
+  the reverse order — never stamped with `new Date()`, which dated a plan for
+  another day with today's wall clock. Four tests cover it, including one
+  through the real reaction.
+- **The morning is now run by the assistant, when they ask for it.** Choosing
+  *chat* or *voice* at clock-in hands the whole morning to the conversation: it
+  raises each brief item, asks what they are taking on, asks **how long for
+  each** (A1's estimate is required, so the picker cannot skip it), reads the
+  day back — *"1h of work around 1h 30m of meetings, 2h free"* — and commits
+  when they say so. Choosing *tap through it* keeps the on-screen brief; the two
+  are surfaces over one set of items, never two implementations. Voice starts
+  the spoken session over the same window, and its tools write to the same day,
+  so the conversation fills in as they talk.
+- **The loop is visible** — `WatchLine` on the dashboard: *"Watching Write the QA
+  report · ends 18:39 · next check in 50m"*. It decides nothing; it reports the
+  same numbers the check-in is derived from, so the two cannot disagree.
+- **All four moments are the same conversation** — the morning, the
+  before-the-end check, the ran-over question and the clock-out. The check's
+  strip is gone; one place the assistant speaks, so every moment it does looks
+  alike. Each is dismissed its own way, so waving one off never silences another.
+- **The two after-the-fact questions are a conversation, in the middle of the screen** —
+  `src/app/dashboard/day-chat.tsx`. It opens itself for exactly two moments and
+  no others: an item that **ran over** (asked once it is ticked late or the day
+  is closing), and **clock-out**. Both are after-the-fact, which is what makes
+  them allowed: A1c bars the chat from opening *"while you are working"*, and A4
+  puts the mid-task OFFER ("your 12:00 will not fit") in a strip and the QUESTION
+  ("what happened?") after the work. An **interrupted** miss opens nothing — the
+  application knows why, and A2 says asking what it knows is what breaks trust.
+  - Buttons first, typing optional (A1: "chat-first must never mean
+    typing-first"), a "Later" that lets it lapse quietly (A4), and a "Full chat"
+    link that carries the subject into `/assistant`.
+  - Close-out **tells** what it knows (finished, worked vs committed, what ran
+    over) and only **asks** what it cannot: what happens to each open item, and
+    how the day itself was — that last answer goes into their own assistant
+    conversation so it is there tomorrow.
+  - The script follows the data, never an index: carrying an item over removes
+    it from `unfinished`, so the next open item simply becomes the current one.
+- **`missOffered` was keyed on the wrong gate** and is fixed: it required
+  `miss.offerNow`, which means *later work is displaced* — the condition for the
+  live offer, not the question. An item that overran and displaced nothing was
+  never asked about, so A5 learned nothing from the commonest overrun of all,
+  the last piece of work in the day.
+- **Live refresh no longer fires under an open dialog** (`chrome/live.tsx`).
+  `router.refresh()` re-runs the server components above every client component,
+  and doing that beneath a modal discarded what was inside it — the day-plan
+  chat lost the person's answer ~400ms after they tapped, on the very change
+  their own answer had published. It now waits for the dialog to close, which
+  protects every modal in the app.
+- **Close-out already covered** the third ask (how the day went · what is still
+  open · what carries to tomorrow) — kept, and now also offered as the
+  conversation above.
+
+> **Testing note.** `page.wait_for_load_state("networkidle")` never resolves any
+> more — the live-update SSE stream is open for the life of the page, so the
+> network never goes idle. Use `domcontentloaded` plus an explicit wait.
+
+### The "not connected to the database" scare — found and fixed
+
+Seen three times across a day: every real password rejected,
+`ORG_BOOTSTRAP_PASSWORD` working again, the app apparently running with no
+database — while the database was reachable and `/api/health` answered 200. It
+came and went with the bundler's cache, which made it look like an environment
+problem. It was not.
+
+**Cause.** `server/accounts.ts` held `accountList` / `byUsername` / `byPerson` /
+the pool in **plain module-level variables**, seeded with the defaults and
+replaced by `configureAccounts()` once Postgres answered. That only works if
+every caller shares one module instance, and in dev they do not: a route handler
+can be evaluated in its own bundle, so `/api/auth/login` read a **second copy
+still holding the defaults** while the copy the world had hydrated sat in
+another. Nothing threw, so nothing looked wrong.
+
+**Fix.** The account store now lives on `globalThis`, the same pattern
+`runtime.ts` already uses for the world and for exactly the same reason.
+Verified by hitting `/api/auth/login` as the very first request after a cold
+start — the ordering that used to expose it — and by confirming the bootstrap
+password is now correctly *rejected*.
+
+**The tell, if it ever comes back:** login accepts only the `.env` bootstrap
+password and reports `mustChangePassword: true` for an account the database says
+is `false`. A login as `admin` with the real password is the one-second check
+before a demo. Anything mutable that must be one object for every caller belongs
+on `globalThis` too.
+
+## Live updates (added 2026-08-27)
+
+Every open screen now follows the brain in ~1s, whatever the start — form,
+chat, voice, or automation. Server-Sent Events, one stream per tab:
+
+- **Hub**: `src/server/live.ts` (`emitChange`/`subscribeChanges`, globalThis
+  singleton, ~150ms coalescing). **Stream**: `GET /api/events`
+  (session-checked; ordinary long-lived HTTP — no upgrade, voice fence
+  untouched). Events carry **areas only, never data** — screens re-fetch
+  through their own permission-checked reads, so nothing new can leak.
+- **Taps**: `/api/operations` + confirm + undo (area = op-name prefix, plus
+  `notifications`); the day-plan store's `put()` (one tap covers `/api/today`,
+  chat day tools AND voice day tools — wired in `runtime.ts`); `/api/messages`
+  send/read; `/api/proposals/{id}` approve/discard; `/api/assistant/ask` and
+  `src/server/voice/tools.ts` emit a coarse `assistant` after each turn/tool
+  (their gated writes go through `Spine.submit`, not the operations route);
+  `/api/autonomy/tick` → `notifications`.
+- **Client**: `src/app/chrome/live.tsx` — `<LiveUpdates />` in the shell
+  (debounced `router.refresh()`, hidden-tab deferral, backoff reconnect) makes
+  every server-component page live for free; `useLiveEvent(fn, {areas})` wires
+  the self-fetching pieces (dashboard day panel/MonthGlance/TeamDay/DayHistory,
+  bell, messages, approvals, assistant banner, `/history`). The bell's
+  30-second poll is now a 5-minute fallback, and its first-open read-marking
+  race (stale `items` closure) is fixed.
+- Verified end-to-end against a running server: `data:{"areas":["day-plan"]}`,
+  `["messages"]` and `["equipment","notifications"]` all observed arriving on
+  the stream within ~1s of the write. Single-instance by design; multi-instance
+  (Phase 8) feeds the same hub from Postgres LISTEN/NOTIFY.
+- Also fixed in passing: `DELETE /api/proposals/{id}` never awaited
+  `tapDiscard`, so its 404 branch was unreachable.
 
 ## Persistence
 

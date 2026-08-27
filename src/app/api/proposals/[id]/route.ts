@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getActingUser } from "@/server/session-guard";
 import { getSpine } from "@/server/runtime";
+import { emitChange } from "@/server/live";
 import { tapApprove, tapDiscard } from "@/server/voice/tap";
 
 export const dynamic = "force-dynamic";
@@ -30,6 +31,10 @@ export async function POST(
   if (!outcome.ok) {
     return NextResponse.json({ error: outcome.reason }, { status: outcome.status });
   }
+  // Live updates: the proposal list shrank AND the underlying operation ran.
+  emitChange("proposals");
+  emitChange(outcome.did.split(".")[0] || "operations");
+  emitChange("notifications");
   return NextResponse.json({ ok: true, did: outcome.did, summary: outcome.summary });
 }
 
@@ -41,8 +46,9 @@ export async function DELETE(
   const auth = await getActingUser();
   if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
   const { id } = await params;
-  if (!tapDiscard(auth.user.id, id)) {
+  if (!(await tapDiscard(auth.user.id, id))) {
     return NextResponse.json({ error: "There is nothing waiting with that id." }, { status: 404 });
   }
+  emitChange("proposals");
   return NextResponse.json({ ok: true });
 }

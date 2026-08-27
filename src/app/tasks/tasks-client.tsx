@@ -5,6 +5,7 @@ import { isAdminLike, isManagerOrAbove } from "@/server/roles";
 import { Icon } from "../ui/icons";
 import { inputCls, OpFeedback, PriorityBadge } from "../ui/kit";
 import { useOperation } from "@/components/ops/use-operation";
+import { fmtDate } from "../ui/dates";
 
 interface Task {
   id: string;
@@ -321,7 +322,7 @@ export function TasksClient({
                                 {t.dueDate && (
                                   <span className={`flex items-center gap-1 ${overdue ? "font-semibold text-danger" : "text-ink-faint"}`}>
                                     <Icon name="clock" className="h-3 w-3" />
-                                    {t.dueDate}
+                                    {fmtDate(t.dueDate)}
                                     {overdue ? " · overdue" : ""}
                                   </span>
                                 )}

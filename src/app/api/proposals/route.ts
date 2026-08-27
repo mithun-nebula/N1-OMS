@@ -18,5 +18,5 @@ export const dynamic = "force-dynamic";
 export async function GET() {
   const auth = await getActingUser();
   if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
-  return NextResponse.json({ proposals: openProposals(auth.user.id) });
+  return NextResponse.json({ proposals: await openProposals(auth.user.id) });
 }

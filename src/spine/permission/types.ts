@@ -7,6 +7,19 @@ export type RecordScope =
   /** My team, **including me**. Right for reads: "my team's records". */
   | { kind: "own-team" }
   /**
+   * You are named ON the record — an assignee, not its owner.
+   *
+   * `own-team` resolves a record's single owner and asks whether the actor's
+   * circle contains them. That is right for a person's own records and wrong
+   * for shared work: a course assigned to somebody outside the owner's circle
+   * was invisible to the very person told to do it. They received the task and
+   * could not open the course it was for.
+   *
+   * Deliberately narrow. It grants nothing about a record you were not put on,
+   * and it is granted by an operation that already passed the gate.
+   */
+  | { kind: "assigned" }
+  /**
    * My team, **excluding me**. Right for writes.
    *
    * `own-team` on a write is how a manager came to be able to set their own pay
@@ -54,6 +67,8 @@ export interface RoleProvider {
   rolesFor(actor: ActorId): RoleId[];
   teamOf(actor: ActorId): ActorId[];
   ownerOf(nodeType: string, recordNodeId: NodeId): ActorId | undefined;
+  /** Everyone named on the record, for the `assigned` scope. Empty when none. */
+  assigneesOf(nodeType: string, recordNodeId: NodeId): ActorId[];
 }
 
 export interface PermissionCheckInput {

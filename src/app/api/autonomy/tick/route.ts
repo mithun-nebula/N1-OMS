@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getActingUser } from "@/server/session-guard";
 import { getAutonomyEngine } from "@/server/runtime";
+import { emitChange } from "@/server/live";
 
 export const dynamic = "force-dynamic";
 
@@ -36,5 +37,7 @@ export async function POST(request: Request) {
   }
   const asOf = body.asOf ?? new Date().toISOString();
   const result = await (await getAutonomyEngine()).tick(asOf);
+  // Live updates: a rule may only notify, so the bell is what moved.
+  emitChange("notifications");
   return NextResponse.json({ tickedAt: asOf, ...result });
 }

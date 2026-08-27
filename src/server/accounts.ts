@@ -141,17 +141,53 @@ function buildDefaultAccounts(): Account[] {
   }));
 }
 
-// Mutable so configureAccounts() can hydrate from Postgres.
-let accountList: Account[] = buildDefaultAccounts();
-let byUsername = new Map(accountList.map((a) => [a.username, a]));
-let byPerson = new Map(accountList.map((a) => [a.personId, a]));
-let dbPool: Pool | null = null;
 /**
- * Optional, exactly like `DayPlanStore`'s persistence. Absent (as in every
- * existing test) appending is a no-op, so nothing that already worked has to
- * change to accommodate the log.
+ * ⚠ **The account store lives on `globalThis`, and that is load-bearing.**
+ *
+ * These were plain module-level variables, seeded with the *defaults* and
+ * replaced by `configureAccounts()` once Postgres answered. That works only if
+ * every caller shares one module instance — and in dev they do not. A route
+ * handler can be evaluated in its own bundle, so `/api/auth/login` was reading
+ * a **second copy still holding the defaults** while the copy the world had
+ * hydrated sat in another.
+ *
+ * The symptom looked nothing like the cause: every real password rejected,
+ * `ORG_BOOTSTRAP_PASSWORD` working again, and the app apparently "not connected
+ * to the database" — while the database was fine and `/api/health` answered
+ * 200. It came and went with the bundler's cache, which is what made it look
+ * like an environment problem.
+ *
+ * `runtime.ts` already stashes the world this way, for exactly this reason.
+ * Anything mutable that must be the same object for every caller belongs here.
  */
-let activityLog: ActivityLog | null = null;
+interface AccountState {
+  list: Account[];
+  byUsername: Map<string, Account>;
+  byPerson: Map<string, Account>;
+  pool: Pool | null;
+  /**
+   * Optional, exactly like `DayPlanStore`'s persistence. Absent (as in every
+   * existing test) appending is a no-op, so nothing that already worked has to
+   * change to accommodate the log.
+   */
+  log: ActivityLog | null;
+}
+
+const globalForAccounts = globalThis as unknown as { __orgAccounts?: AccountState };
+
+function state(): AccountState {
+  if (!globalForAccounts.__orgAccounts) {
+    const list = buildDefaultAccounts();
+    globalForAccounts.__orgAccounts = {
+      list,
+      byUsername: new Map(list.map((a) => [a.username, a])),
+      byPerson: new Map(list.map((a) => [a.personId, a])),
+      pool: null,
+      log: null,
+    };
+  }
+  return globalForAccounts.__orgAccounts;
+}
 
 interface AccountRow {
   username: string;
@@ -186,8 +222,9 @@ function rowToAccount(row: AccountRow): Account {
  * keeps the in-memory defaults (resets on restart). All reads stay sync.
  */
 export async function configureAccounts(pool?: Pool, log?: ActivityLog): Promise<void> {
-  dbPool = pool ?? null;
-  activityLog = log ?? null;
+  const s = state();
+  s.pool = pool ?? null;
+  s.log = log ?? null;
   if (!pool) return;
 
   await pool.query(`
@@ -210,21 +247,21 @@ export async function configureAccounts(pool?: Pool, log?: ActivityLog): Promise
   );
 
   if (res.rows.length === 0) {
-    // First boot against an empty table. On a real deployment `accountList` is
-    // just the bootstrap super-admin; with demo data on it is the nine logins.
-    if (accountList.length === 0) {
+    // First boot against an empty table. On a real deployment the list is just
+    // the bootstrap super-admin; with demo data on it is the nine logins.
+    if (s.list.length === 0) {
       throw new Error(
         "No accounts to create: set ORG_BOOTSTRAP_USER and ORG_BOOTSTRAP_PASSWORD, " +
           "or enable ORG_SEED_DEMO. Nobody could sign in otherwise.",
       );
     }
-    for (const a of accountList) {
+    for (const a of s.list) {
       await insertAccount(pool, a);
     }
   } else {
-    accountList = res.rows.map(rowToAccount);
-    byUsername = new Map(accountList.map((a) => [a.username, a]));
-    byPerson = new Map(accountList.map((a) => [a.personId, a]));
+    s.list = res.rows.map(rowToAccount);
+    s.byUsername = new Map(s.list.map((a) => [a.username, a]));
+    s.byPerson = new Map(s.list.map((a) => [a.personId, a]));
   }
 }
 
@@ -270,7 +307,7 @@ async function recordAccountChange(input: {
   actor: string;
   changes: ChangeSummary[];
 }): Promise<void> {
-  const log = activityLog;
+  const log = state().log;
   if (!log) return;
   try {
     const at = new Date().toISOString();
@@ -301,11 +338,11 @@ async function recordAccountChange(input: {
 // ── sync reads (unchanged signatures — the gate consumes these synchronously) ──
 
 export function findAccount(username: string): Account | undefined {
-  return byUsername.get(username);
+  return state().byUsername.get(username);
 }
 
 export function accountOfActor(actorId: string): Account | undefined {
-  return byPerson.get(actorId);
+  return state().byPerson.get(actorId);
 }
 
 /**
@@ -331,7 +368,7 @@ export function verifyCredentials(
   username: string,
   password: string,
 ): AuthUser | null {
-  const account = byUsername.get(username);
+  const account = state().byUsername.get(username);
   if (!account) return null;
   if (!verifyPassword(password, account.passwordHash)) return null;
   // An unused temporary password stops working once it expires. The holder has
@@ -354,7 +391,7 @@ export function listAccounts(): Array<{
   displayName: string;
   team?: string;
 }> {
-  return accountList.map(({ passwordHash: _ph, ...rest }) => {
+  return state().list.map(({ passwordHash: _ph, ...rest }) => {
     void _ph;
     return rest;
   });
@@ -380,11 +417,11 @@ export async function addAccount(input: {
   /** Who is creating this login. Recorded on the activity entry. */
   actor: string;
 }): Promise<{ ok: boolean; error?: string }> {
-  if (byUsername.has(input.username)) {
+  if (state().byUsername.has(input.username)) {
     return { ok: false, error: "Username already exists." };
   }
   const personId = input.username.toLowerCase().replace(/[^a-z0-9]/g, "-");
-  if (byPerson.has(personId)) {
+  if (state().byPerson.has(personId)) {
     return { ok: false, error: "That name is already in use." };
   }
   const account: Account = {
@@ -398,10 +435,11 @@ export async function addAccount(input: {
     temporaryPasswordExpiresAt:
       (input.mustChangePassword ?? true) ? temporaryPasswordExpiry() : undefined,
   };
-  accountList.push(account);
-  byUsername.set(account.username, account);
-  byPerson.set(account.personId, account);
-  if (dbPool) await insertAccount(dbPool, account);
+  const s = state();
+  s.list.push(account);
+  s.byUsername.set(account.username, account);
+  s.byPerson.set(account.personId, account);
+  if (s.pool) await insertAccount(s.pool, account);
   await recordAccountChange({
     operationName: "account.add",
     actor: input.actor,
@@ -444,10 +482,10 @@ export async function addAccountForPerson(input: {
   /** Who is creating this login. Recorded on the activity entry. */
   actor: string;
 }): Promise<{ ok: boolean; error?: string }> {
-  if (byUsername.has(input.username)) {
+  if (state().byUsername.has(input.username)) {
     return { ok: false, error: "That username is already taken." };
   }
-  if (byPerson.has(input.personId)) {
+  if (state().byPerson.has(input.personId)) {
     return { ok: false, error: "That person already has a login." };
   }
   const account: Account = {
@@ -460,10 +498,11 @@ export async function addAccountForPerson(input: {
     mustChangePassword: true,
     temporaryPasswordExpiresAt: temporaryPasswordExpiry(),
   };
-  accountList.push(account);
-  byUsername.set(account.username, account);
-  byPerson.set(account.personId, account);
-  if (dbPool) await insertAccount(dbPool, account);
+  const s = state();
+  s.list.push(account);
+  s.byUsername.set(account.username, account);
+  s.byPerson.set(account.personId, account);
+  if (s.pool) await insertAccount(s.pool, account);
   await recordAccountChange({
     operationName: "account.addForPerson",
     actor: input.actor,
@@ -487,14 +526,15 @@ export async function addAccountForPerson(input: {
 
 /** Remove a login entirely. Used to undo a person who was just created. */
 export async function removeAccount(username: string, actor: string): Promise<void> {
-  const account = byUsername.get(username);
+  const account = state().byUsername.get(username);
   // Nothing happened, so nothing is recorded.
   if (!account) return;
-  accountList = accountList.filter((a) => a.username !== username);
-  byUsername.delete(account.username);
-  byPerson.delete(account.personId);
-  if (dbPool) {
-    await dbPool.query("DELETE FROM orga_accounts WHERE username=$1", [username]);
+  const s = state();
+  s.list = s.list.filter((a) => a.username !== username);
+  s.byUsername.delete(account.username);
+  s.byPerson.delete(account.personId);
+  if (s.pool) {
+    await state().pool!.query("DELETE FROM orga_accounts WHERE username=$1", [username]);
   }
   await recordAccountChange({
     operationName: "account.remove",
@@ -524,7 +564,7 @@ export async function setAccountEnabled(
   enabled: boolean,
   actor: string,
 ): Promise<void> {
-  const account = byPerson.get(personId);
+  const account = state().byPerson.get(personId);
   if (!account) return;
   if (enabled) {
     // Re-enabling needs a fresh temporary password, set by whoever reactivates.
@@ -534,8 +574,8 @@ export async function setAccountEnabled(
   account.passwordHash = hashPassword(randomUnusablePassword());
   account.mustChangePassword = false;
   account.temporaryPasswordExpiresAt = undefined;
-  if (dbPool) {
-    await dbPool.query(
+  if (state().pool) {
+    await state().pool!.query(
       "UPDATE orga_accounts SET password_hash=$2, must_change_password=false, temporary_password_expires_at=NULL WHERE username=$1",
       [account.username, account.passwordHash],
     );
@@ -565,12 +605,12 @@ export async function updateRole(
   role: RbacRole,
   actor: string,
 ): Promise<{ ok: boolean; error?: string }> {
-  const account = byUsername.get(username);
+  const account = state().byUsername.get(username);
   if (!account) return { ok: false, error: "Account not found." };
   const previousRole = account.role;
   account.role = role;
-  if (dbPool) {
-    await dbPool.query("UPDATE orga_accounts SET role=$2 WHERE username=$1", [username, role]);
+  if (state().pool) {
+    await state().pool!.query("UPDATE orga_accounts SET role=$2 WHERE username=$1", [username, role]);
   }
   await recordAccountChange({
     operationName: "account.updateRole",
@@ -593,7 +633,7 @@ export async function changePassword(
   next: string,
   actor: string,
 ): Promise<{ ok: boolean; error?: string }> {
-  const account = byUsername.get(username);
+  const account = state().byUsername.get(username);
   if (!account) return { ok: false, error: "Account not found." };
   if (!verifyPassword(current, account.passwordHash)) {
     return { ok: false, error: "Current password is incorrect." };
@@ -605,8 +645,8 @@ export async function changePassword(
   account.passwordHash = hashPassword(next);
   account.mustChangePassword = false;
   account.temporaryPasswordExpiresAt = undefined;
-  if (dbPool) {
-    await dbPool.query(
+  if (state().pool) {
+    await state().pool!.query(
       "UPDATE orga_accounts SET password_hash=$2, must_change_password=false, temporary_password_expires_at=NULL WHERE username=$1",
       [username, account.passwordHash],
     );
@@ -631,7 +671,7 @@ export async function resetPassword(
   next: string,
   actor: string,
 ): Promise<{ ok: boolean; error?: string }> {
-  const account = byUsername.get(username);
+  const account = state().byUsername.get(username);
   if (!account) return { ok: false, error: "Account not found." };
   if (next.length < 6) {
     return { ok: false, error: "New password must be at least 6 characters." };
@@ -641,8 +681,8 @@ export async function resetPassword(
   account.passwordHash = hashPassword(next);
   account.mustChangePassword = true;
   account.temporaryPasswordExpiresAt = temporaryPasswordExpiry();
-  if (dbPool) {
-    await dbPool.query(
+  if (state().pool) {
+    await state().pool!.query(
       "UPDATE orga_accounts SET password_hash=$2, must_change_password=true, temporary_password_expires_at=$3 WHERE username=$1",
       [username, account.passwordHash, account.temporaryPasswordExpiresAt],
     );

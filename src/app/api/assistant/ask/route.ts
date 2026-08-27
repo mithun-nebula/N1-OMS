@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getActingUser } from "@/server/session-guard";
 import { assistantAsk } from "@/server/runtime";
+import { emitChange } from "@/server/live";
 
 export const dynamic = "force-dynamic";
 
@@ -45,5 +46,10 @@ export async function POST(request: Request) {
   // The answer AND the records behind it. A cited answer can be checked; an
   // uncited one has to be believed.
   const result = await assistantAsk(user.id, message, body.conversationId);
+  // Live updates: a chat turn can write through act-mode tools (gated
+  // operations reached via Spine.submit, never via /api/operations, so the
+  // route tap there does not see them). One coarse signal after the turn keeps
+  // every open screen honest; screens re-fetch through permitted reads only.
+  emitChange("assistant");
   return NextResponse.json(result);
 }

@@ -92,6 +92,14 @@ export function courseCreateHandler(
 export function courseAssignHandler(
   graph: RecordStore,
   owners?: Map<string, ActorId>,
+  /**
+   * Who is named on which record, for the `assigned` permission scope.
+   *
+   * Optional so existing call sites keep working, but a caller that omits it
+   * assigns work the assignee cannot open until the next restart rehydrates
+   * the map — which is a silent failure, because refusal is opaque.
+   */
+  assigned?: Map<string, ActorId[]>,
 ): OperationHandler<{ courseId: string; assignees: ActorId[] }> {
   return {
     name: "course.assign",
@@ -146,6 +154,11 @@ export function courseAssignHandler(
       if (!before) throw new Error(`No course ${args.courseId}.`);
 
       await graph.patchNode("course", args.courseId, { assignees: args.assignees });
+      // The permission map moves with the record. `course.assign` is a
+      // REPLACEMENT, not an addition — see the known gap about it being
+      // append-only for tasks — so the list is set, not merged, and somebody
+      // taken off a course loses sight of it in the same breath.
+      assigned?.set(`course:${args.courseId}`, [...args.assignees]);
 
       const taskIds: string[] = [];
       for (const assignee of args.assignees) {

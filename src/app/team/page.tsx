@@ -21,7 +21,7 @@ export default async function TeamPage() {
     filter: (data) => data.status !== "inactive" && data.status !== "separated",
   });
 
-  const coursesByOwner = new Map<string, Array<{ title: string; pct: number }>>();
+  const coursesByOwner = new Map<string, Array<{ id: string; title: string; pct: number }>>();
   const allCourses = await deps.graph.find("course", () => true);
   for (const course of allCourses) {
     const owner = (course.data as { owner?: string }).owner;
@@ -31,7 +31,7 @@ export default async function TeamPage() {
       : [];
     const pct = figs.length > 0 ? Number(figs[figs.length - 1].value) : 0;
     const list = coursesByOwner.get(owner) ?? [];
-    list.push({ title: (course.data as { title?: string }).title ?? course.id, pct });
+    list.push({ id: course.id, title: (course.data as { title?: string }).title ?? course.id, pct });
     coursesByOwner.set(owner, list);
   }
 
@@ -73,9 +73,9 @@ export default async function TeamPage() {
     leaveByEmployee.set(employeeId, list);
   }
 
-  const perPerson: Array<{ id: string; courses: Array<{ title: string; pct: number }>; tasks: Array<{ title: string; priority: string; dueDate?: string }>; leave: Array<{ fromDate: string; toDate: string; status: string }> }> = [];
+  const perPerson: Array<{ id: string; courses: Array<{ id: string; title: string; pct: number }>; tasks: Array<{ title: string; priority: string; dueDate?: string }>; leave: Array<{ fromDate: string; toDate: string; status: string }> }> = [];
   for (const id of directory().activeIds()) {
-    const courses = (coursesByOwner.get(id) ?? []).map((c) => ({ title: c.title, pct: c.pct }));
+    const courses = (coursesByOwner.get(id) ?? []).map((c) => ({ id: c.id, title: c.title, pct: c.pct }));
     const tasks = tasksByAssignee.get(id) ?? [];
     const leave = (leaveByEmployee.get(id) ?? []).sort((a, b) => (a.fromDate < b.fromDate ? 1 : -1));
     perPerson.push({ id, courses, tasks, leave });

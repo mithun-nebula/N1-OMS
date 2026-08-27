@@ -45,6 +45,8 @@ interface TodayState {
     /** The window this item holds in the day (A4's live overrun check). */
     start?: string;
     end?: string;
+    /** The before-the-end check, once answered — see `recordStatusCheck`. */
+    check?: { status: "on-time" | "more-time" | "blocked"; at: string; note?: string };
   }>;
   rows: Array<{ kind: "work" | "meeting"; id: string; title: string; start?: string; done?: boolean; tag?: string }>;
   tally: { meetings: number; work: number; free: number };
@@ -75,6 +77,15 @@ async function stateFor(actor: string): Promise<TodayState> {
 
   const attNode = await deps.graph.getNode("attendance", attendanceId(actor, date));
   const att: Partial<AttendanceData> = (attNode?.data as AttendanceData | undefined) ?? {};
+
+  // Backfill the day's start from the clock-in, for a plan that predates
+  // `startedAt` or was made before clocking in. Idempotent — `markDayStart`
+  // returns immediately once a day has a start — and it re-lays the work out,
+  // so an existing day snaps to the hour the person actually began rather than
+  // sitting at the 09:00 fallback until tomorrow.
+  if (att.checkInAt) {
+    service.markDayStart(actor, date, att.checkInAt);
+  }
 
   const plan = service.getStore().get(actor, date);
   const streakRec = service.getStore().streakFor(actor);
@@ -143,14 +154,30 @@ async function stateFor(actor: string): Promise<TodayState> {
       // client, so it can fire between polls rather than only on a refresh.
       start: p.start,
       end: p.end,
+      // The before-the-end check, once answered — the client uses its presence
+      // to stop asking again, whichever way it was answered (screen, chat or
+      // voice), so the three surfaces never re-ask each other's questions.
+      check: p.check,
       // A4 counts the *question*, not the answer. This checked only whether an
       // answer had been given, so a third and fourth overrun prompt still
       // appeared once the budget was spent — the limit capped replies rather
       // than asks. `recordMissReason` still consumes on answer; this stops the
       // ask being made at all.
+      //
+      // ⚠ Keyed on `kind === "ran-over"`, NOT on `miss.offerNow`. A4 gates the
+      // two things differently and this used the wrong gate: `offerNow` means
+      // *later work is displaced*, which is the condition for the live OFFER
+      // ("your 12:00 will not fit") — a strip, shown mid-task. The QUESTION
+      // ("what happened?") has no such condition; it is asked "when you tick
+      // the item complete late, or at the end of the day". Tying it to
+      // `offerNow` meant an item that overran and displaced nothing was never
+      // asked about at all, so A5 learned nothing from the commonest overrun
+      // of all — the last piece of work in the day.
+      //
+      // An interrupted miss still asks nothing: the application knows why.
       missOffered:
         !p.dropped &&
-        p.miss?.offerNow &&
+        p.miss?.kind === "ran-over" &&
         !p.miss?.asked &&
         !p.miss?.lapsed &&
         questionsLeft > 0,
@@ -328,6 +355,22 @@ export async function POST(request: Request) {
           return NextResponse.json({ error: result.error }, { status: 422 });
         }
         return NextResponse.json(await stateFor(user.id));
+      }
+      case "statusCheck": {
+        // Asked before the window ends, while the work can still be rescued —
+        // not a miss, and deliberately outside the question budget. See
+        // `DayPlanService.recordStatusCheck`.
+        const result = service.recordStatusCheck(
+          user.id,
+          date,
+          String(body.itemId ?? ""),
+          String(body.status ?? "on-time") as "on-time" | "more-time" | "blocked",
+          body.note === undefined ? undefined : String(body.note),
+        );
+        if (result.error) {
+          return NextResponse.json({ error: result.error }, { status: 422 });
+        }
+        return NextResponse.json({ ...(await stateFor(user.id)), atRisk: result.atRisk });
       }
       case "missReason": {
         // A5: the answer becomes better planning, not a black mark. The

@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { AccentButton, ChromeButton, Empty, inputCls, OpFeedback, SectionTitle, StatusBadge } from "../ui/kit";
 import { useOperation } from "@/components/ops/use-operation";
+import { fmtDate } from "../ui/dates";
 
 interface LeaveEntry {
   id: string;
@@ -177,7 +178,7 @@ export function LeaveClient({
                 >
                   <div className="min-w-0 text-[13px]">
                     <span className="font-semibold text-ink">{l.employeeName}</span>
-                    <span className="text-ink-soft"> · {l.fromDate} → {l.toDate}</span>
+                    <span className="text-ink-soft"> · {fmtDate(l.fromDate)} → {fmtDate(l.toDate)}</span>
                     {l.type && <span className="ml-2 rounded-full bg-peach px-2 py-0.5 text-[10px] font-bold text-peach-strong">{l.type}</span>}
                     {l.clashes > 0 && (
                       <span className="ml-2 text-[11px] font-semibold text-danger">⚠ {l.clashes} clash{l.clashes === 1 ? "" : "es"}</span>

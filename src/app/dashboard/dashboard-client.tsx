@@ -10,11 +10,16 @@ import { Icon } from "../ui/icons";
 import { CountUp, ThreeRings } from "../ui/progress-ring";
 import { Empty, OpFeedback, PriorityBadge } from "../ui/kit";
 import { useOperation } from "@/components/ops/use-operation";
+import { useLiveEvent } from "../chrome/live";
+import { fmtDate, fmtDateTime, fmtDayDate, fmtMonthYear, fmtTime } from "../ui/dates";
+import { DayChat } from "./day-chat";
 
 interface TaskItem {
   id: string;
   title: string;
   priority: string;
+  /** "todo" | "in-progress" | … — the picker separates started from not. */
+  status?: string;
   dueDate?: string;
   projectId?: string;
   estimateMinutes?: number;
@@ -59,6 +64,8 @@ interface TodayState {
     /** The window this item holds in the day (A4's live overrun check). */
     start?: string;
     end?: string;
+    /** Answered before the window ended — its presence stops a re-ask. */
+    check?: { status: "on-time" | "more-time" | "blocked"; at: string; note?: string };
   }>;
   rows: Array<{ kind: "work" | "meeting"; id: string; title: string; start?: string; done?: boolean; tag?: string }>;
   tally: { meetings: number; work: number; free: number };
@@ -115,10 +122,8 @@ function fmtMin(min: number): string {
   return `${h}h ${m}m`;
 }
 
-function fmtClock(iso?: string): string {
-  if (!iso) return "";
-  return new Date(iso).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-}
+/** The clock, from the one place dates are written. */
+const fmtClock = fmtTime;
 
 /**
  * Snap a figure onto the picker's own scale (appendix A5).
@@ -145,6 +150,7 @@ export function DashboardClient({
   courseCount,
   teamSize,
   hrAttention,
+  people,
 }: {
   userId: string;
   displayName: string;
@@ -155,6 +161,8 @@ export function DashboardClient({
   courseCount: number;
   teamSize: number;
   hrAttention: { activeOnboardings: number; expiringDocs: number } | null;
+  /** Who can be invited — active people, from the same directory `/meetings` reads. */
+  people: Array<{ id: string; name: string }>;
 }) {
   const op = useOperation();
   const [day, setDay] = useState<TodayState | null>(null);
@@ -168,6 +176,49 @@ export function DashboardClient({
   /** Ticks every minute so A4's overrun check runs against the wall clock. */
   const [nowMs, setNowMs] = useState<number>(() => Date.now());
   const [dismissTick, setDismissTick] = useState(0);
+  /** Named by the server when an early "I need longer" displaces later work. */
+  const [atRisk, setAtRisk] = useState<string | null>(null);
+  /** Which way the person chose to start the day, once the prompt is answered. */
+  const [startingDay, setStartingDay] = useState(false);
+  /**
+   * The conversation dialog, waved away for now.
+   *
+   * A4: an ignored question "lapses quietly. No reminder, no second ask." So
+   * "Later" closes it for this visit rather than queueing it to reappear.
+   */
+  const [chatWavedOff, setChatWavedOff] = useState(false);
+  const [openChat, setOpenChat] = useState<"plan" | "check" | "miss" | "closeout" | null>(null);
+  /**
+   * Which way they chose at clock-in. "form" keeps the old on-screen brief;
+   * "chat" and "voice" hand the morning to the assistant, which then runs it.
+   */
+  const [planInChat, setPlanInChat] = useState(false);
+  const [chatMiss, setChatMiss] = useState<{
+    id: string;
+    label: string;
+    estimateMinutes: number;
+  } | null>(null);
+
+  /**
+   * Arranging a meeting without leaving the dashboard.
+   *
+   * `/meetings` has had this form for a while; the dashboard only ever showed
+   * what was already booked and a link to go elsewhere. Most meetings are
+   * arranged while looking at the day they land in, so the form belongs beside
+   * the day rather than one navigation away.
+   *
+   * `kind` starts EMPTY on purpose. The chat tool used to default to "both" and
+   * quietly reserved a room for people who had only ever asked for a link — so
+   * here the choice is made rather than inherited.
+   */
+  const [showMeetingForm, setShowMeetingForm] = useState(false);
+  const [meetingForm, setMeetingForm] = useState({
+    title: "",
+    kind: "" as "" | "online" | "in-person" | "both",
+    from: "",
+    to: "",
+    attendees: [] as string[],
+  });
   const [learned, setLearned] = useState<{ label: string; planned: number; suggested: number } | null>(null);
   const [closingOut, setClosingOut] = useState(false);
 
@@ -192,6 +243,7 @@ export function DashboardClient({
   }, []);
 
   const seenKey = day ? `orga.overrunSeen.${userId}.${day.date}` : null;
+  const checkKey = day ? `orga.checkSeen.${userId}.${day.date}` : null;
 
   /**
    * Which items have already had their say today — once per item per day.
@@ -204,6 +256,44 @@ export function DashboardClient({
    * Read where it is used rather than hydrated into state by an effect —
    * `dismissTick` is what makes a dismissal recompute this.
    */
+  /**
+   * Book it, through the same operation `/meetings` submits.
+   *
+   * ⚠ `new Date(local).toISOString()` is doing real work here, not ceremony.
+   * A `datetime-local` value carries no zone, so `new Date` reads it in this
+   * machine's — which is what the person meant — and `toISOString` turns it
+   * into the instant. Passing the raw string through would send a wall-clock
+   * time as though it were UTC, which is the same mistake `time.ts` records
+   * being fixed once for the calendar and again for the chat tool.
+   */
+  async function createMeeting() {
+    const f = meetingForm;
+    if (!f.title.trim() || !f.kind || !f.from || !f.to) return;
+    const outcome = await op.run("meeting.create", {
+      title: f.title.trim(),
+      kind: f.kind,
+      from: new Date(f.from).toISOString(),
+      to: new Date(f.to).toISOString(),
+      attendees: f.attendees,
+    });
+    // Only clear on success. A rejection — no room free, a clash, a refused
+    // permission — leaves everything typed where it was, because retyping a
+    // meeting you already described is the fastest way to stop using a form.
+    if (outcome.status === "ran") {
+      setShowMeetingForm(false);
+      setMeetingForm({ title: "", kind: "", from: "", to: "", attendees: [] });
+    }
+  }
+
+  function toggleMeetingAttendee(id: string) {
+    setMeetingForm((f) => ({
+      ...f,
+      attendees: f.attendees.includes(id)
+        ? f.attendees.filter((a) => a !== id)
+        : [...f.attendees, id],
+    }));
+  }
+
   function seenOverruns(): Set<string> {
     if (!seenKey) return new Set();
     try {
@@ -220,6 +310,32 @@ export function DashboardClient({
       if (seenKey) {
         const next = seenOverruns().add(itemId);
         window.localStorage.setItem(seenKey, JSON.stringify([...next]));
+      }
+    } catch {}
+    setDismissTick((n) => n + 1);
+  }
+
+  /*
+   * The same courtesy for the before-the-end check, in its own key. Answering
+   * it writes `check` on the item and that alone stops the re-ask everywhere;
+   * this only covers the person who waves it away without answering, and must
+   * not silence the overrun warning that may follow it.
+   */
+  function seenChecks(): Set<string> {
+    if (!checkKey) return new Set();
+    try {
+      const raw = window.localStorage.getItem(checkKey);
+      return new Set(raw ? (JSON.parse(raw) as string[]) : []);
+    } catch {
+      return new Set();
+    }
+  }
+
+  function dismissCheck(itemId: string) {
+    try {
+      if (checkKey) {
+        const next = seenChecks().add(itemId);
+        window.localStorage.setItem(checkKey, JSON.stringify([...next]));
       }
     } catch {}
     setDismissTick((n) => n + 1);
@@ -263,6 +379,130 @@ export function DashboardClient({
     return null;
   })();
 
+  /**
+   * The check made shortly BEFORE a slot ends — "still on track?"
+   *
+   * The mirror image of `overrun` above, and the distinction is the whole
+   * point: that one fires once the time has gone, this one fires while the work
+   * can still be rescued. A4 allows the interruption on exactly that basis —
+   * *"interrupt to help, never to interrogate"* — so this asks about the work
+   * ahead, never about a failure behind.
+   *
+   * Four conditions, or say nothing:
+   *   1 committed, not done, not dropped
+   *   2 inside the last `CHECK_LEAD_MINUTES` of its own window
+   *   3 not already answered — by this screen, by chat, or by voice (`check`)
+   *   4 not already dismissed on this screen today
+   *
+   * It never opens the chat by itself (appendix A1c); it is the small
+   * dashboard prompt that section explicitly allows.
+   */
+  const CHECK_LEAD_MINUTES = 10;
+  const endingSoon = ((): PlanItem | null => {
+    void dismissTick;
+    if (!day || day.phase !== "planned") return null;
+    if (day.closeOut) return null;
+    const seen = seenChecks();
+    for (const p of day.plan) {
+      if (p.done || p.dropped || p.check) continue;
+      if (seen.has(p.id)) continue;
+      const end = at(p.end);
+      if (!Number.isFinite(end)) continue;
+      const minutesLeft = (end - nowMs) / 60000;
+      // Inside the lead window, and not yet past it — once it is past, the
+      // overrun strip above owns the moment instead.
+      if (minutesLeft <= CHECK_LEAD_MINUTES && minutesLeft > 0) {
+        return {
+          id: p.id,
+          label: p.label,
+          estimateMinutes: p.estimateMinutes,
+          start: p.start,
+          end: p.end,
+        } as PlanItem;
+      }
+    }
+    return null;
+  })();
+
+  /**
+   * The next piece of work still owed, and when its slot ends.
+   *
+   * What the watch line counts down to, so the loop is something a person can
+   * see running rather than something that only appears when it interrupts.
+   */
+  const nextUp = ((): { label: string; end?: string } | null => {
+    if (!day || day.phase !== "planned" || day.closeOut) return null;
+    const live = day.plan
+      .filter((p) => !p.done && !p.dropped && p.end)
+      .sort((a, b) => at(a.end) - at(b.end));
+    const next = live.find((p) => at(p.end) > nowMs) ?? live[0];
+    return next ? { label: next.label, end: next.end } : null;
+  })();
+
+  /**
+   * Which conversation is open, if any.
+   *
+   * ⚠ **Latched.** It was derived straight from the day, and that read well
+   * until somebody answered: recording the reason clears `missOffered`, the
+   * derivation went to `null` on the very next render, and the dialog was
+   * unmounted before the assistant's own reply could be seen. The person's
+   * answer vanished along with the acknowledgement of it.
+   *
+   * So the day decides when a conversation may OPEN; only the dialog decides
+   * when it closes.
+   *
+   * Only the two after-the-fact moments — never mid-task (see `day-chat.tsx`).
+   * Close-out wins when both are true: it asks about every open item anyway, so
+   * a separate why-question first would be two dialogs deep.
+   */
+  useEffect(() => {
+    if (openChat || chatWavedOff || !day) return;
+    const ranOver = day.plan.find((p) => p.missOffered);
+    const closing = Boolean(day.closeOut && !day.closeOut.finished);
+    const soon = endingSoon;
+    if (!closing && !ranOver && !soon) return;
+    // Deferred a task so no state is written synchronously inside the effect.
+    const t = setTimeout(() => {
+      // Ordered by how little time is left to act on it.
+      if (closing) {
+        setOpenChat("closeout");
+        return;
+      }
+      if (ranOver) {
+        setChatMiss({
+          id: ranOver.id,
+          label: ranOver.label,
+          estimateMinutes: ranOver.estimateMinutes,
+        });
+        setOpenChat("miss");
+        return;
+      }
+      if (soon) setOpenChat("check");
+    }, 0);
+    return () => clearTimeout(t);
+  }, [day, openChat, chatWavedOff, endingSoon]);
+
+  /**
+   * Closing it lapses that question quietly (A4) — but only that one.
+   *
+   * A blanket "no more conversations today" would mean waving away one
+   * check-in also silenced the close-out. So each kind is silenced its own way:
+   * a check by item, the morning by falling back to the on-screen brief, and
+   * the two after-the-fact questions for the rest of the visit.
+   */
+  function dismissChat() {
+    if (openChat === "check" && endingSoon) {
+      dismissCheck(endingSoon.id);
+    } else if (openChat === "plan") {
+      // Not a refusal to plan — just a preference to do it on screen.
+      setPlanInChat(false);
+    } else {
+      setChatWavedOff(true);
+    }
+    setOpenChat(null);
+    setChatMiss(null);
+  }
+
   /** A4's "[Move it]" — the displaced work goes to the end and is re-placed. */
   async function moveLater(itemId: string) {
     if (!day) return;
@@ -281,6 +521,12 @@ export function DashboardClient({
       })
       .catch(() => {});
   }, []);
+
+  // Live: a day change made anywhere — a chip tapped here, a chat "commit my
+  // day", a voice tick, a meeting displacing work — lands on this panel.
+  useLiveEvent(() => {
+    void refreshDay();
+  }, { areas: ["day-plan", "meeting", "calendar", "leave", "task"] });
 
   useEffect(() => {
     void refreshDay();
@@ -315,14 +561,43 @@ export function DashboardClient({
     }
   }
 
-  async function clockIn() {
-    const date = new Date().toISOString().slice(0, 10);
-    const outcome = await op.run("attendance.checkIn", { employeeId: userId, date }, { refresh: false });
-    if (outcome.status === "ran") await post({ action: "start" });
-  }
-
-  async function planWithoutClockIn() {
-    await post({ action: "start" });
+  /**
+   * Clocking in, and then the brief — in whichever of the three ways they
+   * chose (feature 03: "every task can be done by filling a form, typing a
+   * message, or speaking. All three do exactly the same thing").
+   *
+   * The clock-in itself is identical in all three: one `attendance.checkIn`
+   * through the gate. Only what happens next differs, and even that is two
+   * surfaces over one set of brief items, not two implementations.
+   */
+  async function clockIn(how: "form" | "chat" | "voice" = "form") {
+    if (startingDay) return;
+    setStartingDay(true);
+    try {
+      const date = new Date().toISOString().slice(0, 10);
+      const outcome = await op.run(
+        "attendance.checkIn",
+        { employeeId: userId, date },
+        { refresh: false },
+      );
+      if (outcome.status !== "ran") return;
+      // The day is opened the same way whichever they chose — one brief, one
+      // set of items. What differs is who walks them through it.
+      await post({ action: "start" });
+      if (how === "form") return;
+      // Chat and voice hand the morning to the assistant: it raises each brief
+      // item itself, asks what they are taking on and how long each will take,
+      // and commits when they say so.
+      setPlanInChat(true);
+      setOpenChat("plan");
+      if (how === "voice") {
+        // The same conversation, spoken. The voice tools write to the same day,
+        // so the window fills in as they talk.
+        window.dispatchEvent(new CustomEvent("n1:start-voice"));
+      }
+    } finally {
+      setStartingDay(false);
+    }
   }
 
   /**
@@ -415,12 +690,19 @@ export function DashboardClient({
    * called it; the day rearranges itself around meetings on the way back.
    */
   async function move(itemId: string, delta: number) {
-    const ids = (day?.plan ?? []).map((p) => p.id);
-    const from = ids.indexOf(itemId);
+    const plan = day?.plan ?? [];
+    // Only work still owed reorders. Something finished or dropped holds the
+    // place it actually occupied, so swapping past it would either claim you
+    // did it at a different time or hand its slot to live work.
+    const live = plan.filter((p) => !p.done && !p.dropped).map((p) => p.id);
+    const from = live.indexOf(itemId);
     const to = from + delta;
-    if (from < 0 || to < 0 || to >= ids.length) return;
-    [ids[from], ids[to]] = [ids[to], ids[from]];
-    await post({ action: "reorder", orderedIds: ids });
+    if (from < 0 || to < 0 || to >= live.length) return;
+    [live[from], live[to]] = [live[to], live[from]];
+    // Put the new order back into the full list, leaving the anchors alone.
+    let next = 0;
+    const orderedIds = plan.map((p) => (!p.done && !p.dropped ? live[next++] : p.id));
+    await post({ action: "reorder", orderedIds });
   }
 
   async function tick(itemId: string, actualMinutes: number | undefined) {
@@ -431,19 +713,49 @@ export function DashboardClient({
     if (state?.offerNow) setMissFor(itemId);
   }
 
-  async function sendMissReason(itemId: string, reason: string) {
+  /**
+   * Record the reason, and hand back what was learned from it.
+   *
+   * Returns rather than only setting state, because the conversation says the
+   * learned figure in its own next line — A5's "shall I plan for four next
+   * time?" belongs in the sentence that follows the answer, not in a toast
+   * beside it.
+   */
+  async function answerMiss(itemId: string, reason: string): Promise<{ learnedEstimate?: number }> {
     setMissFor(null);
-    const item = day?.plan.find((p) => p.id === itemId);
     const state = await post({ action: "missReason", itemId, reason });
+    return { learnedEstimate: state?.asked ? state.learnedEstimate : undefined };
+  }
+
+  async function sendMissReason(itemId: string, reason: string) {
+    const item = day?.plan.find((p) => p.id === itemId);
+    const { learnedEstimate } = await answerMiss(itemId, reason);
     // A5: "a miss becomes better planning, not a black mark." Offer the figure
     // back rather than filing it away silently.
-    if (state?.asked && state.learnedEstimate && item) {
+    if (learnedEstimate && item) {
       setLearned({
         label: item.label,
         planned: item.estimateMinutes,
-        suggested: state.learnedEstimate,
+        suggested: learnedEstimate,
       });
     }
+  }
+
+  /**
+   * What they said about the day, kept where it will be remembered.
+   *
+   * Sent into their own assistant conversation rather than dropped: feature 07
+   * is "remembers your earlier conversations", and a line about how a day went
+   * is exactly the kind of thing worth having tomorrow. Fire-and-forget — the
+   * reply is not needed here, and waiting for a model at clock-out would make
+   * closing the day feel slow.
+   */
+  async function noteDay(text: string): Promise<void> {
+    void fetch("/api/assistant/ask", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ message: text }),
+    }).catch(() => {});
   }
 
   async function approveLeave(leaveId: string) {
@@ -453,11 +765,7 @@ export function DashboardClient({
   }
 
   const firstName = displayName.split(/\s+/)[0] ?? displayName;
-  const dateLine = new Date().toLocaleDateString(undefined, {
-    weekday: "long",
-    month: "long",
-    day: "numeric",
-  });
+  const dateLine = fmtDayDate(new Date());
 
   /* ── Ring math: the rings measure TODAY, not history. ── */
   const rings = useMemo(() => {
@@ -483,10 +791,152 @@ export function DashboardClient({
     return tasks.filter((t) => !inPlan.has(t.id));
   }, [tasks, day]);
 
+  /*
+   * Work already underway is a different decision from work never started —
+   * "carry on with this" versus "take this on" — so the picker separates them
+   * rather than showing one undifferentiated list.
+   */
+  const inProgressTasks = useMemo(
+    () => pickableTasks.filter((t) => t.status === "in-progress"),
+    [pickableTasks],
+  );
+  const pendingTasks = useMemo(
+    () => pickableTasks.filter((t) => t.status !== "in-progress"),
+    [pickableTasks],
+  );
+
+  /**
+   * One list of everything still takeable, for the conversation's picker.
+   *
+   * Same three sources the on-screen picker uses and in the same order — what
+   * the brief turned up first, then work already underway, then work not
+   * started — so choosing chat or voice offers exactly what choosing the form
+   * would have. Two surfaces over one set of options, never two lists.
+   */
+  const pickableForChat = useMemo(() => {
+    const already = new Set((day?.plan ?? []).map((p) => p.label));
+    const out: Array<{
+      label: string;
+      ref?: { nodeType: string; nodeId: string };
+      origin: string;
+      learnedMinutes?: number;
+    }> = [];
+    for (const s of day?.suggested ?? []) {
+      if (!already.has(s)) out.push({ label: s, origin: "from your brief" });
+    }
+    for (const t of inProgressTasks) {
+      if (!already.has(t.title)) {
+        out.push({
+          label: t.title,
+          ref: { nodeType: "task", nodeId: t.id },
+          origin: "in progress",
+          learnedMinutes: day?.estimateHints[`task:${t.id}`] ?? t.estimateMinutes,
+        });
+      }
+    }
+    for (const t of pendingTasks) {
+      if (!already.has(t.title)) {
+        out.push({
+          label: t.title,
+          ref: { nodeType: "task", nodeId: t.id },
+          origin: "not started",
+          learnedMinutes: day?.estimateHints[`task:${t.id}`] ?? t.estimateMinutes,
+        });
+      }
+    }
+    return out;
+  }, [day, inProgressTasks, pendingTasks]);
+
+  /**
+   * The day has not begun until they clock in.
+   *
+   * Appendix A1 puts the brief at "the first time the application is opened
+   * each day", and nothing downstream — the plan, the windows, the miss
+   * classification, the streak — means anything without a start time to measure
+   * from. So this is a gate rather than a suggestion, and it offers all three
+   * ways in (feature 03) rather than making the form the privileged one.
+   */
+  const mustClockIn = Boolean(day) && !day?.attendance.checkInAt && !dayOver;
+
+  /** Work still owed, in plan order — the only rows that reorder. */
+  const movableIds = useMemo(
+    () => (day?.plan ?? []).filter((p) => !p.done && !p.dropped).map((p) => p.id),
+    [day],
+  );
+
   const stagger = (i: number) => ({ animationDelay: `${i * 70}ms` });
 
   return (
     <div className="mx-auto max-w-6xl space-y-5 p-4 sm:p-6">
+      {mustClockIn && (
+        <div
+          className="fade-in fixed inset-0 z-50 flex items-end justify-center bg-chrome-deep/70 p-4 backdrop-blur-sm sm:items-center"
+          role="dialog"
+          aria-modal
+          aria-label="Start your day"
+        >
+          <div className="pop-in w-full max-w-md rounded-3xl bg-surface p-6 shadow-lift">
+            <p className="text-[10px] font-semibold uppercase tracking-widest text-ink-faint">
+              {dateLine}
+            </p>
+            <h2 className="mt-1 text-2xl font-light tracking-tight text-ink">
+              Good morning, <span className="font-extrabold">{firstName}</span>
+            </h2>
+            <p className="mt-2 text-sm text-ink-soft">
+              Clock in to start the day. You&apos;ll get your brief, then pick what
+              you&apos;re taking on — whichever way suits you.
+            </p>
+
+            <div className="mt-5 space-y-2.5">
+              <button
+                onClick={() => clockIn("form")}
+                disabled={startingDay || op.busy}
+                className="press flex w-full items-center gap-3 rounded-2xl bg-accent-strong px-4 py-3 text-left text-white transition-colors hover:bg-accent disabled:opacity-40"
+              >
+                <Icon name="check" className="h-4 w-4 shrink-0" />
+                <span className="min-w-0 flex-1">
+                  <span className="block text-sm font-bold">Clock in &amp; tap through it</span>
+                  <span className="block text-[11px] text-white/80">
+                    The brief on screen, answered with buttons
+                  </span>
+                </span>
+              </button>
+
+              <button
+                onClick={() => clockIn("chat")}
+                disabled={startingDay || op.busy}
+                className="press flex w-full items-center gap-3 rounded-2xl bg-raised px-4 py-3 text-left transition-colors hover:bg-accent-soft disabled:opacity-40"
+              >
+                <Icon name="chat" className="h-4 w-4 shrink-0 text-accent-strong" />
+                <span className="min-w-0 flex-1">
+                  <span className="block text-sm font-bold text-ink">Clock in &amp; do it in chat</span>
+                  <span className="block text-[11px] text-ink-faint">
+                    The same brief as a conversation
+                  </span>
+                </span>
+              </button>
+
+              <button
+                onClick={() => clockIn("voice")}
+                disabled={startingDay || op.busy}
+                className="press flex w-full items-center gap-3 rounded-2xl bg-raised px-4 py-3 text-left transition-colors hover:bg-accent-soft disabled:opacity-40"
+              >
+                <Icon name="spark" className="h-4 w-4 shrink-0 text-accent-strong" />
+                <span className="min-w-0 flex-1">
+                  <span className="block text-sm font-bold text-ink">Clock in &amp; speak it</span>
+                  <span className="block text-[11px] text-ink-faint">
+                    Talk it through — same brief, out loud
+                  </span>
+                </span>
+              </button>
+            </div>
+
+            {startingDay && (
+              <p className="mt-4 text-center text-xs text-ink-faint">Starting your day…</p>
+            )}
+          </div>
+        </div>
+      )}
       {/* ============ Greeting + clock ============ */}
       <header className="rise flex flex-wrap items-end justify-between gap-3" style={stagger(0)}>
         <div>
@@ -499,8 +949,8 @@ export function DashboardClient({
         <div className="flex items-center gap-2.5">
           {day && !day.attendance.checkInAt && (
             <button
-              onClick={clockIn}
-              disabled={op.busy}
+              onClick={() => clockIn("form")}
+              disabled={op.busy || startingDay}
               className="press rounded-full bg-accent-strong px-5 py-2.5 text-sm font-bold text-white shadow-card transition-colors hover:bg-accent disabled:opacity-40"
             >
               Clock in
@@ -527,6 +977,31 @@ export function DashboardClient({
           )}
         </div>
       </header>
+
+      {/*
+        The check-in that used to live here is now the same centre-screen
+        conversation as the clock-out and the delay question — one place the
+        assistant speaks, so every moment it does looks alike.
+      */}
+
+      {/* What an early "I need longer" costs the rest of the day (A4). */}
+      {atRisk && (
+        <section
+          className="pop-in flex flex-wrap items-center gap-2 rounded-2xl border border-peach-strong/40 bg-peach/[.14] px-4 py-3 text-[13px]"
+          role="status"
+        >
+          <span className="min-w-0 flex-1 text-ink">
+            Noted — the time you committed still stands, so{" "}
+            <span className="font-semibold">{atRisk}</span> is now at risk.
+          </span>
+          <button
+            onClick={() => setAtRisk(null)}
+            className="press shrink-0 rounded-full bg-white/70 px-2.5 py-1 text-[11px] font-semibold text-ink"
+          >
+            OK
+          </button>
+        </section>
+      )}
 
       {/* ============ A4 — interrupt to help, never to interrogate ============ */}
       {overrun && (
@@ -571,6 +1046,15 @@ export function DashboardClient({
             >
               Drop {overrun.displaced.label}
             </button>
+            <Link
+              href={`/assistant?ask=${encodeURIComponent(
+                `"${overrun.item.label}" has run over and "${overrun.displaced.label}" no longer fits. What are my options?`,
+              )}`}
+              onClick={() => dismissOverrun(overrun.item.id)}
+              className="press rounded-full bg-white/70 px-2.5 py-1 font-semibold text-ink"
+            >
+              Explain in chat
+            </Link>
             <button
               onClick={() => dismissOverrun(overrun.item.id)}
               className="press px-2 py-1 font-semibold text-ink-soft hover:text-ink"
@@ -747,14 +1231,15 @@ export function DashboardClient({
                 <p className="text-sm text-chrome-soft">
                   {dayOver
                     ? "The day is closed. Anything unfinished carries to tomorrow's brief."
-                    : "Nothing planned yet. Clock in to get your brief — or plan the day without clocking in."}
+                    : "Nothing planned yet. Clock in to get your brief."}
                 </p>
                 {!dayOver && (
                   <button
-                    onClick={planWithoutClockIn}
-                    className="press rounded-full bg-white/[.08] px-4 py-2 text-xs font-semibold text-chrome-ink transition-colors hover:bg-white/[.14]"
+                    onClick={() => clockIn("form")}
+                    disabled={startingDay}
+                    className="press rounded-full bg-white/[.08] px-4 py-2 text-xs font-semibold text-chrome-ink transition-colors hover:bg-white/[.14] disabled:opacity-40"
                   >
-                    Plan my day
+                    Clock in &amp; plan my day
                   </button>
                 )}
               </div>
@@ -810,41 +1295,57 @@ export function DashboardClient({
                   </div>
                 )}
 
-                {pickableTasks.length > 0 && (
-                  <div className="space-y-1.5">
-                    {pickableTasks.slice(0, 4).map((t) => (
-                      <div key={t.id} className="flex items-center justify-between gap-2 rounded-xl bg-white/[.04] px-3 py-1.5">
-                        <span className="truncate text-[13px] text-chrome-soft">{t.title}</span>
-                        <span className="flex shrink-0 items-center gap-1.5">
-                          {day.estimateHints[`task:${t.id}`] !== undefined && (
-                            <span className="text-[10px] text-chrome-soft" title="What this took last time">
-                              took {fmtMin(day.estimateHints[`task:${t.id}`])}
-                            </span>
-                          )}
-                          <select
-                            value={taskEstimates[t.id] ?? nearestEstimate(day.estimateHints[`task:${t.id}`], t.estimateMinutes)}
-                            onChange={(e) => setTaskEstimates({ ...taskEstimates, [t.id]: Number(e.target.value) })}
-                            className="rounded-lg border border-chrome-line bg-transparent px-1.5 py-0.5 text-[11px] font-medium text-chrome-ink outline-none"
-                          >
-                            {ESTIMATES.map((m) => <option key={m} value={m} className="text-ink">{fmtMin(m)}</option>)}
-                          </select>
-                          <button
-                            onClick={() =>
-                              addItem(
-                                t.title,
-                                taskEstimates[t.id] ?? nearestEstimate(day.estimateHints[`task:${t.id}`], t.estimateMinutes),
-                                { nodeType: "task", nodeId: t.id },
-                              )
-                            }
-                            className="press rounded-full bg-accent px-2.5 py-0.5 text-[11px] font-bold text-chrome"
-                          >
-                            Add
-                          </button>
-                        </span>
-                      </div>
-                    ))}
-                  </div>
-                )}
+                {/*
+                  Already underway first, then what has not been started.
+                  Picking up something in progress is a different decision from
+                  taking on something new, and the label is what makes it one.
+                */}
+                {[
+                  { title: "Already in progress", list: inProgressTasks, accent: true },
+                  { title: "Not started yet", list: pendingTasks, accent: false },
+                ]
+                  .filter((g) => g.list.length > 0)
+                  .map((group) => (
+                    <div key={group.title} className="space-y-1.5">
+                      <p className="text-[11px] text-chrome-soft">{group.title}</p>
+                      {group.list.slice(0, 4).map((t) => (
+                        <div
+                          key={t.id}
+                          className={`flex items-center justify-between gap-2 rounded-xl px-3 py-1.5 ${
+                            group.accent ? "border border-accent/30 bg-accent/[.06]" : "bg-white/[.04]"
+                          }`}
+                        >
+                          <span className="truncate text-[13px] text-chrome-soft">{t.title}</span>
+                          <span className="flex shrink-0 items-center gap-1.5">
+                            {day.estimateHints[`task:${t.id}`] !== undefined && (
+                              <span className="text-[10px] text-chrome-soft" title="What this took last time">
+                                took {fmtMin(day.estimateHints[`task:${t.id}`])}
+                              </span>
+                            )}
+                            <select
+                              value={taskEstimates[t.id] ?? nearestEstimate(day.estimateHints[`task:${t.id}`], t.estimateMinutes)}
+                              onChange={(e) => setTaskEstimates({ ...taskEstimates, [t.id]: Number(e.target.value) })}
+                              className="rounded-lg border border-chrome-line bg-transparent px-1.5 py-0.5 text-[11px] font-medium text-chrome-ink outline-none"
+                            >
+                              {ESTIMATES.map((m) => <option key={m} value={m} className="text-ink">{fmtMin(m)}</option>)}
+                            </select>
+                            <button
+                              onClick={() =>
+                                addItem(
+                                  t.title,
+                                  taskEstimates[t.id] ?? nearestEstimate(day.estimateHints[`task:${t.id}`], t.estimateMinutes),
+                                  { nodeType: "task", nodeId: t.id },
+                                )
+                              }
+                              className="press rounded-full bg-accent px-2.5 py-0.5 text-[11px] font-bold text-chrome"
+                            >
+                              Add
+                            </button>
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  ))}
 
                 <div className="flex flex-wrap items-center gap-2">
                   <input
@@ -886,15 +1387,36 @@ export function DashboardClient({
             ) : (
               /* planned — your day, time-ordered */
               <div className="pop-in space-y-1.5">
-                <h3 className="mb-2 text-sm font-bold">Your day</h3>
+                <div className="mb-2 flex flex-wrap items-baseline justify-between gap-2">
+                  <h3 className="text-sm font-bold">Your day</h3>
+                  {movableIds.length > 1 && (
+                    <span className="text-[11px] text-chrome-soft">
+                      ▲▼ to reorder — the times move with it
+                    </span>
+                  )}
+                </div>
                 {day.rows.length === 0 ? (
                   <p className="text-[13px] text-chrome-soft">Nothing on the plan.</p>
                 ) : (
                   day.rows.map((row) => {
                     const planItem = day.plan.find((p) => p.id === row.id);
+                    const movableAt = movableIds.indexOf(row.id);
                     return (
                       <div key={`${row.kind}-${row.id}`} className="rounded-xl bg-white/[.05] px-3 py-2">
                         <div className="flex items-center gap-2.5">
+                          {/*
+                            The time leads the row, because it is what moving a
+                            task changes. With it at the end, reordering looked
+                            like nothing had happened; here the whole column
+                            visibly re-flows.
+                          */}
+                          <span
+                            className={`w-11 shrink-0 tabular-nums text-[11px] ${
+                              planItem?.dropped ? "text-chrome-soft/50 line-through" : "text-chrome-soft"
+                            }`}
+                          >
+                            {row.start ? fmtClock(row.start) : "—"}
+                          </span>
                           {row.kind === "meeting" ? (
                             <Icon name="meetings" className="h-3.5 w-3.5 shrink-0 text-chrome-soft" />
                           ) : planItem?.dropped ? (
@@ -924,23 +1446,33 @@ export function DashboardClient({
                           >
                             {row.title}
                           </span>
-                          {planItem && !row.done && !planItem.dropped && day.plan.length > 1 && (
-                            <span className="flex shrink-0 flex-col leading-none">
+                          {planItem && (
+                            <span className="shrink-0 text-[11px] font-semibold text-accent">{fmtMin(planItem.estimateMinutes)}</span>
+                          )}
+                          {/*
+                            A1b — "items can be dragged into any order, at any
+                            time. The morning plan is a starting point, not a
+                            contract." The service re-lays the day out around
+                            the meetings on the way back, so the times above
+                            move with the order.
+                          */}
+                          {planItem && movableAt >= 0 && movableIds.length > 1 && (
+                            <span className="flex shrink-0 items-center gap-0.5">
                               <button
                                 onClick={() => move(row.id, -1)}
-                                disabled={day.plan[0]?.id === row.id}
-                                title="Move earlier"
+                                disabled={movableAt === 0}
+                                title="Move earlier — the times shift to match"
                                 aria-label={`Move ${row.title} earlier`}
-                                className="press px-1 text-[9px] text-chrome-soft transition-colors hover:text-accent disabled:opacity-25"
+                                className="press grid h-6 w-6 place-items-center rounded-md text-[11px] leading-none text-chrome-soft transition-colors hover:bg-white/[.10] hover:text-accent disabled:opacity-20 disabled:hover:bg-transparent"
                               >
                                 ▲
                               </button>
                               <button
                                 onClick={() => move(row.id, 1)}
-                                disabled={day.plan[day.plan.length - 1]?.id === row.id}
-                                title="Move later"
+                                disabled={movableAt === movableIds.length - 1}
+                                title="Move later — the times shift to match"
                                 aria-label={`Move ${row.title} later`}
-                                className="press px-1 text-[9px] text-chrome-soft transition-colors hover:text-accent disabled:opacity-25"
+                                className="press grid h-6 w-6 place-items-center rounded-md text-[11px] leading-none text-chrome-soft transition-colors hover:bg-white/[.10] hover:text-accent disabled:opacity-20 disabled:hover:bg-transparent"
                               >
                                 ▼
                               </button>
@@ -951,16 +1483,10 @@ export function DashboardClient({
                               onClick={() => setDropFor(dropFor === row.id ? null : row.id)}
                               title="Not doing this today"
                               aria-label={`Drop ${row.title}`}
-                              className="press shrink-0 px-1 text-[13px] leading-none text-chrome-soft transition-colors hover:text-peach-strong"
+                              className="press grid h-6 w-6 shrink-0 place-items-center rounded-md text-[13px] leading-none text-chrome-soft transition-colors hover:bg-white/[.10] hover:text-peach-strong"
                             >
                               &times;
                             </button>
-                          )}
-                          {row.start && !planItem?.dropped && (
-                            <span className="shrink-0 text-[11px] text-chrome-soft">{fmtClock(row.start)}</span>
-                          )}
-                          {planItem && (
-                            <span className="shrink-0 text-[11px] font-semibold text-accent">{fmtMin(planItem.estimateMinutes)}</span>
                           )}
                           {row.tag && (
                             <span className="shrink-0 rounded-full bg-peach px-2 py-0.5 text-[9px] font-bold text-peach-strong">
@@ -1047,6 +1573,16 @@ export function DashboardClient({
                                 {r}
                               </button>
                             ))}
+                            {/* A1c's own example carries this option. */}
+                            <Link
+                              href={`/assistant?ask=${encodeURIComponent(
+                                `"${row.title}" took longer than I planned. Can we talk about it?`,
+                              )}`}
+                              onClick={() => setMissFor(null)}
+                              className="press rounded-full bg-white/[.08] px-2.5 py-1 font-semibold text-chrome-ink"
+                            >
+                              Explain in chat
+                            </Link>
                             <button onClick={() => setMissFor(null)} className="text-chrome-soft hover:text-chrome-ink">skip</button>
                           </div>
                         )}
@@ -1093,10 +1629,115 @@ export function DashboardClient({
         <section className="rise rounded-3xl bg-surface p-5 shadow-card" style={stagger(3)}>
           <div className="flex items-center justify-between">
             <h2 className="text-[11px] font-semibold uppercase tracking-widest text-ink-faint">Up next</h2>
-            <Link href="/meetings" className="press flex items-center gap-1 text-xs font-medium text-accent-strong hover:underline">
-              View all <Icon name="arrow" className="h-3 w-3" />
-            </Link>
+            <div className="flex items-center gap-3">
+              <button
+                type="button"
+                onClick={() => setShowMeetingForm((v) => !v)}
+                className="press flex items-center gap-1 text-xs font-medium text-accent-strong hover:underline"
+              >
+                {showMeetingForm ? "Cancel" : "New meeting"}
+              </button>
+              <Link href="/meetings" className="press flex items-center gap-1 text-xs font-medium text-accent-strong hover:underline">
+                View all <Icon name="arrow" className="h-3 w-3" />
+              </Link>
+            </div>
           </div>
+
+          {showMeetingForm && (
+            <div className="mt-3 space-y-2.5 rounded-2xl bg-chrome/40 p-3.5">
+              <input
+                value={meetingForm.title}
+                onChange={(e) => setMeetingForm((f) => ({ ...f, title: e.target.value }))}
+                placeholder="What is the meeting?"
+                className="w-full rounded-xl border border-hairline bg-surface px-3 py-2 text-[13px] text-ink outline-none focus:border-accent"
+              />
+
+              {/* No preselection. Choosing between a room and a link is the
+                  decision this form exists to capture, and a default answers it
+                  for people who never noticed the control. */}
+              <div className="flex gap-1.5">
+                {(["online", "in-person", "both"] as const).map((k) => (
+                  <button
+                    key={k}
+                    type="button"
+                    onClick={() => setMeetingForm((f) => ({ ...f, kind: k }))}
+                    className={`press flex-1 rounded-xl px-2 py-1.5 text-[11px] font-semibold capitalize ${
+                      meetingForm.kind === k
+                        ? "bg-accent text-white"
+                        : "bg-surface text-ink-soft hover:text-ink"
+                    }`}
+                  >
+                    {k === "online" ? "Link only" : k === "in-person" ? "Room only" : "Both"}
+                  </button>
+                ))}
+              </div>
+
+              <div className="grid grid-cols-2 gap-2">
+                <label className="block">
+                  <span className="text-[10px] uppercase tracking-wide text-ink-faint">Starts</span>
+                  <input
+                    type="datetime-local"
+                    value={meetingForm.from}
+                    onChange={(e) => setMeetingForm((f) => ({ ...f, from: e.target.value }))}
+                    className="mt-0.5 w-full rounded-xl border border-hairline bg-surface px-2.5 py-1.5 text-[12px] text-ink outline-none focus:border-accent"
+                  />
+                </label>
+                <label className="block">
+                  <span className="text-[10px] uppercase tracking-wide text-ink-faint">Ends</span>
+                  <input
+                    type="datetime-local"
+                    value={meetingForm.to}
+                    onChange={(e) => setMeetingForm((f) => ({ ...f, to: e.target.value }))}
+                    className="mt-0.5 w-full rounded-xl border border-hairline bg-surface px-2.5 py-1.5 text-[12px] text-ink outline-none focus:border-accent"
+                  />
+                </label>
+              </div>
+
+              {people.length > 0 && (
+                <div>
+                  <span className="text-[10px] uppercase tracking-wide text-ink-faint">Who</span>
+                  <div className="mt-1 flex flex-wrap gap-1.5">
+                    {people
+                      .filter((pp) => pp.id !== userId)
+                      .map((pp) => (
+                        <button
+                          key={pp.id}
+                          type="button"
+                          onClick={() => toggleMeetingAttendee(pp.id)}
+                          className={`press rounded-lg px-2 py-1 text-[11px] font-medium ${
+                            meetingForm.attendees.includes(pp.id)
+                              ? "bg-accent text-white"
+                              : "bg-surface text-ink-soft hover:text-ink"
+                          }`}
+                        >
+                          {pp.name}
+                        </button>
+                      ))}
+                  </div>
+                </div>
+              )}
+
+              <button
+                type="button"
+                onClick={createMeeting}
+                disabled={
+                  op.busy ||
+                  !meetingForm.title.trim() ||
+                  !meetingForm.kind ||
+                  !meetingForm.from ||
+                  !meetingForm.to
+                }
+                className="press w-full rounded-xl bg-ink px-3 py-2 text-[12px] font-semibold text-surface disabled:opacity-40"
+              >
+                {op.busy ? "Arranging…" : "Arrange it"}
+              </button>
+
+              {/* A room clash or a refused permission comes back here rather
+                  than as silence — the form keeps what was typed either way. */}
+              {op.error && <p className="text-[11px] text-rose-strong">{op.error}</p>}
+            </div>
+          )}
+
           {meetings.length === 0 ? (
             <Empty icon="calendar" text="No meetings ahead — a clear runway." />
           ) : (
@@ -1116,7 +1757,12 @@ export function DashboardClient({
                       <div className="truncate text-[13px] font-semibold text-ink">{m.title}</div>
                       <div className="mt-0.5 flex items-center gap-1.5 text-[11px] text-ink-soft">
                         <Icon name="clock" className="h-3 w-3" />
-                        {m.from ?? "unscheduled"}
+                        {/* Was the raw ISO instant — "2026-08-27T09:00:00.000Z"
+                            printed straight onto the card. */}
+                        <span suppressHydrationWarning>
+                          {m.from ? fmtDateTime(m.from) : "unscheduled"}
+                          {m.to ? ` – ${fmtTime(m.to)}` : ""}
+                        </span>
                         {m.kind && <span className={`font-semibold ${s.text}`}>· {m.kind}</span>}
                       </div>
                     </Link>
@@ -1160,7 +1806,7 @@ export function DashboardClient({
                 >
                   <span className="truncate text-[13px] font-medium text-ink">{t.title}</span>
                   <span className="flex shrink-0 items-center gap-1.5">
-                    {t.dueDate && <span className="text-[11px] text-ink-faint">{t.dueDate}</span>}
+                    {t.dueDate && <span className="text-[11px] text-ink-faint">{fmtDate(t.dueDate)}</span>}
                     <PriorityBadge priority={t.priority} />
                   </span>
                 </div>
@@ -1186,7 +1832,9 @@ export function DashboardClient({
               >
                 <div className="min-w-0 text-[13px]">
                   <div className="truncate font-semibold text-ink">{p.employeeName}</div>
-                  <div className="text-[11px] text-ink-soft">leave {p.fromDate} → {p.toDate}</div>
+                  <div className="text-[11px] text-ink-soft">
+                    leave {fmtDate(p.fromDate)} → {fmtDate(p.toDate)}
+                  </div>
                 </div>
                 <button
                   onClick={() => approveLeave(p.id)}
@@ -1215,12 +1863,108 @@ export function DashboardClient({
       {/* ============ The team's day (appendix A8) ============ */}
       {isApprover && <TeamDay />}
 
+      {/* ============ The loop, made visible ============ */}
+      <WatchLine
+        checkedIn={checkedIn}
+        dayOver={dayOver}
+        phase={day?.phase}
+        nowMs={nowMs}
+        next={nextUp}
+        leadMinutes={CHECK_LEAD_MINUTES}
+      />
+
+      {/* ============ This month (the common calendar, at a glance) ============ */}
+      <MonthGlance />
+
       {/* ============ Quick links ============ */}
       <section className="rise flex flex-wrap gap-2 rounded-3xl border border-dashed border-line p-4" style={stagger(8)}>
-        <QuickLink href="/leave" label="Leave balance & history" />
         <QuickLink href="/me" label="Profile" />
-        <QuickLink href="/calendar" label="Open calendar" />
+        <QuickLink href="/approvals" label="Approvals" />
       </section>
+
+      {/*
+        The conversation, for the two moments that need one. Not while they are
+        working — see the header of `day-chat.tsx` for why these two may open
+        themselves when A1c says the chat may not.
+      */}
+      {/* The morning, run by the assistant — chosen at clock-in. */}
+      {openChat === "plan" && planInChat && day && day.phase !== "planned" && (
+        <DayChat
+          firstName={firstName}
+          plan={{
+            phase: day.phase === "none" ? "briefing" : (day.phase as "briefing" | "planning" | "abandoned"),
+            briefItem: day.briefItem,
+            pickable: pickableForChat,
+            committed: day.plan
+              .filter((p) => !p.dropped)
+              .map((p) => ({ id: p.id, label: p.label, estimateMinutes: p.estimateMinutes })),
+            tally: day.tally,
+          }}
+          onClose={dismissChat}
+          onAnswerBrief={async (reply) => {
+            await post({ action: "answerBrief", reply });
+          }}
+          onSelect={async (label, minutes, ref) => {
+            await post({ action: "select", label, estimateMinutes: minutes, ref });
+          }}
+          onCommit={async () => {
+            await post({ action: "commit" });
+          }}
+          onMissReason={answerMiss}
+          onCarryOver={carryOver}
+          onDrop={(id) => dropItem(id)}
+          onPartDone={recordProgress}
+          onFinish={finishCloseOut}
+          onNote={noteDay}
+        />
+      )}
+
+      {/* A slot about to end — asked where it can still be acted on. */}
+      {openChat === "check" && endingSoon && (
+        <DayChat
+          firstName={firstName}
+          check={{ id: endingSoon.id, label: endingSoon.label, end: endingSoon.end }}
+          onClose={dismissChat}
+          onStatusCheck={async (itemId, status) => {
+            dismissCheck(itemId);
+            const state = await post({ action: "statusCheck", itemId, status });
+            return { atRisk: (state as (TodayState & { atRisk?: string }) | null)?.atRisk };
+          }}
+          onMissReason={answerMiss}
+          onCarryOver={carryOver}
+          onDrop={(id) => dropItem(id)}
+          onPartDone={recordProgress}
+          onFinish={finishCloseOut}
+          onNote={noteDay}
+        />
+      )}
+
+      {openChat === "miss" && chatMiss && (
+        <DayChat
+          firstName={firstName}
+          miss={chatMiss}
+          onClose={dismissChat}
+          onMissReason={answerMiss}
+          onCarryOver={carryOver}
+          onDrop={(id) => dropItem(id)}
+          onPartDone={recordProgress}
+          onFinish={finishCloseOut}
+          onNote={noteDay}
+        />
+      )}
+      {openChat === "closeout" && day?.closeOut && (
+        <DayChat
+          firstName={firstName}
+          closeOut={day.closeOut}
+          onClose={dismissChat}
+          onMissReason={answerMiss}
+          onCarryOver={carryOver}
+          onDrop={(id) => dropItem(id)}
+          onPartDone={recordProgress}
+          onFinish={finishCloseOut}
+          onNote={noteDay}
+        />
+      )}
 
       <OpFeedback
         error={op.error}
@@ -1235,6 +1979,67 @@ export function DashboardClient({
 }
 
 /* ============ pieces ============ */
+
+/**
+ * The loop, made visible.
+ *
+ * The day plan has always been a loop — it watches the clock, decides when a
+ * question is worth asking, and speaks when it is. All of that was invisible
+ * until the moment it interrupted, which makes an agentic application feel
+ * inert between interruptions and startling during them.
+ *
+ * So it says what it is doing: what it is watching, when that slot ends, and
+ * when it will next check in. Nothing here decides anything — it reports the
+ * same numbers the check-in itself is derived from, so the two cannot disagree.
+ */
+function WatchLine({
+  checkedIn,
+  dayOver,
+  phase,
+  nowMs,
+  next,
+  leadMinutes,
+}: {
+  checkedIn: boolean;
+  dayOver: boolean;
+  phase?: string;
+  nowMs: number;
+  next: { label: string; end?: string } | null;
+  leadMinutes: number;
+}) {
+  if (dayOver || !checkedIn) return null;
+
+  let line: string;
+  if (phase !== "planned") {
+    line = "Waiting for your plan — nothing is being tracked yet.";
+  } else if (!next?.end) {
+    line = "Watching your day. Nothing due soon.";
+  } else {
+    const minsLeft = Math.round((at(next.end) - nowMs) / 60000);
+    if (minsLeft <= 0) {
+      line = `${next.label} is past its slot.`;
+    } else if (minsLeft <= leadMinutes) {
+      line = `${next.label} ends in ${minsLeft}m — I'll check in.`;
+    } else {
+      line = `Watching ${next.label} · ends ${fmtClock(next.end)} · next check in ${minsLeft - leadMinutes}m`;
+    }
+  }
+
+  return (
+    <section
+      className="rise flex items-center gap-2.5 rounded-2xl border border-dashed border-line px-4 py-2.5"
+      aria-live="polite"
+    >
+      <span className="pulse-dot h-2 w-2 shrink-0 rounded-full bg-accent-strong" />
+      <span className="min-w-0 flex-1 text-[12px] text-ink-soft" suppressHydrationWarning>
+        {line}
+      </span>
+      <span className="shrink-0 text-[10px] uppercase tracking-wider text-ink-faint">
+        assistant
+      </span>
+    </section>
+  );
+}
 
 function BriefCard({
   item,
@@ -1313,6 +2118,8 @@ function DayHistory() {
   const [days, setDays] = useState<
     Array<{ date: string; committed: number; done: number; ranOver: number; interrupted: number; onLeave: boolean }>
   >([]);
+  const [tick, setTick] = useState(0);
+  useLiveEvent(() => setTick((t) => t + 1), { areas: ["day-plan"] });
 
   useEffect(() => {
     let live = true;
@@ -1325,7 +2132,7 @@ function DayHistory() {
     return () => {
       live = false;
     };
-  }, []);
+  }, [tick]);
 
   const planned = days.filter((d) => d.committed > 0 || d.onLeave);
   if (planned.length < 2) return null;
@@ -1387,6 +2194,8 @@ function TeamDay() {
     }>
   >([]);
   const [loaded, setLoaded] = useState(false);
+  const [tick, setTick] = useState(0);
+  useLiveEvent(() => setTick((t) => t + 1), { areas: ["day-plan", "task", "course"] });
 
   useEffect(() => {
     let live = true;
@@ -1401,7 +2210,7 @@ function TeamDay() {
     return () => {
       live = false;
     };
-  }, []);
+  }, [tick]);
 
   // Somebody with nothing planned and nothing in the pipeline has nothing to
   // show — an empty row per colleague would be noise, not information.
@@ -1504,5 +2313,112 @@ function QuickLink({ href, label }: { href: string; label: string }) {
       {label}
       <Icon name="arrow" className="h-3 w-3 transition-transform duration-200 group-hover:translate-x-0.5" />
     </Link>
+  );
+}
+
+/**
+ * The common calendar's current month, on the dashboard. Density, not detail
+ * (E2): a dot per meeting, events named by count, today ringed. Every day
+ * links to /calendar, where the full month view and day panel live.
+ */
+function MonthGlance() {
+  const today = new Date().toISOString().slice(0, 10);
+  const year = Number(today.slice(0, 4));
+  const month = Number(today.slice(5, 7));
+  const [cells, setCells] = useState<
+    Array<{ date: string; meetings: number; events: Array<{ id: string; title: string }> }>
+  >([]);
+  const [loaded, setLoaded] = useState(false);
+  const [tick, setTick] = useState(0);
+  useLiveEvent(() => setTick((t) => t + 1), { areas: ["calendar", "meeting", "event", "room"] });
+
+  useEffect(() => {
+    let live = true;
+    fetch(`/api/calendar/${year}/${month}`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => {
+        if (!live || !d) return;
+        setCells(d.cells ?? []);
+        setLoaded(true);
+      })
+      .catch(() => {});
+    return () => {
+      live = false;
+    };
+  }, [year, month, tick]);
+
+  if (!loaded) return null;
+
+  const monthName = fmtMonthYear(year, month);
+  // Monday-first offset for the first cell of the month.
+  const firstDay = new Date(year, month - 1, 1).getDay(); // 0 = Sunday
+  const lead = (firstDay + 6) % 7;
+  const busiest = cells.filter((c) => c.meetings > 0 || c.events.length > 0).length;
+
+  return (
+    <section className="rise rounded-3xl bg-surface p-5 shadow-card" style={{ animationDelay: "60ms" }}>
+      <div className="flex flex-wrap items-baseline justify-between gap-2">
+        <h2 className="text-[11px] font-semibold uppercase tracking-widest text-ink-faint">
+          This month · {monthName}
+        </h2>
+        <Link href="/calendar" className="press text-xs font-medium text-accent-strong hover:underline">
+          Open calendar
+        </Link>
+      </div>
+      <div className="mt-3 grid grid-cols-7 gap-1 text-center">
+        {["M", "T", "W", "T", "F", "S", "S"].map((d, i) => (
+          <span key={i} className="pb-1 text-[10px] font-semibold uppercase text-ink-faint">
+            {d}
+          </span>
+        ))}
+        {Array.from({ length: lead }, (_, i) => (
+          <span key={`lead-${i}`} />
+        ))}
+        {cells.map((c) => {
+          const isToday = c.date === today;
+          const has = c.meetings > 0 || c.events.length > 0;
+          return (
+            <Link
+              key={c.date}
+              href="/calendar"
+              title={
+                has
+                  ? [
+                      c.meetings > 0 ? `${c.meetings} meeting${c.meetings === 1 ? "" : "s"}` : "",
+                      ...c.events.map((e) => e.title),
+                    ]
+                      .filter(Boolean)
+                      .join(" · ")
+                  : undefined
+              }
+              className={`press flex min-h-11 flex-col items-center justify-start gap-0.5 rounded-xl px-0.5 pt-1.5 text-[11px] transition-colors ${
+                isToday
+                  ? "bg-accent-soft font-bold text-accent-strong ring-1 ring-accent-strong"
+                  : has
+                    ? "bg-raised font-medium text-ink hover:bg-accent-soft/50"
+                    : "text-ink-faint hover:bg-raised"
+              }`}
+            >
+              {Number(c.date.slice(8, 10))}
+              <span className="flex items-center gap-0.5">
+                {Array.from({ length: Math.min(c.meetings, 3) }, (_, i) => (
+                  <span key={i} className="h-1 w-1 rounded-full bg-accent-strong" />
+                ))}
+                {c.events.length > 0 && <span className="h-1 w-1 rounded-full bg-mint-strong" />}
+              </span>
+            </Link>
+          );
+        })}
+      </div>
+      <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-[10px] text-ink-faint">
+        <span className="flex items-center gap-1.5">
+          <span className="h-1.5 w-1.5 rounded-full bg-accent-strong" /> meeting
+        </span>
+        <span className="flex items-center gap-1.5">
+          <span className="h-1.5 w-1.5 rounded-full bg-mint-strong" /> event
+        </span>
+        <span className="ml-auto">{busiest} busy day{busiest === 1 ? "" : "s"} this month</span>
+      </div>
+    </section>
   );
 }

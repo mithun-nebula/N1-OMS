@@ -141,8 +141,12 @@ export async function getDayPlanService(): Promise<DayPlanService> {
       // itself stays synchronous (writes are fire-and-forget, reads hydrate
       // once per actor-day via load() before anything touches the plan).
       const { PostgresDayPlanPersistence } = await import("./store-pg-dayplan");
+      const { emitChange } = await import("./live");
       dayPlanStore = new DayPlanStore(
         world.pool ? new PostgresDayPlanPersistence(world.pool) : undefined,
+        // One tap covers every start: /api/today, chat day-write tools and
+        // voice day tools all end in this store's put().
+        () => emitChange("day-plan"),
       );
     }
     dayPlanService = new DayPlanService(dayPlanStore, {

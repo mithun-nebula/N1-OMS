@@ -121,8 +121,11 @@ describe("what is enforced in code rather than asked for in the prompt", () => {
     // approve_expense took a claimId that NOTHING produced.
     // + Phase 4: author_rule, list_rules, stop_all_rules.
     // 106 -> 107 in Phase 4.6: `my_memory`, the only tool this phase added.
-    expect(ALL_TOOL_NAMES).toHaveLength(107);
-    expect(new Set(ALL_TOOL_NAMES).size).toBe(107);
+    // 107 -> 108: `report_status`, the before-the-end check-in. It writes to
+    // the person's own day only, like the rest of DAY_WRITES — it is not a
+    // 57th operation, and the write boundary below is unchanged by it.
+    expect(ALL_TOOL_NAMES).toHaveLength(108);
+    expect(new Set(ALL_TOOL_NAMES).size).toBe(108);
 
     // Every write tool wraps a REGISTERED operation. A typo in an operation
     // name would otherwise surface as a tool that refuses at run time, in front

@@ -5,6 +5,7 @@ import type { ToolSpec } from "../catalogue";
 import type { ToolContext } from "../context";
 import { requireConfirmation } from "../confirmation";
 import { proposeInstead, wouldPark } from "../propose";
+import { resolvePerson } from "./resolve-person";
 
 /**
  * One builder, fifty-six operations.
@@ -69,6 +70,19 @@ export interface WriteToolSpec {
    * otherwise.
    */
   target?: (args: Record<string, unknown>) => string;
+  /**
+   * Argument names that hold a PERSON.
+   *
+   * Every one of these accepts an employee id or a name, and a name is
+   * resolved here before the operation sees it.
+   *
+   * Why it exists: `create_task` asked for an "Employee id" and said to omit
+   * it if unsure. A model told *"create a task for Arun"* does not hold an
+   * id, so it omitted the field — and a task the person had plainly assigned
+   * arrived on the board **unassigned**, with nothing anywhere saying why.
+   * The silence is the defect: a refusal would have been fine.
+   */
+  people?: string[];
   /** The consequence sentence, read to the person before a `readBack` acts. */
   consequence?: string;
   /** How the proposal reads when this is a `propose` tool. */
@@ -120,6 +134,28 @@ export function buildWriteTool(spec: WriteToolSpec): ToolSpec {
         inputSchema: spec.args,
         execute: async (raw: Record<string, unknown>) => {
           const args = { ...raw };
+
+          // ── names to ids, before anything else looks at the arguments ────
+          //
+          // Refuses rather than dropping. An unassigned task that was meant for
+          // somebody is worse than an error, because nobody finds out.
+          for (const field of spec.people ?? []) {
+            const given = args[field];
+            if (typeof given !== "string" || given.trim() === "") continue;
+            const resolved = resolvePerson(given);
+            if (resolved.kind === "one") {
+              args[field] = resolved.id;
+              continue;
+            }
+            return refused(
+              resolved.kind === "none"
+                ? `There is nobody here called "${given}".`
+                : `More than one person matches "${given}": ${resolved.names.join(", ")}.`,
+              resolved.kind === "none"
+                ? "Say so, and ask who they meant. Nothing was created."
+                : "Ask which of them they meant. Nothing was created — do not pick one.",
+            );
+          }
           const handler = ctx.deps.spine.operationHandler(spec.operation);
           if (!handler) {
             return refused(

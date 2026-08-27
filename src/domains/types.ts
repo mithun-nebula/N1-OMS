@@ -11,6 +11,14 @@ export interface DomainContext {
   figures: FigureStore;
   bus: PublishBus;
   owners: Map<string, ActorId>;
+  /**
+   * Who is named ON a record, keyed `nodeType:nodeId`.
+   *
+   * `owners` answers who a record belongs to; this answers who was told to
+   * work on it. A course assigned outside its owner's team circle was
+   * invisible to its own assignee without it.
+   */
+  assigned: Map<string, ActorId[]>;
   teams: Map<ActorId, string>;
   limiter: QuestionLimiter;
 }

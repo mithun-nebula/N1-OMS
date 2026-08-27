@@ -20,6 +20,7 @@ export default async function DashboardPage() {
       const d = n.data as {
         title: string;
         priority: string;
+        status?: string;
         dueDate?: string;
         projectId?: string;
         estimateMinutes?: number;
@@ -28,6 +29,9 @@ export default async function DashboardPage() {
         id: n.id,
         title: d.title,
         priority: d.priority,
+        // Carried so the planning picker can separate what is already underway
+        // from what has not been started — the two are different decisions.
+        status: d.status ?? "todo",
         dueDate: d.dueDate,
         projectId: d.projectId,
         estimateMinutes: d.estimateMinutes,
@@ -88,6 +92,14 @@ export default async function DashboardPage() {
       }
     : null;
 
+  // Who can be invited. Same list `/meetings` uses — active people only, from
+  // the directory rather than a second query, so the two pages cannot disagree
+  // about who exists.
+  const people = directory()
+    .all()
+    .filter((p) => p.active)
+    .map((p) => ({ id: p.id, name: p.name }));
+
   return (
     <Shell>
       <DashboardClient
@@ -100,6 +112,7 @@ export default async function DashboardPage() {
         courseCount={courseCount}
         teamSize={teamSize}
         hrAttention={hrAttention}
+        people={people}
       />
     </Shell>
   );

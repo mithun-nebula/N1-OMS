@@ -276,6 +276,10 @@ export const DOMAINS: readonly SpecialistDomain[] = [
       "commit_plan",
       "mark_done",
       "drop_item",
+      // The before-the-end check-in ("still on track?"). It sits with the rest
+      // of the day writes so the specialist that reads `my_day` for an id can
+      // record the answer against that same id in one hop.
+      "report_status",
       "carry_over",
       "close_out",
       "remember_commitment",

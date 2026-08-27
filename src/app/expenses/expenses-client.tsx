@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { AccentButton, ChromeButton, Empty, inputCls, OpFeedback, SectionTitle, StatusBadge } from "../ui/kit";
 import { useOperation } from "@/components/ops/use-operation";
+import { fmtDate } from "../ui/dates";
 
 export interface ExpenseRow {
   id: string;
@@ -174,7 +175,7 @@ export function ExpensesClient({
                 >
                   <div className="min-w-0 text-[13px]">
                     <span className="font-semibold text-ink">{c.employeeName}</span>
-                    <span className="text-ink-soft"> · {c.date} · ₹{c.amount.toLocaleString("en-IN")}</span>
+                    <span className="text-ink-soft"> · {fmtDate(c.date)} · ₹{c.amount.toLocaleString("en-IN")}</span>
                     {c.category && <span className="ml-2 rounded-full bg-peach px-2 py-0.5 text-[10px] font-bold text-peach-strong">{c.category}</span>}
                     {c.description && <div className="text-[11px] text-ink-faint">“{c.description}”</div>}
                   </div>
@@ -244,7 +245,7 @@ export function ExpensesClient({
               <tbody>
                 {myClaims.map((c) => (
                   <tr key={c.id} className="border-t border-line transition-colors hover:bg-raised">
-                    <td className="px-3 py-2.5 text-[13px] text-ink">{c.date}</td>
+                    <td className="px-3 py-2.5 text-[13px] text-ink">{fmtDate(c.date)}</td>
                     <td className="px-3 py-2.5 text-[13px] text-ink-soft">{c.category ?? "—"}</td>
                     <td className="px-3 py-2.5 text-[13px] text-ink-soft">{c.description}</td>
                     <td className="px-3 py-2.5 text-[13px] font-medium text-ink">

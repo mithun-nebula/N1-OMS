@@ -4,6 +4,7 @@ import { useState } from "react";
 import { Icon } from "../ui/icons";
 import { AccentButton, ChromeButton, Empty, inputCls, OpFeedback, SectionTitle } from "../ui/kit";
 import { useOperation } from "@/components/ops/use-operation";
+import { fmtDateTime, fmtTime } from "../ui/dates";
 
 interface Room {
   id: string;
@@ -198,8 +199,8 @@ export function BookingClient({
                 <div className="flex shrink-0 items-center gap-3">
                   <span className="flex items-center gap-1.5 text-[11px] text-ink-soft">
                     <Icon name="clock" className="h-3 w-3" />
-                    {b.from && new Date(b.from).toLocaleString([], { dateStyle: "medium", timeStyle: "short" })}
-                    {b.to && ` → ${new Date(b.to).toLocaleTimeString([], { timeStyle: "short" })}`}
+                    {b.from && fmtDateTime(b.from)}
+                    {b.to && ` → ${fmtTime(b.to)}`}
                   </span>
                   <button
                     onClick={() => cancelBooking(b.id)}

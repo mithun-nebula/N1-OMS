@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { Icon } from "../ui/icons";
 import { inputCls, OpFeedback } from "../ui/kit";
 import { useOperation } from "@/components/ops/use-operation";
+import { fmtDate } from "../ui/dates";
 
 interface CalendarCell {
   date: string;
@@ -331,6 +332,7 @@ export function CalendarClient({
                   <div>
                     <div className="text-xs font-semibold uppercase tracking-widest text-ink-faint">{selectedWeekday}</div>
                     <div className="text-[11px] text-ink-soft">
+                      {fmtDate(selectedDate ?? undefined)} ·{" "}
                       {dayEntries.length === 0
                         ? "free day"
                         : `${dayEntries.length} ${dayEntries.length === 1 ? "entry" : "entries"}`}

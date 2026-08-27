@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Avatar, AvatarStack, inputCls } from "../ui/kit";
 import { Icon } from "../ui/icons";
+import { useLiveEvent } from "../chrome/live";
 
 interface Conversation {
   id: string;
@@ -105,6 +106,10 @@ export function MessagesClient({ selfId, selfName }: { selfId: string; selfName:
       // Network hiccup — next tick retries; the last state stays on screen.
     }
   }, [scrollToEnd]);
+
+  // Live: a message sent anywhere lands here the moment it is stored, instead
+  // of waiting out the poll interval (which stays below, as the fallback).
+  useLiveEvent(() => void poll(), { areas: ["messages"], debounceMs: 200 });
 
   useEffect(() => {
     // First tick deferred a task so no state lands synchronously in the effect.

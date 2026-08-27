@@ -32,7 +32,9 @@ export const workplaceWriteTools: WriteToolSpec[] = [
     does: "Arrange a meeting: time, people, and a room and/or a join link.",
     use: 'Use for "set up a review with Priya and Arun on Thursday at 3", "book a call with the course team".',
     notes: [
-      'kind is one of "both" (a room AND a link — the default and usually right), "online" (a link only), "in-person" (a room only).',
+      'kind: say "online" for a link only, "in-person" for a room only, "both" for a room AND a link.',
+      '⚠ CHOOSE IT FROM WHAT THEY ASKED FOR, not from a default. "a gmeet", "a call", "a meet link", "online" -> ONLINE. A named room, "in person", "in the office" -> IN-PERSON. Only "both" when they want a room and a link.',
+      'A live run found what a default costs: asked for a gmeet, it reserved a room nobody wanted and then reported the meeting as online-only because none was free. If they did not mention a room, do not reserve one.',
       "An in-person or both meeting books a room automatically — do not book one separately.",
       "People outside the organisation go in externals, by email. Google sends them the invitation.",
     ],
@@ -40,9 +42,19 @@ export const workplaceWriteTools: WriteToolSpec[] = [
       title: z.string().describe("What the meeting is, in their words."),
       kind: z
         .enum(["both", "online", "in-person"])
-        .describe('Default to "both" unless they said otherwise.'),
-      from: z.string().describe("Start, as an ISO timestamp."),
-      to: z.string().describe("End, as an ISO timestamp."),
+        .describe(
+          'What they actually asked for. "online" when they said gmeet/call/link, "in-person" when they named a room, "both" only when they want both. There is no default.',
+        ),
+      from: z
+        .string()
+        .describe(
+          "Start, as an ISO timestamp WITH THE LOCAL OFFSET — 2 pm is 2026-08-27T14:00:00+05:30. Never a trailing Z: that means UTC and puts the meeting hours away.",
+        ),
+      to: z
+        .string()
+        .describe(
+          "End, same shape as `from`. If they gave no end, use an hour after the start.",
+        ),
       attendees: z.array(z.string()).describe("Employee ids, from find_people."),
       roomId: z.string().optional().describe("Only if they named a room. Otherwise one is chosen."),
       externals: z

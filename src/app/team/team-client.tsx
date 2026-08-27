@@ -2,6 +2,8 @@
 
 import { useState } from "react";
 import { Avatar, Bar, Empty, Modal, PriorityBadge, SectionTitle, StatusBadge } from "../ui/kit";
+import { FigureValue } from "../ui/figure";
+import { fmtDate } from "../ui/dates";
 
 interface PersonRow {
   id: string;
@@ -13,7 +15,7 @@ interface PersonRow {
 
 interface PerPerson {
   id: string;
-  courses: Array<{ title: string; pct: number }>;
+  courses: Array<{ id: string; title: string; pct: number }>;
   tasks: Array<{ title: string; priority: string; dueDate?: string }>;
   leave: Array<{ fromDate: string; toDate: string; status: string }>;
 }
@@ -25,7 +27,7 @@ export function TeamClient({
 }: {
   rows: PersonRow[];
   perPerson: PerPerson[];
-  coursesByOwner: Array<{ ownerId: string; ownerName: string; courses: Array<{ title: string; pct: number }> }>;
+  coursesByOwner: Array<{ ownerId: string; ownerName: string; courses: Array<{ id: string; title: string; pct: number }> }>;
 }) {
   const [selected, setSelected] = useState<string | null>(null);
   const sel = perPerson.find((p) => p.id === selected);
@@ -81,7 +83,14 @@ export function TeamClient({
                     <div key={c.title} className="flex items-center gap-3">
                       <span className="w-44 truncate text-xs text-ink-soft">{c.title}</span>
                       <Bar pct={c.pct} />
-                      <span className="w-9 text-right text-xs font-semibold text-ink-soft">{c.pct}%</span>
+                      <FigureValue
+                        nodeType="course"
+                        nodeId={c.id}
+                        label="Course completion"
+                        className="w-9 text-right text-xs font-semibold text-ink-soft"
+                      >
+                        {c.pct}%
+                      </FigureValue>
                     </div>
                   ))}
                 </div>
@@ -120,7 +129,14 @@ export function TeamClient({
                   <div key={c.title} className="flex items-center gap-3">
                     <span className="w-36 truncate text-xs text-ink-soft">{c.title}</span>
                     <Bar pct={c.pct} />
-                    <span className="text-xs font-semibold text-ink-soft">{c.pct}%</span>
+                    <FigureValue
+                      nodeType="course"
+                      nodeId={c.id}
+                      label="Course completion"
+                      className="text-xs font-semibold text-ink-soft"
+                    >
+                      {c.pct}%
+                    </FigureValue>
                   </div>
                 ))}
               </div>
@@ -137,7 +153,7 @@ export function TeamClient({
                   <div key={i} className="flex items-center justify-between gap-2 rounded-xl bg-raised px-3 py-2">
                     <span className="truncate text-xs font-medium text-ink">{t.title}</span>
                     <span className="flex shrink-0 items-center gap-2 text-[11px] text-ink-faint">
-                      {t.dueDate}
+                      {fmtDate(t.dueDate)}
                       <PriorityBadge priority={t.priority} />
                     </span>
                   </div>
@@ -154,7 +170,7 @@ export function TeamClient({
               <div className="mt-2 space-y-1.5">
                 {sel.leave.map((l, i) => (
                   <div key={i} className="flex items-center justify-between rounded-xl bg-raised px-3 py-2 text-xs">
-                    <span className="text-ink-soft">{l.fromDate} → {l.toDate}</span>
+                    <span className="text-ink-soft">{fmtDate(l.fromDate)} → {fmtDate(l.toDate)}</span>
                     <StatusBadge status={l.status} />
                   </div>
                 ))}

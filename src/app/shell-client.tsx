@@ -5,6 +5,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { VoiceButton } from "./voice-session";
 import { NotificationsBell } from "./chrome/notifications";
+import { LiveUpdates } from "./chrome/live";
 import { ThemeToggle } from "./chrome/theme-toggle";
 import { Icon, type IconName } from "./ui/icons";
 
@@ -26,6 +27,9 @@ const PRIMARY: NavItem[] = [
   // Feature 07. The endpoint has existed since Phase 1a with no screen behind
   // it, which is why the conversation it stores has never been read back.
   { href: "/assistant", label: "Assistant", icon: "spark" },
+  // "Voice prepares, a finger issues" — the screen half. Same /api/proposals
+  // endpoints as the voice panel's cards, never a second path.
+  { href: "/approvals", label: "Approvals", icon: "check" },
 ];
 
 const SECONDARY: NavItem[] = [
@@ -45,6 +49,8 @@ const SECONDARY: NavItem[] = [
   { href: "/payroll", label: "Payroll", roles: ["super-admin", "admin", "hr"] },
   { href: "/hr/employees", label: "People", roles: ["super-admin", "admin", "hr", "manager"] },
   { href: "/hr", label: "HR · Joining/Leaving", roles: ["super-admin", "admin", "hr"] },
+  // Strictly personal (appendix A9) — the route only ever serves your own days.
+  { href: "/history", label: "My days" },
   { href: "/me", label: "Profile" },
   { href: "/settings", label: "Settings" },
   { href: "/rbac", label: "RBAC", roles: ["super-admin", "admin"] },
@@ -179,6 +185,8 @@ export function ShellClient({
 
       <MobileBottomNav role={role} />
       <VoiceButton />
+      {/* One live-update wire per tab; every screen inherits it. */}
+      <LiveUpdates />
     </div>
   );
 }

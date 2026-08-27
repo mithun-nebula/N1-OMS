@@ -8,6 +8,7 @@ import {
 } from "@/server/runtime";
 import { applyDayPlanReactionsFromEntry } from "@/domains/assistant/day-plan/reactions";
 import { applyAutonomyReactionsFromEntry } from "@/domains/autonomy/reactions";
+import { emitChange } from "@/server/live";
 
 export const dynamic = "force-dynamic";
 
@@ -36,6 +37,9 @@ export async function POST(
     await applyAutonomyReactionsFromEntry(result.activityEntry, {
       engine: await getAutonomyEngine(),
     });
+    // Live updates — same tap as the direct route.
+    emitChange(result.activityEntry.operationName.split(".")[0] || "operations");
+    emitChange("notifications");
   }
   const status =
     result.status === "ran" ? 200 : result.status === "not-found" ? 404 : 400;

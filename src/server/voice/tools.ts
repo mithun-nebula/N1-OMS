@@ -3,6 +3,7 @@ import { z } from "zod";
 import type { ToolContext } from "@/domains/assistant/tools/context";
 import { toolNames } from "@/domains/assistant/tools/catalogue";
 import { proposalStore } from "@/domains/assistant/tools/propose";
+import { emitChange } from "@/server/live";
 
 /**
  * The live model's tool call, turned into this project's tool call, and back.
@@ -228,6 +229,12 @@ export async function runVoiceToolCall(input: {
     toolCallId: call.id ?? "voice",
     messages: [],
   });
+
+  // Live updates: a voice tool can write (gated operations go through
+  // Spine.submit here, never the /api/operations route), so open screens are
+  // told something may have moved. The signal carries no data; screens
+  // re-fetch through their own permission-checked reads.
+  emitChange("assistant");
 
   return { result };
 }

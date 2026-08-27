@@ -52,6 +52,24 @@ export interface PlanItem {
    * from being gameable.
    */
   carriedOver?: { at: string };
+  /**
+   * The check made shortly BEFORE this item's window ends — "still on track?"
+   *
+   * ⚠ Not a miss and not an interrogation. A miss is judged after the fact and
+   * can break the streak; this is asked while the work is still in flight, so a
+   * person can say "I need longer" *before* the day is wrong rather than
+   * explaining afterwards why it was. It therefore:
+   *   - never touches the streak (`streak.ts` does not read it),
+   *   - is exempt from the daily question budget — it is an offer about work in
+   *     flight, which appendix A4 explicitly separates from the question about
+   *     what went wrong,
+   *   - is asked once per item; `at` is what stops it being asked again.
+   */
+  check?: {
+    status: "on-time" | "more-time" | "blocked";
+    at: string;
+    note?: string;
+  };
 }
 
 export interface MeetingItem {
@@ -97,6 +115,19 @@ export interface DayPlan {
   plan: PlanItem[];
   meetings: MeetingItem[];
   streak: StreakRecord;
+  /**
+   * When this person's day actually began — their clock-in.
+   *
+   * Work is laid out from here rather than from a fixed 09:00 opening: someone
+   * who clocks in at ten has an eight-hour day starting at ten, and showing
+   * their first task at nine would put it in a past they were not working in,
+   * making every window — and so every interrupted-versus-ran-over verdict —
+   * wrong by the difference.
+   *
+   * Absent on a plan made before clocking in, and on plans hydrated from before
+   * this existed; `scheduleWork` falls back to the 09:00 opening for both.
+   */
+  startedAt?: string;
   onLeave?: boolean;
   /**
    * Brief items the person said they would handle. Offered first in the
@@ -205,8 +236,16 @@ export class DayPlanStore {
   private hydrated = new Set<string>();
   private estimatesHydrated = false;
 
-  /** Without persistence the store is memory-only, as the tests use it. */
-  constructor(private readonly persistence?: DayPlanPersistence) {}
+  /**
+   * Without persistence the store is memory-only, as the tests use it.
+   * `onChange` fires after every put — the composition root wires it to the
+   * live-update hub so screens hear about day changes from ANY start (form,
+   * chat tool, voice tool); the domain stays dependency-free.
+   */
+  constructor(
+    private readonly persistence?: DayPlanPersistence,
+    private readonly onChange?: () => void,
+  ) {}
 
   key(actor: string, date: string): string {
     return `${actor}:${date}`;
@@ -220,6 +259,11 @@ export class DayPlanStore {
     this.plans.set(this.key(plan.actor, plan.date), plan);
     void this.persistence?.savePlan(plan).catch(() => {});
     void this.persistence?.saveStreak(plan.actor, plan.streak).catch(() => {});
+    try {
+      this.onChange?.();
+    } catch {
+      /* a broken listener must never fail a write */
+    }
   }
 
   /**

@@ -4,6 +4,7 @@ import { useState } from "react";
 import { Icon } from "../ui/icons";
 import { AccentButton, AvatarStack, ChromeButton, Empty, inputCls, Modal, OpFeedback } from "../ui/kit";
 import { useOperation } from "@/components/ops/use-operation";
+import { fmtDateTime, fmtTime } from "../ui/dates";
 
 interface Meeting {
   id: string;
@@ -255,8 +256,8 @@ export function MeetingsClient({
                     </div>
                     <div className="mt-1 flex items-center gap-1.5 text-[11px] text-ink-soft">
                       <Icon name="clock" className="h-3 w-3" />
-                      {m.from && new Date(m.from).toLocaleString([], { dateStyle: "medium", timeStyle: "short" })}
-                      {m.to && ` → ${new Date(m.to).toLocaleTimeString([], { timeStyle: "short" })}`}
+                      {m.from && fmtDateTime(m.from)}
+                      {m.to && ` → ${fmtTime(m.to)}`}
                     </div>
                     {/* E7 names three places the link must be visible and this
                         is one of them. The screen used to render the WORDS

@@ -437,6 +437,26 @@ export const DEMO_PERMISSION_RULES: PermissionRule[] = [
     recordScope: { kind: "own-team" },
     fields: { kind: "all-visible" },
   },
+  /**
+   * Assigned work is visible to the person doing it.
+   *
+   * `own-team` asks whether the course's OWNER is in your circle, which says
+   * nothing about whether you were put on it. A course owned outside your
+   * circle and assigned to you was invisible: `course.assign` wrote your name,
+   * created your task, notified you — and `/courses` filtered the course out
+   * through `spine.read` before its own "your work" list ever saw it.
+   *
+   * View, and edit the work: an assignee moves module states and leaves
+   * progress notes, which is what being assigned means. Delete stays
+   * admin-level, and nothing here grants a course you were not named on.
+   */
+  {
+    role: "employee",
+    nodeType: "course",
+    actions: ["view", "edit"],
+    recordScope: { kind: "assigned" },
+    fields: { kind: "all-visible" },
+  },
   {
     role: "intern",
     nodeType: "employee",
@@ -453,6 +473,15 @@ export const DEMO_PERMISSION_RULES: PermissionRule[] = [
     nodeType: "course",
     actions: ["view"],
     recordScope: { kind: "own-team" },
+    fields: { kind: "all-visible" },
+  },
+  {
+    // View only — an intern assigned to a course can open it and cannot change
+    // it, which is the same shape the `own-team` rule above already gives them.
+    role: "intern",
+    nodeType: "course",
+    actions: ["view"],
+    recordScope: { kind: "assigned" },
     fields: { kind: "all-visible" },
   },
   {
@@ -560,7 +589,19 @@ export class DemoRoleProvider implements RoleProvider {
   constructor(
     private readonly owners: Map<string, ActorId>,
     private readonly teams: Map<ActorId, string>,
+    /**
+     * Who is named on a record, keyed `nodeType:nodeId`.
+     *
+     * Separate from `owners` because it is a list, not a single value, and
+     * because the two answer different questions: who does this belong to,
+     * versus who was told to work on it.
+     */
+    private readonly assigned: Map<string, ActorId[]> = new Map(),
   ) {}
+
+  assigneesOf(nodeType: string, recordNodeId: string): ActorId[] {
+    return this.assigned.get(`${nodeType}:${recordNodeId}`) ?? [];
+  }
 
   rolesFor(actor: ActorId): string[] {
     const role = roleOfActor(actor);
@@ -618,10 +659,11 @@ export const OPEN_NODE_TYPES = new Set(["calendar-entry"]);
 export function buildDemoPermissionPolicy(
   owners: Map<string, ActorId>,
   teams: Map<ActorId, string>,
+  assigned: Map<string, ActorId[]> = new Map(),
 ): PermissionPolicy {
   return new PermissionPolicy(
     DEMO_PERMISSION_RULES,
-    new DemoRoleProvider(owners, teams),
+    new DemoRoleProvider(owners, teams, assigned),
     OPEN_NODE_TYPES,
   );
 }

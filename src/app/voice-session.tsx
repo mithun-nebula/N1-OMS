@@ -230,6 +230,24 @@ export function VoiceButton() {
   }, [appendLine, pathname, teardown]);
 
   /**
+   * Let another part of the app offer "do it by voice" without importing this
+   * component's internals — the clock-in prompt uses it, so all three ways in
+   * (form, chat, voice) are one tap from the same place.
+   *
+   * An event rather than a prop: this button is mounted once in the shell and
+   * has no parent that knows the dashboard exists.
+   */
+  useEffect(() => {
+    const onAsk = () => {
+      // Never restart a conversation that is already running.
+      if (socketRef.current) return;
+      void start();
+    };
+    window.addEventListener("n1:start-voice", onAsk);
+    return () => window.removeEventListener("n1:start-voice", onAsk);
+  }, [start]);
+
+  /**
    * ⚠ The finger, issuing.
    *
    * This is the other half of "voice prepares, a finger issues", and it is why
@@ -306,7 +324,7 @@ export function VoiceButton() {
       <button
         onClick={open ? hangUp : () => void start()}
         className={`press fixed bottom-20 right-4 z-40 h-12 w-12 rounded-full text-xl text-chrome-ink shadow-lift transition-colors md:bottom-6 md:right-6 md:h-14 md:w-14 md:text-2xl ${
-          open ? "animate-pulse bg-danger" : "bg-chrome-card hover:bg-chrome"
+          open ? "voice-breathe bg-danger" : "bg-chrome-card hover:bg-chrome"
         }`}
         aria-label={open ? "End the conversation" : "Talk to the assistant"}
       >
@@ -316,7 +334,8 @@ export function VoiceButton() {
       {(open || state === "closed") && (
         <div className="sheet-up fixed bottom-36 right-4 z-40 w-[min(22rem,calc(100vw-2rem))] rounded-2xl bg-chrome px-4 py-3 text-sm text-chrome-ink shadow-lift md:bottom-24 md:right-6">
           <div className="flex items-center justify-between gap-3">
-            <span className="text-[10px] font-semibold uppercase tracking-widest text-chrome-ink/60">
+            <span className="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-widest text-chrome-ink/60">
+              <StateGlyph state={state} />
               {STATE_LABEL[state]}
             </span>
             {/* ⚠ Always reachable, never hidden while it talks. This is the
@@ -347,7 +366,10 @@ export function VoiceButton() {
           {/* ⚠ Voice prepares. A finger issues. Money and people arrive here,
               and are approved by tapping — never by saying yes. */}
           {proposals.map((p) => (
-            <div key={p.proposalId} className="mt-2 rounded-xl bg-white/10 px-3 py-2">
+            <div
+              key={p.proposalId}
+              className="pop-in mt-2 rounded-xl border-l-[3px] border-accent-strong bg-white/10 px-3 py-2"
+            >
               <div className="text-[10px] font-semibold uppercase tracking-widest text-chrome-ink/60">
                 Needs your approval
               </div>
@@ -398,6 +420,30 @@ export function VoiceButton() {
       )}
     </>
   );
+}
+
+/**
+ * The state, drawn — equalizer bars while sound is moving, a pulsing dot
+ * while it thinks, a steady dot otherwise. Presentation only.
+ */
+function StateGlyph({ state }: { state: VoiceState }) {
+  if (state === "listening" || state === "speaking") {
+    return (
+      <span
+        className={`voice-eq ${state === "listening" ? "text-chrome-ink/80" : "text-accent"}`}
+        aria-hidden
+      >
+        <span />
+        <span />
+        <span />
+        <span />
+      </span>
+    );
+  }
+  if (state === "thinking" || state === "connecting") {
+    return <span className="pulse-dot h-2 w-2 rounded-full bg-accent" aria-hidden />;
+  }
+  return <span className="h-2 w-2 rounded-full bg-chrome-ink/40" aria-hidden />;
 }
 
 /**

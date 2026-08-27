@@ -4,6 +4,7 @@ import { useState } from "react";
 import { Icon } from "../ui/icons";
 import { AccentButton, Empty, inputCls, OpFeedback } from "../ui/kit";
 import { useOperation } from "@/components/ops/use-operation";
+import { fmtDate } from "../ui/dates";
 
 interface Fault {
   fault: string;
@@ -116,7 +117,7 @@ export function EquipmentClient({
                       {f.fault}
                     </span>
                     <span className="shrink-0 text-[11px] text-ink-faint">
-                      {f.byName} · {new Date(f.at).toLocaleDateString()}
+                      {f.byName} · {fmtDate(f.at)}
                     </span>
                   </div>
                 ))}

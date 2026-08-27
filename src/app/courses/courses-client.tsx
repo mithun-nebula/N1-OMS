@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { Avatar, AvatarStack, Bar, inputCls, Modal, OpFeedback, SectionTitle, StatusBadge } from "../ui/kit";
+import { FigureValue } from "../ui/figure";
 import { useOperation } from "@/components/ops/use-operation";
 
 interface Module {
@@ -243,7 +244,14 @@ export function CoursesClient({
                           <AvatarStack names={c.assigneeNames} max={3} />
                         </span>
                       )}
-                      <span className="ml-auto font-semibold text-ink-soft">{c.completion}%</span>
+                      <FigureValue
+                        nodeType="course"
+                        nodeId={c.id}
+                        label="Course completion"
+                        className="ml-auto font-semibold text-ink-soft"
+                      >
+                        {c.completion}%
+                      </FigureValue>
                     </div>
                     <div className="mt-2 flex">
                       <Bar pct={c.completion} tone={s.bar} />
@@ -266,11 +274,16 @@ export function CoursesClient({
 
       {sel && (
         <Modal onClose={() => setSelected(null)} wide>
+          {/* Lets voice resolve "this course" / "that one" while the modal is open. */}
+          <div data-record-type="course" data-record-id={sel.id}>
           <div className="mb-4 flex items-start justify-between">
             <div>
               <h2 className="text-lg font-extrabold text-ink">{sel.title}</h2>
               <p className="mt-0.5 flex items-center gap-1.5 text-xs text-ink-soft">
-                <Avatar name={sel.ownerName} size={18} /> {sel.ownerName} · {sel.stageLabel} · {sel.completion}% done
+                <Avatar name={sel.ownerName} size={18} /> {sel.ownerName} · {sel.stageLabel} ·{" "}
+                <FigureValue nodeType="course" nodeId={sel.id} label="Course completion">
+                  {sel.completion}% done
+                </FigureValue>
               </p>
               {sel.explainer && <p className="mt-1 text-xs text-ink-faint">{sel.explainer}</p>}
             </div>
@@ -449,6 +462,7 @@ export function CoursesClient({
               {sel.versions.length === 0 && <p className="text-xs text-ink-faint">No versions yet.</p>}
             </div>
           </section>
+          </div>
         </Modal>
       )}
       <OpFeedback

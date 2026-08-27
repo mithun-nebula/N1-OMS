@@ -289,8 +289,41 @@ body {
   min-height: 0;
 }
 
+/* Voice: a breathing glow on the live orb, and equalizer bars for its state.
+   Purely presentational — the session logic never depends on these. */
+@keyframes voice-breathe {
+  0%, 100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent-strong) 45%, transparent); }
+  50% { box-shadow: 0 0 0 12px color-mix(in srgb, var(--accent-strong) 0%, transparent); }
+}
+.voice-breathe {
+  animation: voice-breathe 2.6s ease-in-out infinite;
+}
+@keyframes voice-eq {
+  0%, 100% { transform: scaleY(0.35); }
+  50% { transform: scaleY(1); }
+}
+.voice-eq {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  height: 12px;
+}
+.voice-eq span {
+  display: inline-block;
+  width: 3px;
+  height: 100%;
+  border-radius: 2px;
+  background: currentColor;
+  transform-origin: center;
+  animation: voice-eq 1s ease-in-out infinite;
+}
+.voice-eq span:nth-child(2) { animation-delay: 0.15s; }
+.voice-eq span:nth-child(3) { animation-delay: 0.3s; }
+.voice-eq span:nth-child(4) { animation-delay: 0.45s; }
+
 @media (prefers-reduced-motion: reduce) {
-  .rise, .fade-in, .sheet-up, .pop-in, .pulse-dot, .shake {
+  .rise, .fade-in, .sheet-up, .pop-in, .pulse-dot, .shake,
+  .voice-breathe, .voice-eq span {
     animation: none;
   }
   .lift, .press, .ring, .row-collapse {

@@ -124,3 +124,21 @@ export function byTime(a?: string, b?: string): number {
   if (!Number.isFinite(bv)) return -1;
   return av - bv;
 }
+
+/**
+ * This machine's offset from UTC, as `+05:30` — the shape an ISO timestamp wants.
+ *
+ * Exists because a model given only a date will stamp `Z` on a wall-clock time.
+ * `localTimeOn`'s comment records what that cost the calendar; the same mistake
+ * reached `meeting.create` through a tool description that said "ISO timestamp"
+ * and stopped there. A timezone is exactly the kind of thing the plan calls a
+ * **ground truth**: something the model must be told rather than left to infer.
+ */
+export function utcOffset(now: Date = new Date()): string {
+  // getTimezoneOffset is minutes BEHIND UTC, so India returns -330.
+  const minutes = -now.getTimezoneOffset();
+  const sign = minutes < 0 ? "-" : "+";
+  const abs = Math.abs(minutes);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${sign}${pad(Math.floor(abs / 60))}:${pad(abs % 60)}`;
+}

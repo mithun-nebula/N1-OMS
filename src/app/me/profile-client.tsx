@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { Avatar, Empty, inputCls, OpFeedback, SectionTitle, StatusBadge } from "../ui/kit";
 import { useOperation } from "@/components/ops/use-operation";
+import { fmtDate } from "../ui/dates";
 
 interface LeaveRow {
   id: string;
@@ -143,7 +144,7 @@ export function ProfileClient({
               {leaveHistory.slice(0, 6).map((l) => (
                 <div key={l.id} className="flex items-center justify-between gap-2 rounded-xl bg-chrome px-3 py-2 text-xs">
                   <span className="min-w-0 truncate text-chrome-soft">
-                    {l.fromDate} → {l.toDate}
+                    {fmtDate(l.fromDate)} → {fmtDate(l.toDate)}
                     {l.type ? ` · ${l.type}` : ""}
                   </span>
                   <StatusBadge status={l.status} />
@@ -172,7 +173,7 @@ export function ProfileClient({
               <tbody>
                 {attendance.map((a) => (
                   <tr key={a.id} className="border-t border-line transition-colors hover:bg-raised">
-                    <td className="px-3 py-2.5 text-[13px] text-ink">{a.date}</td>
+                    <td className="px-3 py-2.5 text-[13px] text-ink">{fmtDate(a.date)}</td>
                     <td className="px-3 py-2.5"><AttendanceBadge status={a.status} /></td>
                     <td className="px-3 py-2.5 text-[13px] text-ink-soft">{a.checkIn ?? "—"}</td>
                     <td className="px-3 py-2.5 text-[13px] text-ink-soft">{a.checkOut ?? "—"}</td>

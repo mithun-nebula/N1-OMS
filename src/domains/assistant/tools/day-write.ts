@@ -280,6 +280,50 @@ export const dropItemTool: ToolSpec = {
     }),
 };
 
+export const statusCheckTool: ToolSpec = {
+  name: "report_status",
+  build: (ctx) =>
+    tool({
+      description: [
+        "Record how a committed item is going, while it is still being worked on.",
+        'Use when they say "Module 4 is on track", "I need longer on the deck", "I am blocked on the review" — or when you asked "still on track?" near the end of its slot and they answered.',
+        "",
+        "This is NOT a miss and NOT an interrogation. It is asked while the work can still be rescued, so it never touches their streak, and it is exempt from the daily question limit.",
+        "⚠ It does NOT extend the time they committed to. Saying 'I need longer' records the warning; the original estimate still stands, and saying otherwise would make their streak meaningless. If the answer puts later work at risk the result names it — say so plainly, and offer to reschedule or carry that work over.",
+        "Returns what was recorded and what, if anything, is now at risk.",
+      ].join("\n"),
+      inputSchema: z.object({
+        itemId: z.string().describe("The plan item id, from my_day."),
+        status: z
+          .enum(["on-time", "more-time", "blocked"])
+          .describe("on-time = will finish in its slot; more-time = will overrun; blocked = cannot continue."),
+        note: z
+          .string()
+          .optional()
+          .describe("What they said, if they explained. Optional — never press for it."),
+      }),
+      execute: async ({ itemId, status, note }) => {
+        const service = dayPlanOf(ctx);
+        if (!service) return UNAVAILABLE;
+        const date = ctx.deps.today();
+        await service.getStore().load(ctx.actor, date);
+        const result = service.recordStatusCheck(ctx.actor, date, itemId, status, note);
+        if (result.error) return refused(result.error);
+        ctx.note("day-plan", `${ctx.actor}:${date}`);
+        return {
+          ok: true,
+          recorded: { item: result.item?.label, status },
+          atRisk: result.atRisk,
+          note:
+            result.atRisk
+              ? `This puts "${result.atRisk}" at risk. Say so, and offer to move or carry it over.`
+              : "Nothing later is at risk — do not invent a consequence.",
+          streakEffect: "none — this is a check-in, not a miss",
+        };
+      },
+    }),
+};
+
 export const carryOverTool: ToolSpec = {
   name: "carry_over",
   build: (ctx) =>
@@ -398,6 +442,7 @@ export const dayWriteTools: ToolSpec[] = [
   commitPlanTool,
   markDoneTool,
   dropItemTool,
+  statusCheckTool,
   carryOverTool,
   closeOutTool,
 ];

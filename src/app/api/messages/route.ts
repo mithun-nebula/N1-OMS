@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getSessionUser } from "@/server/auth";
 import { getActingUser } from "@/server/session-guard";
 import { getMessageStore } from "@/server/runtime";
+import { emitChange } from "@/server/live";
 import { directory } from "@/server/directory";
 import {
   dmConversationId,
@@ -101,6 +102,8 @@ export async function POST(request: Request) {
 
   if (body.action === "read") {
     store.markRead(user.id, conversation, new Date().toISOString());
+    // Live updates: unread badges on the reader's other open tabs.
+    emitChange("messages");
     return NextResponse.json({ ok: true });
   }
 
@@ -110,6 +113,8 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: `Keep it under ${MAX_TEXT} characters.` }, { status: 422 });
   }
   const message = store.append(conversation, user.id, text, new Date().toISOString());
+  // Live updates: the other person's open chat sees this without reloading.
+  emitChange("messages");
   return NextResponse.json({
     message: { ...message, fromName: directory().nameOf(message.from) },
   });

@@ -10,9 +10,10 @@ import {
   type MeetingItem,
   type PlanItem,
 } from "./store";
-import { classifyMiss, restOfDayAtRisk } from "./miss-classifier";
+import { attendanceId } from "@/domains/people/attendance";
+import { classifyMiss, firstAtRisk, restOfDayAtRisk } from "./miss-classifier";
 import { applyDayToStreak, assessDay } from "./streak";
-import { DAY_MINUTES, byTime, dayWindowStart, localDateOf, overlaps, previousDay } from "./time";
+import { DAY_MINUTES, at, byTime, dayWindowStart, localDateOf, overlaps, previousDay } from "./time";
 
 /*
  * `DAY_MINUTES`, the 09:00 opening, "today" and every timestamp comparison now
@@ -73,7 +74,14 @@ function scheduleWork(plan: DayPlan): void {
   }
   fixed.sort((a, b) => a.start - b.start);
 
-  const opensAt = dayWindowStart(plan.date);
+  // The day opens when they clocked in, not at a fixed nine o'clock. Clamped
+  // to the plan's own date so a malformed or foreign-day timestamp cannot throw
+  // the whole layout into another day.
+  const nine = dayWindowStart(plan.date);
+  const clockedIn = at(plan.startedAt);
+  const sameDay =
+    Number.isFinite(clockedIn) && localDateOf(plan.startedAt ?? "") === plan.date;
+  const opensAt = sameDay ? clockedIn : nine;
   if (!Number.isFinite(opensAt)) return;
   let cursor = opensAt;
 
@@ -216,6 +224,38 @@ export class DayPlanService {
     private readonly deps: DayPlanDeps,
   ) {}
 
+  /** The clock-in recorded for this person on this date, if they have one. */
+  private async clockInFor(actor: ActorId, date: string): Promise<string | undefined> {
+    try {
+      const node = await this.deps.graph.getNode("attendance", attendanceId(actor, date));
+      const checkInAt = (node?.data as { checkInAt?: string } | undefined)?.checkInAt;
+      return checkInAt && Number.isFinite(at(checkInAt)) ? checkInAt : undefined;
+    } catch {
+      // Never fail opening a day over a missing attendance record.
+      return undefined;
+    }
+  }
+
+  /**
+   * Record when this person's day actually began.
+   *
+   * Called from the `attendance.checkIn` reaction with the clock-in the
+   * operation recorded, so the plan is laid out from the real thing rather than
+   * from whenever the brief happened to be opened. Re-laying the day out is the
+   * point: someone who clocks in and *then* plans gets the same result as
+   * someone who plans and then clocks in.
+   *
+   * Idempotent — a second clock-in cannot move a day that is already underway.
+   */
+  markDayStart(actor: ActorId, date: string, startedAt: string): void {
+    const plan = this.store.get(actor, date);
+    if (!plan || plan.startedAt) return;
+    if (!Number.isFinite(at(startedAt))) return;
+    plan.startedAt = startedAt;
+    scheduleWork(plan);
+    this.store.put(plan);
+  }
+
   async startDay(actor: ActorId, date: string): Promise<{ open: "brief" | "dashboard" | "resume"; plan?: DayPlan; prompt?: string }> {
     const existing = this.store.get(actor, date);
     if (existing?.phase === "planned") {
@@ -247,6 +287,15 @@ export class DayPlanService {
       // exactly like a brief item answered "Handle" — and still uncommitted,
       // because A1 keeps planning in the morning.
       suggested: await this.seedsFromYesterday(actor, date),
+      // The clock-in this person already recorded, if any.
+      //
+      // ⚠ Read here rather than stamped with `new Date()`. Clocking in happens
+      // BEFORE the brief opens — the reaction fires while there is still no
+      // plan to write to — so the plan has to come and fetch it. Stamping the
+      // wall clock instead also dated a plan for another day with today's time,
+      // which `scheduleWork` then rightly ignored, leaving every such day back
+      // at nine o'clock.
+      startedAt: await this.clockInFor(actor, date),
     };
     this.store.put(plan);
     return { open: "brief", plan };
@@ -558,7 +607,7 @@ export class DayPlanService {
   }
 
   abandon(actor: ActorId, date: string): DayPlan {
-    const plan = this.require(actor, date);
+    const plan = this.requireOpen(actor, date, "abandon the day");
     if (plan.phase !== "planned") plan.phase = "abandoned";
     this.store.put(plan);
     return plan;
@@ -599,7 +648,7 @@ export class DayPlanService {
   }
 
   reorder(actor: ActorId, date: string, orderedIds: string[]): DayPlan {
-    const plan = this.require(actor, date);
+    const plan = this.requireOpen(actor, date, "reorder it");
     const byId = new Map(plan.plan.map((p) => [p.id, p]));
     const moved = orderedIds.map((id) => byId.get(id)).filter((p): p is PlanItem => Boolean(p));
     // Anything the caller left out keeps its place at the end rather than
@@ -632,7 +681,7 @@ export class DayPlanService {
     itemId: string,
     input: { actualMinutes?: number; at?: string; progressMinutes?: number },
   ): Promise<{ item?: PlanItem; miss?: PlanItem["miss"]; offerNow?: boolean; shortfallMinutes?: number }> {
-    const plan = this.require(actor, date);
+    const plan = this.requireOpen(actor, date, "tick something off");
     const item = plan.plan.find((p) => p.id === itemId);
     if (!item) return {};
 
@@ -713,7 +762,7 @@ export class DayPlanService {
     reason?: string,
     at?: string,
   ): { item?: PlanItem; error?: string } {
-    const plan = this.require(actor, date);
+    const plan = this.requireOpen(actor, date, "drop something");
     const item = plan.plan.find((p) => p.id === itemId);
     if (!item) return { error: "No such item on today's plan." };
     if (item.done) {
@@ -735,8 +784,60 @@ export class DayPlanService {
     return { item };
   }
 
-  recordMissReason(actor: ActorId, date: string, itemId: string, reason: string): { asked: boolean; learnedEstimate?: number } {
+  /**
+   * The check made shortly BEFORE an item's window ends — "still on track?"
+   *
+   * ── Why this is not a miss, and not an interrogation ────────────────────────
+   *
+   * Appendix A4 draws the line that decides whether people accept this feature:
+   * *"Asking 'why didn't you finish?' while somebody is still doing the work is
+   * the fastest way to make the application feel like a supervisor. Saying 'this
+   * is overrunning and your afternoon will not fit' at that same moment is
+   * genuinely helpful. Same timing, opposite effect. Interrupt to help, never to
+   * interrogate."* This sits on the helpful side: it is raised while the work
+   * can still be rescued, and its answer is spent warning about the rest of the
+   * day rather than filed against the person.
+   *
+   * It is therefore **exempt from the daily question budget** — that allowance
+   * exists to cap interrogation, and spending it here would suppress the
+   * questions A5 actually needs to learn from.
+   *
+   * ── ⚠ "I need more time" DOES NOT EXTEND THE ESTIMATE ───────────────────────
+   *
+   * Tempting, and wrong. A7 warns that streaks tempt people to pad estimates,
+   * and a check-in that quietly rewrote the committed time would make the streak
+   * unbreakable — every overrun could be legalised one tap before it happened.
+   * The committed estimate stands. What this buys is a warning *now* instead of
+   * an explanation later.
+   */
+  recordStatusCheck(
+    actor: ActorId,
+    date: string,
+    itemId: string,
+    status: "on-time" | "more-time" | "blocked",
+    note?: string,
+    at?: string,
+  ): { item?: PlanItem; atRisk?: string; error?: string } {
     const plan = this.require(actor, date);
+    const item = plan.plan.find((p) => p.id === itemId);
+    if (!item) return { error: "No such item on today's plan." };
+    if (item.done) return { error: "That is already finished." };
+    if (isDropped(item)) return { error: "That was dropped." };
+
+    const now = at ?? new Date().toISOString();
+    item.check = { status, at: now, note: note?.trim() || undefined };
+    this.store.put(plan);
+
+    // Named only when the rest of the day is actually affected — A4's "if
+    // nothing later is at risk, it says nothing at all".
+    if (status === "on-time") return { item };
+    const remaining = plan.plan.filter((p) => !p.done && !isDropped(p));
+    const risked = firstAtRisk(item, remaining, item.end ?? now);
+    return { item, atRisk: risked?.label };
+  }
+
+  recordMissReason(actor: ActorId, date: string, itemId: string, reason: string): { asked: boolean; learnedEstimate?: number } {
+    const plan = this.requireOpen(actor, date, "record why something ran over");
     const item = plan.plan.find((p) => p.id === itemId);
     if (!item?.miss || item.miss.kind !== "ran-over") return { asked: false };
     // The plan's own date, not `doneAt`. `doneAt` is a UTC instant, so slicing
@@ -758,7 +859,7 @@ export class DayPlanService {
   }
 
   arriveDuringDay(actor: ActorId, date: string, meeting: MeetingItem): DayPlan {
-    const plan = this.require(actor, date);
+    const plan = this.requireOpen(actor, date, "add a meeting to it");
     const arrived = { ...meeting, arrivedDuringDay: true };
     plan.meetings.push(arrived);
     for (const item of plan.plan) {
@@ -777,7 +878,7 @@ export class DayPlanService {
   }
 
   markLeave(actor: ActorId, date: string): DayPlan {
-    const plan = this.require(actor, date);
+    const plan = this.requireOpen(actor, date, "mark it as leave");
     plan.onLeave = true;
     this.store.put(plan);
     return plan;
@@ -867,7 +968,7 @@ export class DayPlanService {
    * is to be offered back tomorrow, which is what the seed does.
    */
   carryOverItem(actor: ActorId, date: string, itemId: string): { item?: PlanItem; error?: string } {
-    const plan = this.require(actor, date);
+    const plan = this.requireOpen(actor, date, "carry something over");
     const item = plan.plan.find((p) => p.id === itemId);
     if (!item) return { error: "No such item on today's plan." };
     if (item.done) return { error: "That is already finished." };
@@ -985,8 +1086,36 @@ export class DayPlanService {
    * a time estimate like anything else") and A1b allows reordering "at any
    * time", because "the morning plan is a starting point, not a contract".
    */
-  private requirePlanning(actor: ActorId, date: string, what: string): DayPlan {
+  /**
+   * A day that has been closed out is finished, and finished means finished.
+   *
+   * `finishCloseOut` carries the unfinished work forward, stamps `finishedAt`
+   * and calls `finalizeDay`, which folds the day into the streak. The fold is
+   * **idempotent** — `applyDayToStreak` is guarded by `lastAssessedDate`, so it
+   * runs once and never again.
+   *
+   * That guard is right, and it is exactly what makes a later edit dangerous.
+   * Marking an item done after close-out would change the plan and NOT change
+   * the streak, so the day on screen and the day that was counted would
+   * disagree, permanently, with nothing to show which was true. A streak you
+   * can edit the past of is not a record of anything.
+   *
+   * Reading stays open — `dashboard`, `closeOutSummary` and `history` all use
+   * `require` and are untouched. So is `finishCloseOut` itself, which has to be
+   * able to run on the day it is closing.
+   */
+  private requireOpen(actor: ActorId, date: string, what: string): DayPlan {
     const plan = this.require(actor, date);
+    if (plan.closeOut?.finishedAt) {
+      throw new Error(
+        `You clocked out of ${date} — that day is finished, so you cannot ${what} now.`,
+      );
+    }
+    return plan;
+  }
+
+  private requirePlanning(actor: ActorId, date: string, what: string): DayPlan {
+    const plan = this.requireOpen(actor, date, what);
     if (plan.phase === "planned") {
       throw new Error(`Today is already planned — you cannot ${what} now.`);
     }
@@ -1008,7 +1137,7 @@ export class DayPlanService {
    * `briefing` that is too early.
    */
   private requireBriefDone(actor: ActorId, date: string, what: string): DayPlan {
-    const plan = this.require(actor, date);
+    const plan = this.requireOpen(actor, date, what);
     if (plan.phase === "briefing") {
       throw new Error(`Your brief comes first — finish it before you ${what}.`);
     }

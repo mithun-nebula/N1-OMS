@@ -96,6 +96,7 @@ export async function buildDemoWorld(): Promise<DemoWorld> {
   await configureAccounts(pool, log);
 
   const owners = new Map<string, ActorId>();
+  const assigned = new Map<string, ActorId[]>();
   const teams = new Map<ActorId, string>();
 
   const ctx: DomainContext = {
@@ -104,6 +105,7 @@ export async function buildDemoWorld(): Promise<DemoWorld> {
     figures,
     bus,
     owners,
+    assigned,
     teams,
     limiter,
   };
@@ -119,12 +121,13 @@ export async function buildDemoWorld(): Promise<DemoWorld> {
     await seedN1DemoIfEmpty(ctx);
   }
   await hydrateOwners(owners, graph);
+  await hydrateAssigned(assigned, graph);
   // Must come before the permission policy is built: `own-team` scope is
   // resolved through the directory, so an empty one means every manager sees
   // nothing — and because refusal is opaque, that failure is silent.
   await directory().hydrate(graph);
 
-  const permissions = buildDemoPermissionPolicy(owners, teams);
+  const permissions = buildDemoPermissionPolicy(owners, teams, assigned);
   const autonomyStore = new AutonomyStore(pool);
   await autonomyStore.init();
   const autonomy = new GraduatingAutonomyPolicy(autonomyStore);
@@ -152,6 +155,25 @@ async function seedIfEmpty(ctx: DomainContext, graph: RecordStore): Promise<void
   if (existing.length > 0) return;
   for (const domain of DOMAINS) {
     await domain.seed?.(ctx);
+  }
+}
+
+/**
+ * Rebuild who is named on each course, from the persisted nodes.
+ *
+ * The same reason `hydrateOwners` exists: without it the map is empty after a
+ * restart, the `assigned` scope grants nothing, and an assignee silently loses
+ * sight of the course they were given — with no error, because refusal is
+ * opaque by design.
+ */
+async function hydrateAssigned(
+  assigned: Map<string, ActorId[]>,
+  graph: RecordStore,
+): Promise<void> {
+  const courses = await graph.find("course", () => true);
+  for (const c of courses) {
+    const list = (c.data as { assignees?: ActorId[] }).assignees ?? [];
+    if (list.length > 0) assigned.set(`course:${c.id}`, [...list]);
   }
 }
 

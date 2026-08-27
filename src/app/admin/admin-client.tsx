@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { Avatar, Empty, SectionTitle, inputCls } from "../ui/kit";
 import { cleanApprovalsToGraduate, neverGraduatesCategory } from "@/spine/gate/autonomy";
 import type { OperationCategory } from "@/spine/operation/registry";
+import { fmtDateTime } from "../ui/dates";
 
 interface Account {
   username: string;
@@ -495,7 +496,7 @@ function ActivityLogViewer() {
               <span className="min-w-0 truncate text-ink-soft">
                 <span className="font-mono text-ink-faint">{e.operationName}</span> · {e.actor}
               </span>
-              <span className="shrink-0 text-ink-faint">{new Date(e.at).toLocaleString()}</span>
+              <span className="shrink-0 text-ink-faint">{fmtDateTime(e.at)}</span>
             </div>
           ))}
         </div>

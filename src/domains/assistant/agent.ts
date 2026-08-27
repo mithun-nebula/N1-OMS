@@ -13,6 +13,7 @@ import {
 } from "./token-budget";
 import { consultSpecialists, delegateAction } from "./fanout";
 import { coordinatorTools, type DomainId } from "./specialists/domains";
+import { utcOffset } from "./day-plan/time";
 
 /**
  * The assistant.
@@ -44,9 +45,20 @@ const MAX_STEPS = 12;
  * guess dressed as a fact. Every date-taking tool wants `YYYY-MM-DD`, which
  * makes today's date the one thing it must never be left to infer.
  */
-export function assistantSystemPrompt(today: string): string {
+export function assistantSystemPrompt(today: string, offset: string = utcOffset()): string {
   return [
     `Today is ${today}. Work out any relative date — "next week", "tomorrow", "this month" — from that date, and never from memory.`,
+    // ⚠ The date alone was not enough, and a live run found the gap.
+    //
+    // Asked for a meeting "today at 2 pm", the model wrote `...T14:00:00Z` —
+    // correct as an ISO timestamp and five and a half hours wrong as a time.
+    // `time.ts`'s `localTimeOn` records the same mistake being fixed once for
+    // the calendar; it reached `meeting.create` through a tool description
+    // that said "ISO timestamp" and stopped there.
+    //
+    // A clock time spoken by a person is a LOCAL time. Saying so costs one
+    // line and removes a whole class of quietly-wrong answer.
+    `This organisation runs at UTC${offset}. When somebody says a clock time they mean their own — "2 pm" is 14:00${offset}, never 14:00Z. Write every timestamp with that offset, never with a trailing Z.`,
     "",
     ...SYSTEM_PROMPT_BODY,
   ].join("\n");

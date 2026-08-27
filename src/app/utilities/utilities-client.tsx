@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { AccentButton, Empty, inputCls, OpFeedback, SectionTitle } from "../ui/kit";
 import { useOperation } from "@/components/ops/use-operation";
+import { fmtDate } from "../ui/dates";
 
 interface Capture {
   id: string;
@@ -148,7 +149,7 @@ export function UtilitiesClient({
                   {h.from && h.to ? ` (${h.from}–${h.to})` : ""}
                 </span>
                 <span className="shrink-0 text-[11px] text-ink-faint">
-                  {h.by} · {new Date(h.at).toLocaleDateString()}
+                  {h.by} · {fmtDate(h.at)}
                 </span>
               </div>
             ))}

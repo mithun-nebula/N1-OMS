@@ -261,8 +261,10 @@ const NOT_A_LOOKUP = new Set([
 describe("every write tool's ids are supplied by a read tool", () => {
   it("covers every write tool, and finds an id field on the ones that take one", () => {
     // If this drifts, the test below is quietly checking nothing.
-    // 8 day-plan writes + 59 Phase 3 write tools.
-    expect(WRITE_TOOLS).toHaveLength(68);
+    // 9 day-plan writes + 59 Phase 3 write tools. The 9th is `report_status`,
+    // whose `itemId` comes from `my_day` like every other day write — which is
+    // exactly what the rest of this test then proves.
+    expect(WRITE_TOOLS).toHaveLength(69);
     for (const named of [
       "carry_over",
       "close_out",

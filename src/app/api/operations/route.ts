@@ -9,6 +9,7 @@ import {
 import { applyDayPlanReactions } from "@/domains/assistant/day-plan/reactions";
 import { applyAutonomyReactions } from "@/domains/autonomy/reactions";
 import * as adapters from "@/spine/adapters";
+import { emitChange } from "@/server/live";
 import {
   isApplicationStart,
   isPersonStart,
@@ -96,6 +97,10 @@ export async function POST(request: Request) {
     await applyAutonomyReactions(op.name, op.args, {
       engine: await getAutonomyEngine(),
     });
+    // Live updates: tell open screens which area moved. Areas carry no data —
+    // every screen re-fetches through its own permission-checked reads.
+    emitChange(op.name.split(".")[0] || "operations");
+    emitChange("notifications");
   }
   const status =
     result.status === "ran"

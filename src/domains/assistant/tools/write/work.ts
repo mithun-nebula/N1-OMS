@@ -24,16 +24,23 @@ export const workWriteTools: WriteToolSpec[] = [
     operation: "task.create",
     tool: "create_task",
     tier: "straight",
+    people: ["assignedTo"],
     not: "This tool does NOT add work to somebody's day plan for today — that is select_item, and only for yourself. It also does not create an event task; use add_event_task for that. THIS creates a task on the board, which somebody picks up on a day of their choosing.",
     does: "Create a task, optionally assigned to somebody.",
     use: 'Use for "create a task for Arun to review Module 4", "add a task to write the release notes".',
     notes: [
-      "Leave assignedTo out if they did not say who. Do not guess a person.",
+      "assignedTo takes a NAME or an employee id — pass what they said. You do not need to look the person up first.",
+      "Leave it out only if they truly did not say who. Do not guess a person.",
     ],
     args: z.object({
       title: z.string().describe("What needs doing, in their words."),
       description: z.string().optional(),
-      assignedTo: z.string().optional().describe("Employee id. Omit if they did not say."),
+      assignedTo: z
+        .string()
+        .optional()
+        .describe(
+          'Who it is for — a name ("Arun") or an employee id. Omit ONLY if they did not say who.',
+        ),
       priority: z.string().optional().describe("high, medium, low."),
       dueDate: z.string().optional().describe("YYYY-MM-DD."),
       estimateMinutes: z.number().optional(),
@@ -46,6 +53,7 @@ export const workWriteTools: WriteToolSpec[] = [
     operation: "task.assign",
     tool: "assign_task",
     tier: "straight",
+    people: ["assignedTo"],
     not: "This tool does NOT create a task — use create_task, which can assign in the same step. This one moves an EXISTING task to somebody.",
     does: "Assign an existing task to somebody. They are told.",
     use: 'Use for "give that task to Karthik", "reassign the migration notes to Meena".',
@@ -118,6 +126,7 @@ export const workWriteTools: WriteToolSpec[] = [
     operation: "course.create",
     tool: "create_course",
     tier: "straight",
+    people: ["owner"],
     not: "This tool does NOT assign a course to anybody — that is assign_course, and it is a separate step.",
     does: "Create a course, optionally with its modules.",
     use: 'Use for "create a course on spreadsheet automation".',
@@ -160,6 +169,7 @@ export const workWriteTools: WriteToolSpec[] = [
     operation: "course.assignStageOwner",
     tool: "assign_stage_owner",
     tier: "straight",
+    people: ["owner"],
     not: "This tool does NOT assign the COURSE to somebody to study — that is assign_course. This names who owns one stage of it, usually a reviewer.",
     does: "Name who owns a stage of a course.",
     use: 'Use for "Karthik reviews that course", "put Meena on the review stage".',

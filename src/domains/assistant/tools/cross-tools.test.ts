@@ -46,17 +46,19 @@ function descriptionOf(actor: string, name: string): string {
   return String((tools[name] as { description?: string }).description ?? "");
 }
 
-describe("the catalogue at 107", () => {
+describe("the catalogue at 108", () => {
   it("has exactly 41 tools and no duplicates", () => {
-    // 34 read · 6 day-plan writes · 2 commitment writes · 56 operations ·
+    // 34 read · 7 day-plan writes · 2 commitment writes · 56 operations ·
     // send_message · undo_last.
     //
     // The 56 are Phase 3's whole point. `record.create/update/delete` are NOT
     // among them and never will be — they browse 162 raw N1 doctypes and were
     // the source of the pay hole.
     // 106 -> 107 in Phase 4.6: `my_memory`, the only tool this phase added.
-    expect(ALL_TOOL_NAMES).toHaveLength(107);
-    expect(new Set(ALL_TOOL_NAMES).size).toBe(107);
+    // 107 -> 108: `report_status`, the before-the-end check-in, so the question
+    // the dashboard asks can be answered in chat or by voice as well.
+    expect(ALL_TOOL_NAMES).toHaveLength(108);
+    expect(new Set(ALL_TOOL_NAMES).size).toBe(108);
   });
 
   it("the gated operations are tools now — but never record.*", () => {

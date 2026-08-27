@@ -4,6 +4,7 @@ import { useState } from "react";
 import { isManagerOrAbove } from "@/server/roles";
 import { AccentButton, ChromeButton, Empty, inputCls, OpFeedback, SectionTitle } from "../ui/kit";
 import { useOperation } from "@/components/ops/use-operation";
+import { fmtDate } from "../ui/dates";
 
 interface DocItem {
   id: string;
@@ -91,7 +92,7 @@ export function DocumentsClient({
               >
                 <span className="text-[13px] font-semibold text-ink">{e.name}</span>
                 <span className="text-[11px] text-ink-soft">
-                  expires {e.expiresOn}
+                  expires {fmtDate(e.expiresOn)}
                   <span className="ml-2 rounded-full bg-rose px-2 py-0.5 text-[10px] font-bold text-rose-strong">
                     {e.daysLeft} day{e.daysLeft === 1 ? "" : "s"} left
                   </span>
@@ -191,7 +192,7 @@ export function DocumentsClient({
                       ) : d.required ? (
                         <span className="rounded-full bg-peach px-2.5 py-0.5 text-[11px] font-semibold text-peach-strong">Required · supplied</span>
                       ) : d.expiresOn ? (
-                        <span className="rounded-full bg-raised px-2.5 py-0.5 text-[11px] font-semibold text-ink-faint">Expires {d.expiresOn}</span>
+                        <span className="rounded-full bg-raised px-2.5 py-0.5 text-[11px] font-semibold text-ink-faint">Expires {fmtDate(d.expiresOn)}</span>
                       ) : (
                         <span className="text-[11px] text-ink-faint">supplied</span>
                       )}

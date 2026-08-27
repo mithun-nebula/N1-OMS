@@ -153,6 +153,11 @@ export class PermissionPolicy {
         if (owner === undefined) return false;
         return this.roles.teamOf(actor).includes(owner);
       }
+      case "assigned":
+        // Named on the record itself. No owner lookup, no team — being put on
+        // a piece of work is the whole claim, and an unassigned record grants
+        // nothing because the list is empty.
+        return this.roles.assigneesOf(nodeType, recordNodeId).includes(actor);
       case "team-others": {
         const owner = this.roles.ownerOf(nodeType, recordNodeId);
         // Unknown owner fails closed, and the actor's own record is excluded —

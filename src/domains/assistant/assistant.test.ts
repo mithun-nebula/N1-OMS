@@ -46,6 +46,84 @@ beforeEach(async () => {
   await openDay(service, "james", "2026-08-08");
 });
 
+describe("the day is laid out from the clock-in, not from a fixed nine o'clock", () => {
+  /** Local wall-clock hour of an ISO instant — what the person actually sees. */
+  const hourOf = (iso?: string) => (iso ? new Date(iso).getHours() : NaN);
+
+  function freshService() {
+    const local = new DayPlanStore();
+    return {
+      local,
+      svc: new DayPlanService(local, {
+        graph: world.deps.graph,
+        limiter: createQuestionLimiter(),
+        actorLookup: () => ({ spine: world.spine }),
+      }),
+    };
+  }
+
+  it("places the first item at the hour they clocked in", async () => {
+    const { local, svc } = freshService();
+    await openDay(svc, "james", "2026-08-08");
+
+    // Clocked in at eleven, not at nine.
+    svc.markDayStart("james", "2026-08-08", new Date(2026, 7, 8, 11, 0, 0, 0).toISOString());
+    svc.selectItem("james", "2026-08-08", { label: "Module 4", estimateMinutes: 60 });
+
+    const item = local.get("james", "2026-08-08")!.plan[0];
+    expect(hourOf(item.start)).toBe(11);
+    // And the 09:00 opening is genuinely not where it landed.
+    expect(new Date(item.start!).getTime()).toBeGreaterThan(dayWindowStart("2026-08-08"));
+  });
+
+  it("falls back to the 09:00 opening when the day has no recorded start", async () => {
+    const { local, svc } = freshService();
+    await openDay(svc, "james", "2026-08-08");
+    // A plan hydrated from before `startedAt` existed carries no start.
+    const plan = local.get("james", "2026-08-08")!;
+    delete plan.startedAt;
+    local.put(plan);
+
+    svc.selectItem("james", "2026-08-08", { label: "Module 4", estimateMinutes: 60 });
+    expect(hourOf(local.get("james", "2026-08-08")!.plan[0].start)).toBe(9);
+  });
+
+  it("clocking in re-flows a day that was planned first — through the real reaction", async () => {
+    const { local, svc } = freshService();
+    const date = "2026-08-08";
+    await openDay(svc, "james", date);
+
+    // Planned before clocking in: no recorded start, so the 09:00 fallback.
+    svc.selectItem("james", date, { label: "Module 4", estimateMinutes: 60 });
+    expect(hourOf(local.get("james", date)!.plan[0].start)).toBe(9);
+
+    // Now they clock in at eleven, exactly as `attendance.checkIn` records it.
+    const elevenish = new Date(2026, 7, 8, 11, 0, 0, 0).toISOString();
+    await world.deps.graph.putNode("attendance", `att_james_${date}`, {
+      employeeId: "james",
+      date,
+      checkInAt: elevenish,
+    });
+    await applyDayPlanReactions(
+      "attendance.checkIn",
+      { employeeId: "james", date },
+      { service: svc, graph: world.deps.graph, asOf: date },
+    );
+
+    // The whole day moved to where the person actually started.
+    expect(hourOf(local.get("james", date)!.plan[0].start)).toBe(11);
+  });
+
+  it("a second clock-in cannot move a day already underway", async () => {
+    const { local, svc } = freshService();
+    await openDay(svc, "james", "2026-08-08");
+    svc.markDayStart("james", "2026-08-08", new Date(2026, 7, 8, 10, 0, 0, 0).toISOString());
+    svc.markDayStart("james", "2026-08-08", new Date(2026, 7, 8, 15, 0, 0, 0).toISOString());
+    svc.selectItem("james", "2026-08-08", { label: "Module 4", estimateMinutes: 60 });
+    expect(hourOf(local.get("james", "2026-08-08")!.plan[0].start)).toBe(10);
+  });
+});
+
 describe("appendix D — comments on work, never the person", () => {
   it("blocks comments on the person", () => {
     expect(enforceAppendixD("You work more slowly in the afternoons.").ok).toBe(false);

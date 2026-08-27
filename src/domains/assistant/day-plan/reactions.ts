@@ -2,6 +2,7 @@ import type { ActorId } from "@/spine/operation/types";
 import type { RecordStore } from "@/spine/record/types";
 import type { DayPlanService } from "./service";
 import type { MeetingItem } from "./store";
+import { attendanceId } from "@/domains/people/attendance";
 import { localDate, localDateOf, localTimeOn, nextDay } from "./time";
 
 /**
@@ -75,6 +76,9 @@ export async function applyDayPlanReactions(
         break;
       case "task.complete":
         await taskCompleted(String(args.taskId ?? ""), deps);
+        break;
+      case "attendance.checkIn":
+        await clockedIn(args, deps);
         break;
       default:
         break;
@@ -229,6 +233,33 @@ async function taskCompleted(taskId: string, deps: DayPlanReactionDeps): Promise
   const item = plan.plan.find((p) => !p.done && p.ref?.nodeType === "task" && p.ref.nodeId === taskId);
   if (!item) return;
   await deps.service.tick(owner, date, item.id, {});
+}
+
+/**
+ * Their day begins when they clock in, so the plan is laid out from there.
+ *
+ * The clock-in the *operation* recorded is the authoritative one — reading it
+ * back from the record rather than stamping "now" here means a backdated
+ * clock-in (`attendance.checkIn` accepts an `at`) places the day where the
+ * person actually started, not where this reaction happened to run.
+ */
+async function clockedIn(
+  args: Record<string, unknown>,
+  deps: DayPlanReactionDeps,
+): Promise<void> {
+  const employeeId = String(args.employeeId ?? "");
+  const date = String(args.date ?? deps.asOf ?? localDate());
+  if (!employeeId || !date) return;
+
+  // The id helper, never a hand-written copy of its format — the two would
+  // drift silently and this would simply stop finding the record.
+  const node = await deps.graph.getNode("attendance", attendanceId(employeeId, date));
+  const checkInAt = (node?.data as { checkInAt?: string } | undefined)?.checkInAt;
+  if (!checkInAt) return;
+
+  const store = deps.service.getStore();
+  await store.load(employeeId, date);
+  deps.service.markDayStart(employeeId, date, checkInAt);
 }
 
 /** Inclusive, and capped so a mistyped range cannot walk forever. */

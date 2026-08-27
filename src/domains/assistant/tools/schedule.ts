@@ -4,6 +4,7 @@ import { directory } from "@/server/directory";
 import type { ToolSpec } from "./catalogue";
 import { shape, safeFields, visible } from "./shape";
 import { PERIODS, resolveWindow, withinWindow } from "./window";
+import { isInTheMeeting } from "@/domains/workplace/meeting-access";
 
 /**
  * Meetings, the calendar, and organisation events.
@@ -83,11 +84,16 @@ export const getMeeting: ToolSpec = {
             | MeetingActionRow[]
             | undefined) ?? [];
 
+        // The link is the way into the room, not a fact about the meeting, so
+        // it travels only with the people on it. Everything else about the
+        // meeting stays open — meetings carry no RBAC by design.
+        const fields: string[] = ["title", "from", "to", "kind", "cancelled"];
+        if (isInTheMeeting(ctx.actor, result.record)) fields.push("link");
         return {
           found: true,
           meeting: {
             id: meetingId,
-            ...safeFields(result.record, ["title", "from", "to", "kind", "cancelled", "link"]),
+            ...safeFields(result.record, fields),
             attendees: attendees.map((a) => ({ id: a, name: dir.nameOf(a) })),
           },
           decisions: decided.map((d) => ({
