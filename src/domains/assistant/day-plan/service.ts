@@ -600,10 +600,29 @@ export class DayPlanService {
     const plan = this.requireBriefDone(actor, date, "commit the day");
     if (plan.phase === "planned") return plan;
     plan.phase = "planned";
+    // The line everything assigned later is measured against.
+    plan.committedAt = new Date().toISOString();
     const streak = this.store.streakFor(actor);
     streak.dayPlanned += 1;
     this.store.put(plan);
     return plan;
+  }
+
+  /**
+   * "Not today" — work that arrived after the day was committed and was turned
+   * down. A4: an ignored question lapses quietly, so it is asked once and the
+   * refusal is remembered for the rest of the day.
+   *
+   * It says nothing about the task itself: it is still on their board, still
+   * assigned to them, and still there tomorrow. Only today's offer is closed.
+   */
+  declineWork(actor: ActorId, date: string, taskId: string): void {
+    const plan = this.store.get(actor, date);
+    if (!plan || !taskId) return;
+    const declined = plan.declinedWork ?? [];
+    if (declined.includes(taskId)) return;
+    plan.declinedWork = [...declined, taskId];
+    this.store.put(plan);
   }
 
   abandon(actor: ActorId, date: string): DayPlan {

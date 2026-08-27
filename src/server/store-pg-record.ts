@@ -21,6 +21,25 @@ import type {
  *   nodes(type, id, data jsonb, version int, updated_at timestamptz) — PK(type, id)
  *   edges(from_id, to_id, type, data jsonb)
  */
+/**
+ * ⚠ `timestamptz` comes back from `pg` as a **Date**, not a string.
+ *
+ * `RecordNode.updatedAt` is typed `string`, and the row type here said so too —
+ * so nothing complained while every consumer received an object. Comparing one
+ * to an ISO string (`node.updatedAt > committedAt`) then coerces the Date to
+ * "Thu Aug 27 2026 …" and compares it lexically against "2026-08-27T…", which
+ * is always false. That is how "work assigned after you committed your day"
+ * silently found nothing.
+ *
+ * Normalised here, at the boundary, so the declared type is the truth for
+ * everyone downstream rather than something each caller has to know.
+ */
+function isoOf(value: unknown): string {
+  if (value instanceof Date) return value.toISOString();
+  const parsed = Date.parse(String(value));
+  return Number.isFinite(parsed) ? new Date(parsed).toISOString() : String(value);
+}
+
 export class PostgresRecordStore implements RecordStore {
   private ready: Promise<void>;
 
@@ -79,7 +98,7 @@ export class PostgresRecordStore implements RecordStore {
       [type, id],
     );
     const row = res.rows[0];
-    return row ? { id, type, data: row.data, version: row.version, updatedAt: row.updated_at } : undefined;
+    return row ? { id, type, data: row.data, version: row.version, updatedAt: isoOf(row.updated_at) } : undefined;
   }
 
   async patchNode(type: NodeType, id: NodeId, patch: RecordData): Promise<RecordNode | undefined> {
@@ -165,7 +184,7 @@ export class PostgresRecordStore implements RecordStore {
     );
     const out: RecordNode[] = [];
     for (const row of res.rows) {
-      const node: RecordNode = { id: row.id, type, data: row.data, version: row.version, updatedAt: row.updated_at };
+      const node: RecordNode = { id: row.id, type, data: row.data, version: row.version, updatedAt: isoOf(row.updated_at) };
       if (predicate(node)) out.push(node);
     }
     return out;
@@ -204,7 +223,7 @@ export class PostgresRecordStore implements RecordStore {
       [id],
     );
     const row = res.rows[0];
-    return row ? { id, type: row.type, data: row.data, version: row.version, updatedAt: row.updated_at } : undefined;
+    return row ? { id, type: row.type, data: row.data, version: row.version, updatedAt: isoOf(row.updated_at) } : undefined;
   }
 
   private now(): string {

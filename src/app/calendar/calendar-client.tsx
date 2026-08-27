@@ -7,6 +7,10 @@ import { inputCls, OpFeedback } from "../ui/kit";
 import { useOperation } from "@/components/ops/use-operation";
 import { fmtDate } from "../ui/dates";
 
+const WEEKDAYS = [
+  "Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday",
+] as const;
+
 interface CalendarCell {
   date: string;
   meetings: number;
@@ -223,7 +227,9 @@ export function CalendarClient({
 
   const selectedDayNum = selectedDate ? Number(selectedDate.slice(8, 10)) : null;
   const selectedWeekday = selectedDate
-    ? new Date(`${selectedDate}T00:00:00`).toLocaleDateString(undefined, { weekday: "long" })
+    ? // Composed, not localised: the server and the browser must agree on this
+      // string or hydration fails. Same rule as `ui/dates.ts`.
+      WEEKDAYS[new Date(`${selectedDate}T00:00:00`).getDay()]
     : null;
 
   return (

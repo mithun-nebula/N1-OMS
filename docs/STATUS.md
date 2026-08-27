@@ -722,6 +722,22 @@ Four changes, all three ways in (form · chat · voice):
   are surfaces over one set of items, never two implementations. Voice starts
   the spoken session over the same window, and its tools write to the same day,
   so the conversation fills in as they talk.
+- **Work assigned after the day is committed is now raised, not swallowed.**
+  A6 lets a meeting booked mid-day insert itself, because it takes the time
+  whether anyone agrees or not. A task cannot: A1 requires an estimate, and A9
+  says an item added mid-day "needs a time estimate like anything else". So the
+  assistant asks — *"X has just landed on you. Take it on today?"* → *"How long
+  for X?"* → it joins the day and the later times re-flow. "Not today" leaves it
+  on their board untouched and does not ask again today (`declinedWork`).
+  - The line that makes "new" meaningful is `DayPlan.committedAt`, stamped at
+    commit; anything whose record moved after it counts.
+  - ⚠ **Found while building it: `timestamptz` comes back from `pg` as a
+    `Date`, while `RecordNode.updatedAt` is typed `string`.** Nothing
+    complained, and `node.updatedAt > committedAt` then compared
+    "Thu Aug 27 2026 …" against "2026-08-27T…" lexically — always false, so the
+    feature found nothing. Normalised at the store boundary (`isoOf`) so the
+    declared type is the truth for every caller, and the comparison here parses
+    rather than string-compares.
 - **The loop is visible** — `WatchLine` on the dashboard: *"Watching Write the QA
   report · ends 18:39 · next check in 50m"*. It decides nothing; it reports the
   same numbers the check-in is derived from, so the two cannot disagree.

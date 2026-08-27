@@ -5,6 +5,8 @@ import { Empty, PageTitle, SectionTitle } from "../ui/kit";
 import { useLiveEvent } from "../chrome/live";
 import { fmtDateShort } from "../ui/dates";
 
+const SHORT_DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"] as const;
+
 /*
  * A personal look back: every planned day in the range, how it went, and the
  * honest split the product insists on — a day interrupted by meetings is not a
@@ -56,7 +58,10 @@ function fmtMin(min: number): string {
 function niceDate(iso: string): string {
   const [y, m, d] = iso.split("-").map(Number);
   const at = new Date(y, m - 1, d);
-  const weekday = at.toLocaleDateString(undefined, { weekday: "short" });
+  // Composed rather than localised — see `ui/dates.ts`. A locale-dependent
+  // string rendered on the server and again in the browser is a hydration
+  // mismatch waiting for a machine set to a different language.
+  const weekday = SHORT_DAYS[at.getDay()];
   return `${weekday} ${fmtDateShort(iso)}`;
 }
 

@@ -317,6 +317,33 @@ export function VoiceButton() {
     teardown();
   }, [teardown]);
 
+  /**
+   * Put the panel away.
+   *
+   * ⚠ A DIFFERENT ACTION FROM `hangUp`, and they used to share a handler.
+   *
+   * `hangUp` sets the state to `closed`, and the panel is shown while
+   * `open || state === "closed"` — so it stays up deliberately, holding the
+   * transcript and any proposal after the conversation ends. That is right:
+   * hanging up mid-sentence should not take the last thing it said with it.
+   *
+   * But the button then labelled "Close" still called `hangUp`, which set
+   * `closed` again — so the panel could never be dismissed. Ending the
+   * conversation and putting the panel away are two things, and only one of
+   * them was wired.
+   *
+   * Returns to `idle` and clears what the last conversation left behind, so a
+   * new one does not open onto the old transcript.
+   */
+  const dismiss = useCallback(() => {
+    teardown();
+    setState("idle");
+    setLines([]);
+    setProposals([]);
+    setNotice(null);
+    setError(null);
+  }, [teardown]);
+
   const open = state !== "idle" && state !== "closed";
 
   return (
@@ -341,7 +368,7 @@ export function VoiceButton() {
             {/* ⚠ Always reachable, never hidden while it talks. This is the
                 button a person reaches for when it has misunderstood them. */}
             <button
-              onClick={hangUp}
+              onClick={state === "closed" ? dismiss : hangUp}
               className="press rounded-full bg-white/10 px-2.5 py-0.5 text-xs font-semibold transition-colors hover:bg-white/20"
             >
               {state === "closed" ? "Close" : "Stop"}

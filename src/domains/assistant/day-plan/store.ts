@@ -128,6 +128,21 @@ export interface DayPlan {
    * this existed; `scheduleWork` falls back to the 09:00 opening for both.
    */
   startedAt?: string;
+  /**
+   * When the day was committed — the line that makes "new work" meaningful.
+   *
+   * Work assigned before this was on the board while they were choosing, and
+   * they chose not to take it; work assigned after arrived once the day was
+   * already settled, which is the only case worth raising. Without the line,
+   * offering "shall I add this?" would mean nagging about everything they had
+   * already passed over that morning.
+   */
+  committedAt?: string;
+  /**
+   * Work offered mid-day and turned down. Asked once, per A4's "if you ignore
+   * it, it lapses quietly. No reminder, no second ask."
+   */
+  declinedWork?: string[];
   onLeave?: boolean;
   /**
    * Brief items the person said they would handle. Offered first in the

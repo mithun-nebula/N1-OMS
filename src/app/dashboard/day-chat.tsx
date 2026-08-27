@@ -98,6 +98,8 @@ export interface DayChatProps {
     committed: Array<{ id: string; label: string; estimateMinutes: number }>;
     tally: { meetings: number; work: number; free: number };
   };
+  /** Work that landed after the day was committed — offered, never inserted. */
+  newWork?: { id: string; title: string; priority?: string; dueDate?: string; learnedMinutes?: number };
   /** A slot about to end, while the work can still be rescued. */
   check?: { id: string; label: string; end?: string };
   /** Ran over, and the application does not know why. */
@@ -123,6 +125,7 @@ export interface DayChatProps {
   onAnswerBrief?: (reply: string) => Promise<void>;
   onSelect?: (label: string, minutes: number, ref?: { nodeType: string; nodeId: string }) => Promise<void>;
   onCommit?: () => Promise<void>;
+  onDeclineWork?: (taskId: string) => Promise<void>;
   onStatusCheck?: (
     itemId: string,
     status: "on-time" | "more-time" | "blocked",
@@ -141,7 +144,7 @@ export interface DayChatProps {
 const TIMES = [15, 30, 45, 60, 90, 120, 180];
 
 export function DayChat(props: DayChatProps) {
-  const { onClose, plan, check, miss, closeOut, firstName } = props;
+  const { onClose, plan, newWork, check, miss, closeOut, firstName } = props;
   const [said, setSaid] = useState<Bubble[]>([]);
   const [busy, setBusy] = useState(false);
   const [draft, setDraft] = useState("");
@@ -268,6 +271,68 @@ export function DayChat(props: DayChatProps) {
             setPending({ label: text, origin: "your own words" });
           },
         },
+      };
+    }
+
+    /* ── Work that landed after the day was settled ───────────────────────── */
+    if (newWork) {
+      // The same two-step the morning uses: choose it, then give it a time.
+      // A9 — "item added mid-day: allowed. It needs a time estimate like
+      // anything else" — so nothing joins the day without one.
+      if (pending) {
+        const suggested = pending.learnedMinutes;
+        const times = suggested && !TIMES.includes(suggested) ? [suggested, ...TIMES] : TIMES;
+        return {
+          key: `newtime:${newWork.id}`,
+          say: [
+            `How long for ${newWork.title}?` +
+              (suggested ? ` It usually takes about ${fmtMin(suggested)}.` : ""),
+          ],
+          replies: times.slice(0, 6).map((m) => ({
+            label: fmtMin(m),
+            tone: m === suggested ? "go" : undefined,
+            run: async () => {
+              const picked = pending;
+              setPending(null);
+              await props.onSelect?.(picked.label, m, picked.ref);
+              setClosed(true);
+              setTimeout(onClose, 2400);
+              return `Added — ${fmtMin(m)}. It's on your day, and the times after it have moved to make room.`;
+            },
+          })),
+        };
+      }
+      return {
+        key: `new:${newWork.id}`,
+        say: [
+          `${newWork.title} has just landed on you` +
+            (newWork.dueDate ? `, due ${newWork.dueDate}` : "") +
+            ".",
+          "Take it on today?",
+        ],
+        replies: [
+          {
+            label: "Yes, today",
+            tone: "go",
+            run: () =>
+              setPending({
+                label: newWork.title,
+                ref: { nodeType: "task", nodeId: newWork.id },
+                origin: "just assigned",
+                learnedMinutes: newWork.learnedMinutes,
+              }),
+          },
+          {
+            label: "Not today",
+            run: async () => {
+              await props.onDeclineWork?.(newWork.id);
+              setClosed(true);
+              setTimeout(onClose, 2000);
+              return "Left on your board. It's still yours — I just won't ask again today.";
+            },
+          },
+        ],
+        explain: `"${newWork.title}" was just assigned to me. Where would it fit today?`,
       };
     }
 
@@ -440,44 +505,40 @@ export function DayChat(props: DayChatProps) {
   const stepKey = current?.key ?? "";
 
   /*
-   * The lines, said one after another.
+   * ── ⚠ The current step's lines are DERIVED, never accumulated ──────────────
    *
-   * ⚠ Keyed on `stepKey`, never on the step object. The script is rebuilt every
-   * render, so depending on its identity made this effect re-run — and its
-   * cleanup cancel the pending timers — on every unrelated re-render, which is
-   * why the assistant's own lines never appeared while the buttons did.
+   * They used to be pushed into `said` by a timer per line, which cost the
+   * assistant its own voice twice over: once when a re-render cancelled the
+   * pending timers, and again when a re-mount wiped the state they had already
+   * been written into — leaving a dialog showing buttons under an empty
+   * transcript, as if it had asked nothing at all.
+   *
+   * So `said` holds only what is *finished* — lines already answered, and the
+   * answers — and whatever the current step has to say is rendered straight
+   * from the step. There is nothing left to lose: the question is a function of
+   * the state, not a race against it. The stagger that made it feel like
+   * speech is now a CSS delay, which cannot be cancelled.
    */
   const stepRef = useRef<Step | null>(current);
   useEffect(() => {
     stepRef.current = current;
   });
-  /**
-   * Each step says its piece once.
-   *
-   * The conversation returns to earlier steps by design — the picker is come
-   * back to after every item — and without this it re-introduced itself every
-   * time ("What are you taking on today?" twice in a row, between two answers).
-   */
-  const spoken = useRef<Set<string>>(new Set());
-  useEffect(() => {
-    if (!stepKey || spoken.current.has(stepKey)) return;
-    spoken.current.add(stepKey);
-    const lines = stepRef.current?.say ?? [];
-    const timers = lines.map((text, i) =>
-      setTimeout(() => setSaid((prev) => [...prev, { who: "it", text }]), i * 600),
-    );
-    return () => timers.forEach(clearTimeout);
-  }, [stepKey]);
 
   useEffect(() => {
     endRef.current?.scrollIntoView({ block: "end", behavior: "smooth" });
-  }, [said]);
+  }, [said, stepKey]);
 
   const answer = useCallback(async (reply: Reply) => {
     if (busy) return;
     setBusy(true);
     setShowText(false);
-    setSaid((prev) => [...prev, { who: "you", text: reply.label }]);
+    // The question being answered becomes history, then the answer under it.
+    const asked = stepRef.current?.say ?? [];
+    setSaid((prev) => [
+      ...prev,
+      ...asked.map((text) => ({ who: "it" as const, text })),
+      { who: "you" as const, text: reply.label },
+    ]);
     try {
       const followUp = await reply.run();
       if (typeof followUp === "string") {
@@ -522,7 +583,9 @@ export function DayChat(props: DayChatProps) {
                   ? "closing the day"
                   : check
                     ? "checking in"
-                    : "one question"}
+                    : newWork
+                      ? "new work"
+                      : "one question"}
             </div>
           </div>
           {/* Never trapped: A4's question "lapses quietly" if it is ignored. */}
@@ -553,6 +616,21 @@ export function DayChat(props: DayChatProps) {
               </div>
             ),
           )}
+          {/* What the assistant is asking right now — straight from the step. */}
+          {current?.say.map((text, i) => (
+            <div
+              key={`${stepKey}-${i}`}
+              className="rise flex items-start gap-2.5"
+              style={{ animationDelay: `${i * 160}ms` }}
+            >
+              <span className="mt-0.5 grid h-6 w-6 shrink-0 place-items-center rounded-full bg-accent-soft text-accent-strong">
+                <Icon name="spark" className="h-3 w-3" />
+              </span>
+              <p className="max-w-[85%] rounded-2xl rounded-tl-sm bg-raised px-3.5 py-2 text-[13px] leading-relaxed text-ink">
+                {text}
+              </p>
+            </div>
+          ))}
           <div ref={endRef} />
         </div>
 

@@ -76,6 +76,14 @@ interface TodayState {
   /** What past runs of a record actually took, keyed `nodeType:nodeId`. */
   estimateHints: Record<string, number>;
   /** The close-out conversation, present once clocking out has opened it. */
+  /** Work assigned after the day was committed — offered, not inserted. */
+  newWork?: Array<{
+    id: string;
+    title: string;
+    priority?: string;
+    dueDate?: string;
+    learnedMinutes?: number;
+  }>;
   closeOut?: {
     committed: number;
     done: number;
@@ -187,7 +195,9 @@ export function DashboardClient({
    * "Later" closes it for this visit rather than queueing it to reappear.
    */
   const [chatWavedOff, setChatWavedOff] = useState(false);
-  const [openChat, setOpenChat] = useState<"plan" | "check" | "miss" | "closeout" | null>(null);
+  const [openChat, setOpenChat] = useState<
+    "plan" | "newWork" | "check" | "miss" | "closeout" | null
+  >(null);
   /**
    * Which way they chose at clock-in. "form" keeps the old on-screen brief;
    * "chat" and "voice" hand the morning to the assistant, which then runs it.
@@ -460,7 +470,8 @@ export function DashboardClient({
     const ranOver = day.plan.find((p) => p.missOffered);
     const closing = Boolean(day.closeOut && !day.closeOut.finished);
     const soon = endingSoon;
-    if (!closing && !ranOver && !soon) return;
+    const arrived = day.newWork?.[0];
+    if (!closing && !ranOver && !soon && !arrived) return;
     // Deferred a task so no state is written synchronously inside the effect.
     const t = setTimeout(() => {
       // Ordered by how little time is left to act on it.
@@ -477,7 +488,12 @@ export function DashboardClient({
         setOpenChat("miss");
         return;
       }
-      if (soon) setOpenChat("check");
+      if (soon) {
+        setOpenChat("check");
+        return;
+      }
+      // Last: new work can wait a few minutes, a slot about to close cannot.
+      if (arrived) setOpenChat("newWork");
     }, 0);
     return () => clearTimeout(t);
   }, [day, openChat, chatWavedOff, endingSoon]);
@@ -493,6 +509,10 @@ export function DashboardClient({
   function dismissChat() {
     if (openChat === "check" && endingSoon) {
       dismissCheck(endingSoon.id);
+    } else if (openChat === "newWork" && day?.newWork?.[0]) {
+      // "Later" is not "no" — it lapses for this visit, like every other
+      // question, and the task itself is untouched.
+      void post({ action: "declineWork", taskId: day.newWork[0].id });
     } else if (openChat === "plan") {
       // Not a refusal to plan — just a preference to do it on screen.
       setPlanInChat(false);
@@ -1909,6 +1929,27 @@ export function DashboardClient({
           }}
           onCommit={async () => {
             await post({ action: "commit" });
+          }}
+          onMissReason={answerMiss}
+          onCarryOver={carryOver}
+          onDrop={(id) => dropItem(id)}
+          onPartDone={recordProgress}
+          onFinish={finishCloseOut}
+          onNote={noteDay}
+        />
+      )}
+
+      {/* Work that landed after the day was settled — offered, never inserted. */}
+      {openChat === "newWork" && day?.newWork?.[0] && (
+        <DayChat
+          firstName={firstName}
+          newWork={day.newWork[0]}
+          onClose={dismissChat}
+          onSelect={async (label, minutes, ref) => {
+            await post({ action: "select", label, estimateMinutes: minutes, ref });
+          }}
+          onDeclineWork={async (taskId) => {
+            await post({ action: "declineWork", taskId });
           }}
           onMissReason={answerMiss}
           onCarryOver={carryOver}

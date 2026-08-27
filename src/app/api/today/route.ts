@@ -61,6 +61,27 @@ interface TodayState {
    */
   estimateHints: Record<string, number>;
   /**
+   * Work that landed on this person **after** they committed the day.
+   *
+   * A6 accepts a meeting booked mid-day into the plan automatically, because a
+   * meeting takes the time whether anyone agrees or not. A task does not: A1
+   * requires an estimate before anything is committed, and A9 says an item
+   * added mid-day "needs a time estimate like anything else". So this is
+   * *offered* rather than inserted — the assistant raises it, the person
+   * decides, and it only joins the day with a time on it.
+   *
+   * Empty until the day is committed: before that they are still choosing, and
+   * everything open is already in the picker.
+   */
+  newWork: Array<{
+    id: string;
+    title: string;
+    priority?: string;
+    dueDate?: string;
+    /** What this work took last time, where the application has learned it. */
+    learnedMinutes?: number;
+  }>;
+  /**
    * The close-out conversation, once clocking out has opened it. Absent until
    * then — the dashboard is "mainly focused on progress" during the day.
    */
@@ -123,12 +144,65 @@ async function stateFor(actor: string): Promise<TodayState> {
       streak,
       suggested: [],
       estimateHints,
+      newWork: [],
     };
   }
 
   const briefItem = plan.phase === "briefing" ? service.currentBriefItem(plan) : null;
   const { rows, tally } = service.dashboard(actor, date);
   const questionsLeft = getQuestionLimiter().remaining(actor, date);
+
+  /*
+   * Work that arrived after the day was settled.
+   *
+   * `updatedAt > committedAt` is the whole test, and it is deliberately about
+   * the record rather than the assignment: a task reassigned to somebody, or
+   * re-opened, or given a due date of today, has all landed on them since they
+   * chose their day, and all deserve the same one question.
+   *
+   * Only while the day is actually running: not before it is committed (they
+   * are still choosing, and everything open is already in the picker) and not
+   * once it is closing (the close-out asks its own questions).
+   */
+  const onPlan = new Set(
+    plan.plan.filter((p) => p.ref?.nodeType === "task").map((p) => p.ref!.nodeId),
+  );
+  const declined = new Set(plan.declinedWork ?? []);
+  const newWork =
+    plan.phase === "planned" && plan.committedAt && !plan.closeOut
+      ? (
+          await deps.graph.find("task", (n) => {
+            const d = n.data as { assignedTo?: string; status?: string };
+            return d.assignedTo === actor && d.status !== "done";
+          })
+        )
+          .filter((n) => {
+            // Parsed, never string-compared. Timestamps reach this system in
+            // several shapes (`…Z`, `…000Z`, a Date from `pg`), and comparing
+            // those as text is the mistake `day-plan/time.ts` records being
+            // fixed twice already.
+            const at = new Date(n.updatedAt).getTime();
+            const since = Date.parse(plan.committedAt!);
+            return (
+              Number.isFinite(at) &&
+              Number.isFinite(since) &&
+              at > since &&
+              !onPlan.has(n.id) &&
+              !declined.has(n.id)
+            );
+          })
+          .slice(0, 5)
+          .map((n) => {
+            const d = n.data as { title?: string; priority?: string; dueDate?: string; estimateMinutes?: number };
+            return {
+              id: n.id,
+              title: d.title ?? n.id,
+              priority: d.priority,
+              dueDate: d.dueDate,
+              learnedMinutes: estimateHints[`task:${n.id}`] ?? d.estimateMinutes,
+            };
+          })
+      : [];
   return {
     date,
     attendance: { checkInAt: att.checkInAt, checkOutAt: att.checkOutAt, workedMinutes: att.workedMinutes },
@@ -185,6 +259,7 @@ async function stateFor(actor: string): Promise<TodayState> {
     rows,
     tally,
     streak,
+    newWork,
     suggested: plan.suggested ?? [],
     closeOut: plan.closeOut
       ? { ...service.closeOutSummary(actor, date), finished: Boolean(plan.closeOut.finishedAt) }
@@ -355,6 +430,12 @@ export async function POST(request: Request) {
           return NextResponse.json({ error: result.error }, { status: 422 });
         }
         return NextResponse.json(await stateFor(user.id));
+      }
+      case "declineWork": {
+        // "Not today." The task is untouched — still theirs, still open, still
+        // there tomorrow. Only today's offer closes.
+        service.declineWork(user.id, date, String(body.taskId ?? ""));
+        break;
       }
       case "statusCheck": {
         // Asked before the window ends, while the work can still be rescued —

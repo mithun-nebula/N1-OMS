@@ -66,11 +66,30 @@ export function fmtDayDate(value?: string | Date): string {
   return `${DAYS[d.getDay()]}, ${d.getDate()} ${MONTHS[d.getMonth()]} ${d.getFullYear()}`;
 }
 
-/** `14:30` (or `2:30 PM`) — the clock only. Locale decides the 12/24 question. */
+/**
+ * `14:30` — the clock only, 24-hour, on every machine.
+ *
+ * ── ⚠ This used to be `toLocaleTimeString`, and the reasoning above was wrong ─
+ *
+ * The header argues that dates must be composed by hand because the ORDER is
+ * ambiguous, while times could be left to the locale because 24-hour versus
+ * am/pm "carries no ambiguity either way". True of a person reading it, and
+ * irrelevant to the machine: Node's locale renders `2:30 PM` where the browser
+ * renders `14:30`, the two strings differ, and React throws a **hydration
+ * mismatch** on any screen that server-renders a time.
+ *
+ * Which is every screen that shows one — the dashboard's next meeting, the
+ * booking list, the activity log, notifications.
+ *
+ * So the same rule the dates already follow: compose it, and both halves agree.
+ * 24-hour because that is what this organisation reads, and because a format
+ * that changes with the machine is the thing being fixed.
+ */
 export function fmtTime(value?: string): string {
   const d = parse(value);
   if (!d) return "";
-  return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
 /** `27 Aug 2026, 14:30` — a date and its time, in that order. */
@@ -80,10 +99,18 @@ export function fmtDateTime(value?: string): string {
   return `${fmtDate(value)}, ${fmtTime(value)}`;
 }
 
-/** `August 2026` — a month heading. */
+/**
+ * `August 2026` — a month heading.
+ *
+ * Composed for the same reason as everything else here: `toLocaleDateString`
+ * returns the month name in whatever language the machine is set to, so a
+ * server in one locale and a browser in another disagree during hydration.
+ */
+const MONTHS_FULL = [
+  "January", "February", "March", "April", "May", "June",
+  "July", "August", "September", "October", "November", "December",
+] as const;
+
 export function fmtMonthYear(year: number, month1to12: number): string {
-  const full = new Date(year, month1to12 - 1, 1).toLocaleDateString(undefined, {
-    month: "long",
-  });
-  return `${full} ${year}`;
+  return `${MONTHS_FULL[month1to12 - 1] ?? ""} ${year}`;
 }
